@@ -353,14 +353,20 @@ window.openComposerModal = (pickMedia = false) => {
       <div class="composer-hint">Puedes usar <b>@usuario</b> para mencionar y <b>#tema</b> para crear una tendencia.</div>
       <div id="mediaPreview"></div>
       <div class="composer-modal-tools">
-        <label class="media-picker modal-media-picker">▧ Foto / vídeo<input type="file" id="media" accept="image/*,video/*" onchange="previewMedia(this)"></label>
+        <label id="modalMediaPicker" class="media-picker modal-media-picker" tabindex="0">▧ Foto / vídeo<input type="file" id="media" accept="image/*,video/*" onchange="previewMedia(this)"></label>
         <select id="visibility" title="Visibilidad"><option value="public">🌍 Público</option><option value="followers">👥 Seguidores</option></select>
       </div>
       <button class="btn primary large composer-publish" id="publishBtn" onclick="createPost()">Publicar</button>
     </div>`);
   setTimeout(() => {
-    $('#posttext')?.focus();
-    if (pickMedia) $('#media')?.click();
+    if (!pickMedia) {
+      $('#posttext')?.focus();
+      return;
+    }
+    const picker = $('#modalMediaPicker');
+    picker?.classList.add('media-picker-attention');
+    picker?.focus();
+    setTimeout(() => picker?.classList.remove('media-picker-attention'), 1500);
   }, 70);
 };
 
@@ -630,7 +636,7 @@ async function renderProfile(username) {
   const privateLocked = u.account_private && !u.own && !u.following;
   let actions = '';
   if (u.own) {
-    actions = `<button class="btn ghost compact" onclick="go('friends')">Amigos</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad</button><button class="btn ghost compact" onclick="openAccountSettings()">Ajustes</button>${state.me?.is_admin ? `<button class="btn ghost compact" onclick="go('admin')">Administración</button>` : ''}<button class="btn ghost compact" onclick="editProfile()">Editar perfil</button>`;
+    actions = `<div class="profile-desktop-actions"><button class="btn ghost compact" onclick="go('friends')">Amigos</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad</button><button class="btn ghost compact" onclick="openAccountSettings()">Ajustes</button>${state.me?.is_admin ? `<button class="btn ghost compact" onclick="go('admin')">Administración</button>` : ''}<button class="btn ghost compact" onclick="editProfile()">Editar perfil</button></div><div class="profile-mobile-actions"><button class="btn ghost compact profile-edit-mobile" onclick="editProfile()">Editar perfil</button><button class="icon-btn profile-own-more" title="Más opciones" aria-label="Más opciones de perfil" onclick="openOwnProfileMenu()">•••</button></div>`;
   } else if (u.blocked_by_me) {
     actions = `<button class="btn primary compact" onclick="toggleBlock(${u.id},'${escapeAttr(u.username)}')">Desbloquear</button>`;
   } else {
@@ -774,6 +780,17 @@ function outgoingFriendRow(r) {
 function friendRow(u) {
   return `<div class="friend-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small>${presenceHtml(u)}</span></button><div class="friend-actions"><button class="btn ghost compact" onclick="startMessage(${u.id})">Mensaje</button><button class="icon-btn danger-hover" onclick="removeFriend(${u.id})" title="Eliminar amistad">•••</button></div></div>`;
 }
+
+window.openOwnProfileMenu = () => {
+  modal(`<div class="modal-head"><h3>Tu perfil</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <div class="post-menu own-profile-menu">
+      <button onclick="closeModal();go('friends')"><span>👥</span><div><b>Amigos</b><small>Gestiona amistades y solicitudes</small></div></button>
+      <button onclick="closeModal();openPrivacySettings()"><span>🔒</span><div><b>Privacidad</b><small>Cuenta privada, mensajes, bloqueos y silencios</small></div></button>
+      <button onclick="closeModal();openAccountSettings()"><span>⚙</span><div><b>Ajustes</b><small>Contraseña, legal y cuenta</small></div></button>
+      ${state.me?.is_admin ? `<button onclick="closeModal();go('admin')"><span>🛡</span><div><b>Administración</b><small>Moderación y denuncias</small></div></button>` : ''}
+      <button class="danger-option" onclick="closeModal();logout()"><span>↪</span><div><b>Cerrar sesión</b><small>Salir de Instant Admirers en este dispositivo</small></div></button>
+    </div>`);
+};
 
 window.editProfile = () => {
   const u = state.me;
@@ -1356,6 +1373,10 @@ window.openAccountSettings = () => {
       <section class="settings-block">
         <div><b>Legal y privacidad</b><small>Aviso legal, privacidad, cookies, términos y normas de la comunidad.</small></div>
         <a class="btn ghost compact legal-settings-link" href="/legal/" target="_blank" rel="noopener">Ver documentos</a>
+      </section>
+      <section class="settings-block">
+        <div><b>Sesión</b><small>Cierra tu sesión de Instant Admirers en este dispositivo.</small></div>
+        <button class="btn ghost compact" onclick="closeModal();logout()">Cerrar sesión</button>
       </section>
       <section class="settings-block danger-settings">
         <div><b>Eliminar cuenta</b><small>Esta acción elimina tu perfil y tus datos asociados de Instant Admirers.</small></div>
