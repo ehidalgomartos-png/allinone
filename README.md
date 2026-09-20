@@ -1,38 +1,42 @@
-# OmniSocial V0.6 — Amigos y chat en tiempo real
+# OmniSocial V0.7 — Comunidad más completa
 
-Esta versión continúa desde V0.5.1 y mantiene intactos usuarios, publicaciones, Stories, Reels, likes, comentarios, guardados y conversaciones.
+OmniSocial V0.7 continúa sobre la V0.6 estable y mantiene usuarios, publicaciones, Stories, Reels, mensajes, amistades, likes, comentarios, guardados y notificaciones.
 
-## Novedades V0.6
+## Novedades V0.7
 
-- Solicitudes de amistad: enviar, cancelar, aceptar, rechazar y eliminar amistad.
-- Página de Amigos accesible desde el perfil y Actividad.
-- Estado `En línea` y última conexión.
-- Mensajería en tiempo real con Socket.IO.
-- Indicador `Escribiendo…`.
-- Responder a un mensaje concreto.
-- Compartir publicaciones por mensaje privado.
-- Contador de mensajes y actividad actualizado en tiempo real.
-- Avisos del navegador mientras OmniSocial está abierto (con permiso del usuario).
-- La privacidad de los posts se respeta también al compartirlos por privado.
+- Menciones `@usuario` clicables en publicaciones, comentarios, Stories y mensajes.
+- Notificación cuando alguien te menciona en una publicación o comentario.
+- Hashtags `#tema` navegables.
+- Tendencias calculadas sobre los últimos 7 días, teniendo en cuenta publicaciones, autores e interacciones.
+- Republicar posts públicos dentro de OmniSocial.
+- Añadir un comentario propio al republicar.
+- Elegir si el repost es público o solo para seguidores.
+- Enviar el mismo post por mensaje privado desde el menú Compartir.
+- Editar el texto y la privacidad de tus propias publicaciones.
+- Marca `editado` en los posts modificados.
+- Perfil avanzado con portada, frase de perfil e intereses.
+- Intereses convertidos en accesos rápidos para descubrir contenido.
+- Búsqueda mejorada para `@usuarios`, perfiles, biografías, intereses, publicaciones y hashtags.
 
-## Sigue incluyendo
+## Compatibilidad
 
-- Registro / login con JWT.
-- PostgreSQL en Render.
-- Feed, Descubrir, búsqueda, perfiles y seguidores.
-- Fotos y vídeos.
-- Stories de 24 h.
-- Reels.
-- Likes, comentarios, guardados y notificaciones.
-- Interfaz responsive móvil / tablet / ordenador.
+La migración es incremental. `src/schema.sql` añade las columnas nuevas con `IF NOT EXISTS`, por lo que no debes borrar la base PostgreSQL existente.
+
+Nuevos campos principales:
+
+- `users.headline`
+- `users.interests`
+- `users.cover`
+- `posts.repost_of_id`
+- nuevos tipos de notificación: `mention` y `repost`
 
 ## Despliegue
 
-Si ya tienes V0.5.1 funcionando en Render, NO borres la base de datos ni crees otro servicio.
+Si ya tienes V0.6 funcionando:
 
-1. Descomprime el ZIP.
-2. Sube el contenido a la raíz del mismo repositorio de GitHub.
-3. Haz commit.
+1. Descomprime el ZIP V0.7.
+2. Sustituye el contenido del mismo repositorio de GitHub.
+3. Haz commit en `main`.
 4. Render desplegará automáticamente.
 5. Comprueba `/api/health`.
 
@@ -41,18 +45,12 @@ Respuesta esperada:
 ```json
 {
   "ok": true,
-  "version": "0.6.0",
+  "version": "0.7.0",
   "database": "postgresql",
   "mode": "own-community"
 }
 ```
 
-Las migraciones se ejecutan automáticamente desde `src/schema.sql` al arrancar.
+## Nota de arquitectura
 
-## Nota sobre presencia en tiempo real
-
-La presencia `En línea` se mantiene en memoria en la instancia web. Es adecuada para este MVP y una única instancia de Render. Cuando OmniSocial escale a varias instancias, convendrá mover presencia y eventos a Redis.
-
-## Multimedia
-
-Esta versión conserva el almacenamiento de multimedia en PostgreSQL para simplificar el MVP. Antes de crecer en usuarios y vídeo, es recomendable migrar los archivos a un almacenamiento de objetos (S3, Cloudinary o equivalente).
+La multimedia sigue almacenándose en PostgreSQL para simplificar el MVP. Antes de abrir OmniSocial a un volumen grande de usuarios, conviene migrar imágenes y vídeos a almacenamiento de objetos y mantener PostgreSQL para los datos de la red social.

@@ -1,7 +1,7 @@
 {
   "name": "omnisocial-community",
-  "version": "0.6.0",
-  "description": "OmniSocial V0.6 - Amigos y chat en tiempo real",
+  "version": "0.7.0",
+  "description": "OmniSocial V0.7 - Comunidad, menciones, reposts y perfiles avanzados",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

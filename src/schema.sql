@@ -231,3 +231,17 @@ CREATE INDEX IF NOT EXISTS idx_friendships_user1 ON friendships(user1_id,created
 CREATE INDEX IF NOT EXISTS idx_friendships_user2 ON friendships(user2_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_reply ON messages(reply_to_id);
 CREATE INDEX IF NOT EXISTS idx_messages_shared_post ON messages(shared_post_id);
+
+
+-- V0.7: menciones, reposts, edición y perfiles avanzados.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS headline TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS interests TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS cover TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS repost_of_id BIGINT REFERENCES posts(id) ON DELETE SET NULL;
+
+ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
+  CHECK (type IN ('follow','like','comment','friend_request','friend_accept','message','mention','repost'));
+
+CREATE INDEX IF NOT EXISTS idx_posts_repost_of ON posts(repost_of_id);

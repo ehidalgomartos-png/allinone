@@ -32,6 +32,8 @@ function escapeHtml(value = '') {
 
 function escapeAttr(value = '') { return escapeHtml(value).replace(/`/g, '&#096;'); }
 
+function safeEncode(value = '') { return encodeURIComponent(String(value)).replace(/'/g, '%27'); }
+
 function initials(u = {}) {
   return String(u.name || u.username || '?').trim().slice(0, 1).toUpperCase();
 }
@@ -65,6 +67,7 @@ function presenceHtml(u = {}) {
 function formatText(text = '') {
   let html = escapeHtml(text).replace(/\n/g, '<br>');
   html = html.replace(/(^|\s)(#[\p{L}\p{N}_]+)/gu, (_, lead, tag) => `${lead}<button class="inline-link" onclick="searchTag('${escapeAttr(tag)}')">${tag}</button>`);
+  html = html.replace(/(^|\s)(@[a-zA-Z0-9_.]{3,30})/g, (_, lead, mention) => `${lead}<button class="inline-link mention-link" onclick="openProfile('${escapeAttr(mention.slice(1))}')">${mention}</button>`);
   return html;
 }
 
@@ -248,6 +251,7 @@ window.openComposerModal = (pickMedia = false) => {
     <div class="composer-modal">
       <div class="composer-author">${avatar(state.me)}<div><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></div></div>
       <textarea id="posttext" rows="6" maxlength="5000" placeholder="¿Qué quieres compartir con la comunidad?"></textarea>
+      <div class="composer-hint">Puedes usar <b>@usuario</b> para mencionar y <b>#tema</b> para crear una tendencia.</div>
       <div id="mediaPreview"></div>
       <div class="composer-modal-tools">
         <label class="media-picker modal-media-picker">▧ Foto / vídeo<input type="file" id="media" accept="image/*,video/*" onchange="previewMedia(this)"></label>
@@ -291,26 +295,68 @@ window.createPost = async () => {
   finally { state.busy = false; }
 };
 
+function repostEmbed(r) {
+  if (!r) return '';
+  if (r.unavailable) return `<div class="repost-embed unavailable">Esta publicación ya no está disponible.</div>`;
+  const media = r.media_url ? (r.media_type === 'video'
+    ? `<video class="repost-media" src="${escapeAttr(r.media_url)}" controls preload="metadata"></video>`
+    : `<img class="repost-media" src="${escapeAttr(r.media_url)}" loading="lazy" alt="">`) : '';
+  return `<div class="repost-embed">
+    <button class="repost-author" onclick="openProfile('${escapeAttr(r.username)}')">${avatar(r,'small')}<span><b>${escapeHtml(r.name)}</b><small>@${escapeHtml(r.username)} · ${timeAgo(r.created_at)}</small></span></button>
+    ${r.text ? `<div class="repost-text">${formatText(r.text)}</div>` : ''}
+    ${media}
+  </div>`;
+}
+
 function postHtml(p) {
   const media = p.media_url ? (p.media_type === 'video'
     ? `<video class="post-media" src="${escapeAttr(p.media_url)}" controls preload="metadata"></video>`
     : `<img class="post-media" src="${escapeAttr(p.media_url)}" loading="lazy" alt="Publicación de ${escapeAttr(p.username)}">`) : '';
   const privacy = p.visibility === 'followers' ? ' · 👥' : '';
-  return `<article class="card post" data-post="${p.id}">
+  const edited = p.edited_at ? ' · editado' : '';
+  const encodedText = safeEncode(p.text || '');
+  return `<article class="card post ${p.repost_of_id ? 'is-repost' : ''}" data-post="${p.id}">
+    ${p.repost_of_id ? `<div class="repost-label">↻ ${escapeHtml(p.name)} republicó una publicación</div>` : ''}
     <div class="post-head">
-      <button class="person-link" onclick="openProfile('${escapeAttr(p.username)}')">${avatar(p)}<span><b>${escapeHtml(p.name)}</b><small>@${escapeHtml(p.username)} · ${timeAgo(p.created_at)}${privacy}</small></span></button>
-      ${p.own ? `<button class="icon-btn danger-hover" title="Eliminar" onclick="deletePost(${p.id})">•••</button>` : ''}
+      <button class="person-link" onclick="openProfile('${escapeAttr(p.username)}')">${avatar(p)}<span><b>${escapeHtml(p.name)}</b><small>@${escapeHtml(p.username)} · ${timeAgo(p.created_at)}${edited}${privacy}</small></span></button>
+      ${p.own ? `<button class="icon-btn" title="Opciones" onclick="openPostMenu(${p.id},'${encodedText}','${escapeAttr(p.visibility || 'public')}')">•••</button>` : ''}
     </div>
     ${p.text ? `<div class="post-text">${formatText(p.text)}</div>` : ''}
     ${media}
+    ${p.repost_of_id ? repostEmbed(p.repost) : ''}
     <div class="post-actions">
       <button class="action ${p.liked ? 'liked' : ''}" onclick="likePost(${p.id})"><span>${p.liked ? '♥' : '♡'}</span><b>${p.likes_count}</b></button>
       <button class="action" onclick="openComments(${p.id})"><span>◌</span><b>${p.comments_count}</b></button>
-      <button class="action" onclick="sharePost(${p.id})" title="Compartir por mensaje"><span>↗</span></button>
+      <button class="action" onclick="sharePost(${p.id})" title="Compartir"><span>↗</span></button>
       <button class="action push ${p.saved ? 'saved' : ''}" onclick="savePost(${p.id})"><span>${p.saved ? '▰' : '▱'}</span></button>
     </div>
   </article>`;
 }
+
+window.openPostMenu = (id, encodedText, visibility) => {
+  modal(`<div class="modal-head"><h3>Publicación</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <div class="post-menu">
+      <button onclick="editPostModal(${id},'${encodedText}','${escapeAttr(visibility)}')"><span>✎</span><div><b>Editar publicación</b><small>Cambiar texto o privacidad</small></div></button>
+      <button class="danger-option" onclick="closeModal();deletePost(${id})"><span>⌫</span><div><b>Eliminar publicación</b><small>Se eliminará definitivamente</small></div></button>
+    </div>`);
+};
+
+window.editPostModal = (id, encodedText, visibility) => {
+  const text = decodeURIComponent(encodedText || '');
+  modal(`<div class="modal-head"><h3>Editar publicación</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <div class="edit-post-modal">
+      <textarea id="editPostText" rows="7" maxlength="5000">${escapeHtml(text)}</textarea>
+      <div class="edit-post-tools"><span>Privacidad</span><select id="editPostVisibility"><option value="public" ${visibility==='public'?'selected':''}>🌍 Público</option><option value="followers" ${visibility==='followers'?'selected':''}>👥 Seguidores</option></select></div>
+      <button class="btn primary" onclick="savePostEdit(${id})">Guardar cambios</button>
+    </div>`);
+};
+
+window.savePostEdit = async (id) => {
+  try {
+    await api(`/api/posts/${id}`, { method:'PATCH', body:JSON.stringify({ text:$('#editPostText').value, visibility:$('#editPostVisibility').value }) });
+    closeModal(); toast('Publicación actualizada'); await renderView();
+  } catch(e) { toast(e.message,'error'); }
+};
 
 async function renderFeed() {
   const [rows, stories] = await Promise.all([api('/api/feed'), api('/api/stories')]);
@@ -318,8 +364,9 @@ async function renderFeed() {
 }
 
 async function renderDiscover() {
-  const rows = await api('/api/discover');
-  $('#main').innerHTML = `${pageHeader('Descubrir','Contenido público con más conversación en la comunidad')}<div class="post-list">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty"><h3>Aún no hay contenido público</h3></div>`}</div>`;
+  const [rows,trends] = await Promise.all([api('/api/discover'),api('/api/trending')]);
+  const trendStrip = trends.length ? `<div class="trend-strip">${trends.slice(0,8).map(t=>`<button onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} posts · ${t.authors} personas</small></button>`).join('')}</div>` : '';
+  $('#main').innerHTML = `${pageHeader('Descubrir','Contenido y temas con más conversación esta semana')}${trendStrip}<div class="post-list">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty"><h3>Aún no hay contenido público</h3></div>`}</div>`;
 }
 
 async function renderBookmarks() {
@@ -389,7 +436,8 @@ window.runSearch = async (updateState = true) => {
 window.searchTag = async (tag) => { state.search = tag; await go('search'); };
 
 function userRow(u) {
-  return `<div class="user-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u)}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small>${u.bio ? `<em>${escapeHtml(u.bio).slice(0,90)}</em>` : ''}</span></button><button class="btn ${u.following ? 'ghost' : 'primary'} compact follow-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.following ? 'Siguiendo' : 'Seguir'}</button></div>`;
+  const summary = u.headline || u.bio || '';
+  return `<div class="user-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u)}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small>${summary ? `<em>${escapeHtml(summary).slice(0,90)}</em>` : ''}</span></button><button class="btn ${u.following ? 'ghost' : 'primary'} compact follow-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.following ? 'Siguiendo' : 'Seguir'}</button></div>`;
 }
 
 window.openProfile = async (username) => { if (state.messagePoll) { clearInterval(state.messagePoll); state.messagePoll = null; } state.view = 'profile'; state.profile = username; layout(); await renderProfile(username); };
@@ -400,13 +448,19 @@ async function renderProfile(username) {
     api('/api/users/' + encodeURIComponent(username) + '/posts')
   ]);
   const website = u.website ? `<a class="profile-link" href="${escapeAttr(normalizeUrl(u.website))}" target="_blank" rel="noopener">↗ ${escapeHtml(u.website)}</a>` : '';
-  $('#main').innerHTML = `<section class="card profile-card">
-    <div class="profile-top">${avatar(u, 'xl')}<div class="profile-cta">${u.own ? `<button class="btn ghost compact" onclick="go('friends')">Amigos</button><button class="btn ghost compact" onclick="editProfile()">Editar perfil</button>` : `<button class="btn ghost compact" onclick="startMessage(${u.id})">Mensaje</button>${friendButton(u)}<button class="btn ${u.following ? 'ghost' : 'primary'} compact" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.following ? 'Siguiendo' : 'Seguir'}</button>`}</div></div>
-    <h2>${escapeHtml(u.name)}</h2><div class="handle">@${escapeHtml(u.username)}</div>
-    <div class="profile-presence">${presenceHtml(u)}</div>
-    ${u.bio ? `<p class="profile-bio">${formatText(u.bio)}</p>` : ''}
-    <div class="profile-meta">${u.location ? `<span>⌖ ${escapeHtml(u.location)}</span>` : ''}${website}</div>
-    <div class="profile-stats"><span><b>${u.posts_count}</b> publicaciones</span><span><b>${u.followers_count}</b> seguidores</span><span><b>${u.following_count}</b> siguiendo</span>${u.own ? `<button onclick="go('friends')"><b>${u.friends_count || 0}</b> amigos</button>` : `<span><b>${u.friends_count || 0}</b> amigos</span>`}</div>
+  const interests = String(u.interests || '').split(',').map(x=>x.trim()).filter(Boolean).slice(0,10);
+  $('#main').innerHTML = `<section class="card profile-card profile-card-v7">
+    <div class="profile-cover ${u.cover ? 'has-cover' : ''}">${u.cover ? `<img src="${escapeAttr(u.cover)}" alt="">` : ''}</div>
+    <div class="profile-main-v7">
+      <div class="profile-top">${avatar(u, 'xl')}<div class="profile-cta">${u.own ? `<button class="btn ghost compact" onclick="go('friends')">Amigos</button><button class="btn ghost compact" onclick="editProfile()">Editar perfil</button>` : `<button class="btn ghost compact" onclick="startMessage(${u.id})">Mensaje</button>${friendButton(u)}<button class="btn ${u.following ? 'ghost' : 'primary'} compact" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.following ? 'Siguiendo' : 'Seguir'}</button>`}</div></div>
+      <h2>${escapeHtml(u.name)}</h2><div class="handle">@${escapeHtml(u.username)}</div>
+      ${u.headline ? `<div class="profile-headline">${escapeHtml(u.headline)}</div>` : ''}
+      <div class="profile-presence">${presenceHtml(u)}</div>
+      ${u.bio ? `<p class="profile-bio">${formatText(u.bio)}</p>` : ''}
+      <div class="profile-meta">${u.location ? `<span>⌖ ${escapeHtml(u.location)}</span>` : ''}${website}</div>
+      ${interests.length ? `<div class="interest-chips">${interests.map(x=>`<button onclick="searchTag('#${escapeAttr(x.replace(/^#/,'').replace(/\s+/g,'_'))}')">${escapeHtml(x)}</button>`).join('')}</div>` : ''}
+      <div class="profile-stats"><span><b>${u.posts_count}</b> publicaciones</span><span><b>${u.followers_count}</b> seguidores</span><span><b>${u.following_count}</b> siguiendo</span>${u.own ? `<button onclick="go('friends')"><b>${u.friends_count || 0}</b> amigos</button>` : `<span><b>${u.friends_count || 0}</b> amigos</span>`}</div>
+    </div>
   </section>
   <div class="profile-section-title">Publicaciones</div>
   <div class="post-list">${posts.length ? posts.map(postHtml).join('') : `<div class="card empty"><h3>Sin publicaciones todavía</h3></div>`}</div>`;
@@ -483,9 +537,12 @@ window.editProfile = () => {
   const u = state.me;
   modal(`<div class="modal-head"><h3>Editar perfil</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
     <div class="edit-profile">
+      <div class="edit-cover-preview ${u.cover?'has-cover':''}">${u.cover?`<img src="${escapeAttr(u.cover)}" alt="">`:''}<label class="btn ghost compact">Cambiar portada<input type="file" id="coverFile" accept="image/*" hidden></label></div>
       <div class="edit-avatar-row">${avatar(u, 'large')}<label class="btn ghost compact">Cambiar foto<input type="file" id="avatarFile" accept="image/*" hidden></label></div>
       <label>Nombre<input id="editName" value="${escapeAttr(u.name)}" maxlength="100"></label>
+      <label>Frase de perfil<input id="editHeadline" value="${escapeAttr(u.headline || '')}" maxlength="140" placeholder="Diseñador, creador, viajero…"></label>
       <label>Biografía<textarea id="editBio" maxlength="500" rows="4">${escapeHtml(u.bio || '')}</textarea></label>
+      <label>Intereses<input id="editInterests" value="${escapeAttr(u.interests || '')}" maxlength="500" placeholder="música, viajes, tecnología"></label>
       <label>Ubicación<input id="editLocation" value="${escapeAttr(u.location || '')}" maxlength="120" placeholder="Valencia, España"></label>
       <label>Web<input id="editWebsite" value="${escapeAttr(u.website || '')}" maxlength="500" placeholder="tusitio.com"></label>
       <button class="btn primary" onclick="saveProfile()">Guardar cambios</button>
@@ -495,9 +552,16 @@ window.editProfile = () => {
 window.saveProfile = async () => {
   try {
     let avatarUrl = state.me.avatar || '';
+    let coverUrl = state.me.cover || '';
     const file = $('#avatarFile')?.files?.[0];
+    const coverFile = $('#coverFile')?.files?.[0];
     if (file) { const fd = new FormData(); fd.append('file', file); const up = await api('/api/upload', { method:'POST', body:fd }); avatarUrl = up.url; }
-    await api('/api/me', { method:'PATCH', body:JSON.stringify({ name:$('#editName').value, bio:$('#editBio').value, location:$('#editLocation').value, website:$('#editWebsite').value, avatar:avatarUrl }) });
+    if (coverFile) { const fd = new FormData(); fd.append('file', coverFile); const up = await api('/api/upload', { method:'POST', body:fd }); coverUrl = up.url; }
+    await api('/api/me', { method:'PATCH', body:JSON.stringify({
+      name:$('#editName').value, headline:$('#editHeadline').value, bio:$('#editBio').value,
+      interests:$('#editInterests').value, location:$('#editLocation').value, website:$('#editWebsite').value,
+      avatar:avatarUrl, cover:coverUrl
+    }) });
     closeModal(); await refreshMe(); state.profile = state.me.username; await renderProfile(state.me.username); toast('Perfil actualizado');
   } catch (e) { toast(e.message, 'error'); }
 };
@@ -520,6 +584,8 @@ function notificationHtml(n) {
   else if (n.type === 'friend_request') { action = 'quiere añadirte como amigo'; click = `go('friends')`; }
   else if (n.type === 'friend_accept') { action = 'ha aceptado tu solicitud de amistad'; }
   else if (n.type === 'message') { action = 'te ha enviado un mensaje'; click = `go('messages')`; }
+  else if (n.type === 'mention') { action = 'te ha mencionado en una publicación o comentario'; click = n.post_id ? `openComments(${Number(n.post_id)})` : click; }
+  else if (n.type === 'repost') { action = 'ha republicado tu publicación'; click = n.post_id ? `openComments(${Number(n.post_id)})` : click; }
   return `<button class="notification ${n.read_at ? '' : 'unread'}" onclick="${click}">${avatar(n,'small')}<span><b>${escapeHtml(n.name || n.username || 'Alguien')}</b> ${action}${n.type === 'comment' && n.text ? `<em>“${escapeHtml(n.text).slice(0,100)}”</em>` : ''}<small>${timeAgo(n.created_at)}</small></span></button>`;
 }
 
@@ -535,7 +601,7 @@ async function loadRightbar() {
     const suggestions = people.slice(0, 4);
     box.innerHTML = `<div class="card side-card"><div class="side-title">Tu perfil</div><button class="profile-summary" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me)}<span><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></span></button><div class="mini-stats"><span><b>${state.me.posts_count || 0}</b>posts</span><span><b>${state.me.followers_count || 0}</b>seguidores</span><span><b>${state.me.following_count || 0}</b>siguiendo</span></div></div>
       <div class="card side-card"><div class="side-title">Personas que descubrir</div>${suggestions.length ? suggestions.map(u => `<div class="side-user"><button onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small></span></button><button class="text-btn" onclick="toggleFollow(${u.id})">${u.following ? 'Siguiendo' : 'Seguir'}</button></div>`).join('') : '<p class="muted">La comunidad acaba de empezar.</p>'}</div>
-      <div class="card side-card"><div class="side-title">Tendencias</div>${tags.length ? tags.map(t => `<button class="trend" onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} publicaciones</small></button>`).join('') : '<p class="muted">Los hashtags aparecerán aquí cuando se usen.</p>'}</div>
+      <div class="card side-card"><div class="side-title">Tendencias · 7 días</div>${tags.length ? tags.map(t => `<button class="trend" onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} posts · ${t.authors || 1} personas · ${t.engagement || 0} interacciones</small></button>`).join('') : '<p class="muted">Los hashtags aparecerán aquí cuando se usen.</p>'}</div>
       <button class="logout-link" onclick="logout()">Cerrar sesión</button>`;
   } catch {
     box.innerHTML = '';
@@ -674,8 +740,33 @@ function setupReels() {
 
 window.toggleReelSound = (video) => { video.muted = !video.muted; if (video.paused) video.play().catch(()=>{}); };
 
-// --- V0.6: Mensajes, respuestas y compartir ------------------------------
-window.sharePost = async (postId) => {
+// --- V0.7: Compartir, republicar y mensajería ------------------------------
+window.sharePost = (postId) => {
+  modal(`<div class="modal-head"><h3>Compartir</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <div class="share-options">
+      <button onclick="repostPost(${postId})"><span>↻</span><div><b>Republicar en OmniSocial</b><small>Añádelo a tu perfil y al feed de tus seguidores</small></div></button>
+      <button onclick="sharePostPrivate(${postId})"><span>✉</span><div><b>Enviar por mensaje</b><small>Compártelo en una conversación privada</small></div></button>
+    </div>`);
+};
+
+window.repostPost = (postId) => {
+  modal(`<div class="modal-head"><h3>Republicar</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <div class="repost-compose">
+      <textarea id="repostText" maxlength="1500" rows="5" placeholder="Añade un comentario opcional…"></textarea>
+      <div class="edit-post-tools"><span>Quién puede verlo</span><select id="repostVisibility"><option value="public">🌍 Público</option><option value="followers">👥 Seguidores</option></select></div>
+      <button class="btn primary" onclick="confirmRepost(${postId})">Republicar</button>
+    </div>`);
+  setTimeout(()=>$('#repostText')?.focus(),50);
+};
+
+window.confirmRepost = async (postId) => {
+  try {
+    await api(`/api/posts/${postId}/repost`, { method:'POST', body:JSON.stringify({ text:$('#repostText').value, visibility:$('#repostVisibility').value }) });
+    closeModal(); toast('Republicado en OmniSocial'); await refreshMe(false); await renderView();
+  } catch(e) { toast(e.message,'error'); }
+};
+
+window.sharePostPrivate = async (postId) => {
   try {
     const users = await api('/api/users');
     const ordered = [...users].sort((a,b) => (a.friendship_status === 'friends' ? -1 : 0) - (b.friendship_status === 'friends' ? -1 : 0));
@@ -742,8 +833,8 @@ function messageHtml(m) {
     const smedia=sp.media_url ? (sp.media_type==='video'?`<video src="${escapeAttr(sp.media_url)}" controls preload="metadata"></video>`:`<img src="${escapeAttr(sp.media_url)}" loading="lazy" alt="">`) : '';
     shared = `<div class="shared-post"><div class="shared-author">${avatar(sp,'small')}<span><b>${escapeHtml(sp.name || sp.username)}</b><small>@${escapeHtml(sp.username || '')}</small></span></div>${sp.text?`<p>${formatText(sp.text)}</p>`:''}${smedia}</div>`;
   }
-  const excerpt = encodeURIComponent((m.text || (m.media_type==='image'?'Foto':m.media_type==='video'?'Vídeo':m.shared_post?'Publicación':'Mensaje')).slice(0,100));
-  const sender = encodeURIComponent(m.name || m.username || 'Mensaje');
+  const excerpt = safeEncode((m.text || (m.media_type==='image'?'Foto':m.media_type==='video'?'Vídeo':m.shared_post?'Publicación':'Mensaje')).slice(0,100));
+  const sender = safeEncode(m.name || m.username || 'Mensaje');
   return `<div class="message ${m.own?'mine':'theirs'}"><button class="message-reply-btn" onclick="replyToMessage(${m.id},'${sender}','${excerpt}')" title="Responder">↩</button><div class="message-bubble">${reply}${m.text?`<p>${formatText(m.text)}</p>`:''}${media}${shared}<small>${timeAgo(m.created_at)}</small></div></div>`;
 }
 
@@ -862,7 +953,7 @@ function connectRealtime() {
   });
   state.socket.on('notification:new', (event) => {
     state.me.unread_notifications=Number(state.me.unread_notifications||0)+1; updateNavBadges();
-    const labels={follow:'Nuevo seguidor',like:'Nuevo me gusta',comment:'Nuevo comentario',friend_request:'Nueva solicitud de amistad',friend_accept:'Solicitud aceptada'};
+    const labels={follow:'Nuevo seguidor',like:'Nuevo me gusta',comment:'Nuevo comentario',friend_request:'Nueva solicitud de amistad',friend_accept:'Solicitud aceptada',mention:'Te han mencionado',repost:'Han republicado tu post'};
     browserNotice('OmniSocial', labels[event.type] || 'Tienes nueva actividad');
   });
 }

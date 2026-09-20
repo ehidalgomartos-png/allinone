@@ -1,15 +1,24 @@
-# Render — OmniSocial V0.6
+# Render — OmniSocial V0.7
 
-La configuración de Render es la misma que ya utilizabas.
+La V0.7 usa el mismo Web Service y la misma PostgreSQL de las versiones anteriores.
 
-- Runtime: Node
-- Build command: `npm install`
-- Start command: `npm start`
-- Base de datos: PostgreSQL existente `omnisocial-db`
-- Variables: `DATABASE_URL`, `JWT_SECRET`, `NODE_ENV`
+No requiere variables de entorno nuevas.
 
-V0.6 añade Socket.IO. No necesita variables de entorno nuevas.
+Configuración esperada:
 
-Render admite la conexión HTTP/WebSocket desde el mismo Web Service, por lo que no hay que crear otro servicio.
+```text
+Runtime: Node
+Build Command: npm install
+Start Command: npm start
+Health Check: /api/health
+```
 
-Tras desplegar, prueba `/api/health` y después dos sesiones simultáneas para comprobar mensajería y presencia.
+Variables necesarias existentes:
+
+```text
+NODE_ENV=production
+DATABASE_URL=<Render PostgreSQL>
+JWT_SECRET=<valor secreto>
+```
+
+Después del deploy, `/api/health` debe indicar `0.7.0`.

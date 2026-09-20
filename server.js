@@ -65,6 +65,9 @@ function safeUser(row) {
     avatar: row.avatar || '',
     website: row.website || '',
     location: row.location || '',
+    headline: row.headline || '',
+    interests: row.interests || '',
+    cover: row.cover || '',
     created_at: row.created_at
   };
 }
@@ -142,8 +145,56 @@ function normalizePost(row) {
     comments_count: Number(row.comments_count || 0),
     saved: Boolean(row.saved),
     liked: Boolean(row.liked),
-    own: Boolean(row.own)
+    own: Boolean(row.own),
+    repost_of_id: row.repost_of_id ? Number(row.repost_of_id) : null
   };
+}
+
+async function enrichReposts(userId, posts = []) {
+  const ids = [...new Set(posts.map(p => Number(p.repost_of_id)).filter(Boolean))];
+  if (!ids.length) return posts;
+  const { rows } = await pool.query(`
+    SELECT p.id,p.user_id,p.text,p.media_id,p.media_type,p.visibility,p.created_at,p.edited_at,
+           u.username,u.name,u.avatar,
+           (p.visibility='public' OR p.user_id=$1 OR
+             (p.visibility='followers' AND EXISTS(
+               SELECT 1 FROM follows f WHERE f.follower_id=$1 AND f.followed_id=p.user_id
+             ))) AS can_view
+      FROM posts p
+      JOIN users u ON u.id=p.user_id
+     WHERE p.id = ANY($2::bigint[])
+  `,[userId,ids]);
+  const map = new Map(rows.map(r => [Number(r.id), r]));
+  return posts.map(post => {
+    const original = map.get(Number(post.repost_of_id));
+    if (!post.repost_of_id) return post;
+    if (!original || !original.can_view) return { ...post, repost: { unavailable:true } };
+    return { ...post, repost: {
+      id:Number(original.id), user_id:Number(original.user_id), text:original.text || '',
+      media_type:original.media_type || 'none',
+      media_url:original.media_id ? `/media/${original.media_id}` : '',
+      visibility:original.visibility, created_at:original.created_at, edited_at:original.edited_at,
+      username:original.username, name:original.name, avatar:original.avatar || ''
+    }};
+  });
+}
+
+function extractMentions(text = '') {
+  const matches = String(text).match(/(^|\s)@([a-zA-Z0-9_.]{3,30})/g) || [];
+  return [...new Set(matches.map(x => x.trim().slice(1).toLowerCase()))].slice(0, 20);
+}
+
+async function notifyMentions(client, { text, actorId, postId = null }) {
+  const usernames = extractMentions(text);
+  if (!usernames.length) return;
+  const { rows } = await client.query(
+    'SELECT id,username FROM users WHERE LOWER(username) = ANY($1::text[])',
+    [usernames]
+  );
+  for (const user of rows) {
+    if (Number(user.id) === Number(actorId)) continue;
+    await addNotification(client, { userId:user.id, actorId, type:'mention', postId, text:String(text || '').slice(0,220) });
+  }
 }
 
 async function postQuery(userId, { mode = 'following', profileId = null, search = '', limit = 60 } = {}) {
@@ -170,7 +221,7 @@ async function postQuery(userId, { mode = 'following', profileId = null, search 
 
   const { rows } = await pool.query(`
     SELECT
-      p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at,
+      p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
       u.username, u.name, u.avatar,
       COUNT(DISTINCT l.user_id)::int AS likes_count,
       COUNT(DISTINCT c.id)::int AS comments_count,
@@ -186,7 +237,7 @@ async function postQuery(userId, { mode = 'following', profileId = null, search 
     ORDER BY p.created_at DESC, p.id DESC
     LIMIT $${params.length}
   `, params);
-  return rows.map(normalizePost);
+  return enrichReposts(userId, rows.map(normalizePost));
 }
 
 async function addNotification(client, { userId, actorId, type, postId = null, text = '' }) {
@@ -202,7 +253,7 @@ async function addNotification(client, { userId, actorId, type, postId = null, t
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '0.6.0', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing'] });
+  res.json({ ok: true, version: '0.7.0', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles'] });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
@@ -270,12 +321,16 @@ app.patch('/api/me', auth, asyncRoute(async (req, res) => {
   const avatar = req.body.avatar !== undefined ? String(req.body.avatar).trim().slice(0, 2000) : null;
   const website = req.body.website !== undefined ? String(req.body.website).trim().slice(0, 500) : null;
   const location = req.body.location !== undefined ? String(req.body.location).trim().slice(0, 120) : null;
+  const headline = req.body.headline !== undefined ? String(req.body.headline).trim().slice(0, 140) : null;
+  const interests = req.body.interests !== undefined ? String(req.body.interests).trim().slice(0, 500) : null;
+  const cover = req.body.cover !== undefined ? String(req.body.cover).trim().slice(0, 2000) : null;
   const { rows } = await pool.query(`
     UPDATE users SET
       name = COALESCE($2, name), bio = COALESCE($3, bio), avatar = COALESCE($4, avatar),
-      website = COALESCE($5, website), location = COALESCE($6, location)
+      website = COALESCE($5, website), location = COALESCE($6, location),
+      headline = COALESCE($7, headline), interests = COALESCE($8, interests), cover = COALESCE($9, cover)
     WHERE id = $1 RETURNING *
-  `, [req.user.id, name, bio, avatar, website, location]);
+  `, [req.user.id, name, bio, avatar, website, location, headline, interests, cover]);
   res.json(safeUser(rows[0]));
 }));
 
@@ -308,17 +363,54 @@ app.post('/api/posts', auth, asyncRoute(async (req, res) => {
     const media = await pool.query('SELECT id FROM media WHERE id = $1 AND user_id = $2', [mediaId, req.user.id]);
     if (!media.rowCount) return res.status(400).json({ error: 'Archivo multimedia inválido' });
   }
-  const { rows } = await pool.query(`
-    INSERT INTO posts (user_id, text, media_id, media_type, source, visibility)
-    VALUES ($1, $2, $3, $4, 'native', $5) RETURNING id
-  `, [req.user.id, text, mediaId, mediaId ? mediaType : 'none', visibility]);
-  res.json({ id: rows[0].id });
+  const result = await withTransaction(async client => {
+    const { rows } = await client.query(`
+      INSERT INTO posts (user_id, text, media_id, media_type, source, visibility)
+      VALUES ($1, $2, $3, $4, 'native', $5) RETURNING id
+    `, [req.user.id, text, mediaId, mediaId ? mediaType : 'none', visibility]);
+    await notifyMentions(client, { text, actorId:req.user.id, postId:rows[0].id });
+    return rows[0];
+  });
+  res.json({ id: result.id });
 }));
 
 app.delete('/api/posts/:id', auth, asyncRoute(async (req, res) => {
   const { rows } = await pool.query('DELETE FROM posts WHERE id = $1 AND user_id = $2 RETURNING id', [req.params.id, req.user.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Publicación no encontrada' });
   res.json({ ok: true });
+}));
+
+
+app.patch('/api/posts/:id', auth, asyncRoute(async (req, res) => {
+  const text = String(req.body.text || '').trim().slice(0, 5000);
+  const visibility = ['public','followers'].includes(req.body.visibility) ? req.body.visibility : 'public';
+  const current = await pool.query('SELECT id,media_id,repost_of_id FROM posts WHERE id=$1 AND user_id=$2',[req.params.id,req.user.id]);
+  if (!current.rowCount) return res.status(404).json({ error:'Publicación no encontrada' });
+  if (!text && !current.rows[0].media_id && !current.rows[0].repost_of_id) return res.status(400).json({ error:'La publicación está vacía' });
+  await pool.query('UPDATE posts SET text=$3, visibility=$4, edited_at=NOW() WHERE id=$1 AND user_id=$2',[req.params.id,req.user.id,text,visibility]);
+  res.json({ ok:true });
+}));
+
+app.post('/api/posts/:id/repost', auth, asyncRoute(async (req, res) => {
+  const postId = Number(req.params.id);
+  const text = String(req.body.text || '').trim().slice(0, 1500);
+  const visibility = ['public','followers'].includes(req.body.visibility) ? req.body.visibility : 'public';
+  const result = await withTransaction(async client => {
+    const original = await client.query('SELECT id,user_id,visibility,repost_of_id FROM posts WHERE id=$1',[postId]);
+    if (!original.rowCount) { const err=new Error('Publicación no encontrada'); err.status=404; throw err; }
+    if (original.rows[0].visibility !== 'public') { const err=new Error('Solo se pueden republicar publicaciones públicas'); err.status=400; throw err; }
+    const rootId = original.rows[0].repost_of_id || original.rows[0].id;
+    const root = await client.query('SELECT id,user_id,visibility FROM posts WHERE id=$1',[rootId]);
+    if (!root.rowCount || root.rows[0].visibility !== 'public') { const err=new Error('La publicación original ya no es pública'); err.status=400; throw err; }
+    const { rows } = await client.query(`
+      INSERT INTO posts (user_id,text,media_type,source,visibility,repost_of_id)
+      VALUES ($1,$2,'none','repost',$3,$4) RETURNING id
+    `,[req.user.id,text,visibility,rootId]);
+    await addNotification(client,{userId:root.rows[0].user_id,actorId:req.user.id,type:'repost',postId:rootId,text});
+    await notifyMentions(client,{text,actorId:req.user.id,postId:rows[0].id});
+    return rows[0];
+  });
+  res.json({ id:result.id });
 }));
 
 app.get('/api/feed', auth, asyncRoute(async (req, res) => {
@@ -329,7 +421,7 @@ app.get('/api/discover', auth, asyncRoute(async (req, res) => {
   // Para ti: publicaciones públicas, con una pequeña priorización por interacción reciente.
   const { rows } = await pool.query(`
     SELECT
-      p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at,
+      p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
       u.username, u.name, u.avatar,
       COUNT(DISTINCT l.user_id)::int AS likes_count,
       COUNT(DISTINCT c.id)::int AS comments_count,
@@ -345,13 +437,13 @@ app.get('/api/discover', auth, asyncRoute(async (req, res) => {
     ORDER BY ((COUNT(DISTINCT l.user_id) * 2) + COUNT(DISTINCT c.id)) DESC, p.created_at DESC
     LIMIT 80
   `, [req.user.id]);
-  res.json(rows.map(normalizePost));
+  res.json(await enrichReposts(req.user.id, rows.map(normalizePost)));
 }));
 
 app.get('/api/bookmarks', auth, asyncRoute(async (req, res) => {
   const { rows } = await pool.query(`
     SELECT
-      p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at,
+      p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
       u.username, u.name, u.avatar,
       COUNT(DISTINCT l.user_id)::int AS likes_count,
       COUNT(DISTINCT c.id)::int AS comments_count,
@@ -367,7 +459,7 @@ app.get('/api/bookmarks', auth, asyncRoute(async (req, res) => {
     GROUP BY p.id, u.id, bk.created_at
     ORDER BY bk.created_at DESC
   `, [req.user.id]);
-  res.json(rows.map(normalizePost));
+  res.json(await enrichReposts(req.user.id, rows.map(normalizePost)));
 }));
 
 app.post('/api/posts/:id/like', auth, asyncRoute(async (req, res) => {
@@ -408,6 +500,7 @@ app.post('/api/posts/:id/comments', auth, asyncRoute(async (req, res) => {
     if (!post.rowCount) { const err = new Error('Publicación no encontrada'); err.status = 404; throw err; }
     const { rows } = await client.query('INSERT INTO comments (post_id, user_id, text) VALUES ($1, $2, $3) RETURNING id', [req.params.id, req.user.id, text]);
     await addNotification(client, { userId: post.rows[0].user_id, actorId: req.user.id, type: 'comment', postId: req.params.id, text });
+    await notifyMentions(client, { text, actorId:req.user.id, postId:req.params.id });
     return rows[0];
   });
   res.json({ ok: true, id: result.id });
@@ -433,7 +526,7 @@ app.get('/api/users', auth, asyncRoute(async (req, res) => {
   const q = String(req.query.q || '').trim().slice(0, 100);
   const pattern = `%${q}%`;
   const { rows } = await pool.query(`
-    SELECT u.id, u.username, u.name, u.bio, u.avatar, u.location, u.created_at, u.last_seen_at,
+    SELECT u.id, u.username, u.name, u.bio, u.avatar, u.location, u.headline, u.interests, u.created_at, u.last_seen_at,
       EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followed_id = u.id) AS following,
       (SELECT COUNT(*)::int FROM follows WHERE followed_id = u.id) AS followers_count,
       CASE
@@ -582,9 +675,10 @@ app.delete('/api/friends/:userId', auth, asyncRoute(async (req,res)=>{
 app.get('/api/search', auth, asyncRoute(async (req, res) => {
   const q = String(req.query.q || '').trim().slice(0, 100);
   if (!q) return res.json({ users: [], posts: [] });
-  const pattern = `%${q}%`;
+  const personTerm = q.startsWith('@') ? q.slice(1) : q;
+  const pattern = `%${personTerm}%`;
   const users = await pool.query(`
-    SELECT u.id, u.username, u.name, u.bio, u.avatar, u.last_seen_at,
+    SELECT u.id, u.username, u.name, u.bio, u.avatar, u.headline, u.interests, u.last_seen_at,
       EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followed_id = u.id) AS following,
       CASE
         WHEN EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user1_id=$1 AND fr.user2_id=u.id) OR (fr.user1_id=u.id AND fr.user2_id=$1)) THEN 'friends'
@@ -592,21 +686,40 @@ app.get('/api/search', auth, asyncRoute(async (req, res) => {
         WHEN EXISTS(SELECT 1 FROM friend_requests fq WHERE fq.from_user_id=u.id AND fq.to_user_id=$1 AND fq.status='pending') THEN 'received'
         ELSE 'none'
       END AS friendship_status
-    FROM users u WHERE u.id <> $1 AND (u.username ILIKE $2 OR u.name ILIKE $2 OR u.bio ILIKE $2)
+    FROM users u WHERE u.id <> $1 AND (u.username ILIKE $2 OR u.name ILIKE $2 OR u.bio ILIKE $2 OR u.headline ILIKE $2 OR u.interests ILIKE $2)
     ORDER BY u.name LIMIT 20
   `, [req.user.id, pattern]);
-  const posts = await postQuery(req.user.id, { mode: 'all', search: q, limit: 30 });
+  const posts = await postQuery(req.user.id, { mode: 'all', search: q.startsWith('@') ? personTerm : q, limit: 30 });
   res.json({ users: users.rows.map(r => ({ ...r, online: isOnline(r.id) })), posts });
 }));
 
 app.get('/api/trending', auth, asyncRoute(async (_req, res) => {
   const { rows } = await pool.query(`
-    WITH words AS (
-      SELECT regexp_matches(LOWER(text), '#[[:alnum:]_áéíóúñü]+', 'g') AS m
-      FROM posts WHERE created_at > NOW() - INTERVAL '30 days' AND visibility = 'public'
+    WITH tagged AS (
+      SELECT p.id AS post_id, p.user_id, LOWER(rx.tag_match[1]) AS tag
+      FROM posts p
+      CROSS JOIN LATERAL regexp_matches(p.text, '#[[:alnum:]_áéíóúñü]+', 'g') AS rx(tag_match)
+      WHERE p.created_at > NOW() - INTERVAL '7 days' AND p.visibility = 'public'
+    ),
+    engagement AS (
+      SELECT p.id AS post_id,
+             COUNT(DISTINCT l.user_id)::int AS likes,
+             COUNT(DISTINCT c.id)::int AS comments
+      FROM posts p
+      LEFT JOIN likes l ON l.post_id=p.id
+      LEFT JOIN comments c ON c.post_id=p.id
+      GROUP BY p.id
     )
-    SELECT m[1] AS tag, COUNT(*)::int AS count
-    FROM words GROUP BY m[1] ORDER BY count DESC, tag ASC LIMIT 10
+    SELECT t.tag,
+           COUNT(DISTINCT t.post_id)::int AS count,
+           COUNT(DISTINCT t.user_id)::int AS authors,
+           COALESCE(SUM(e.likes + (e.comments * 2)),0)::int AS engagement,
+           (COUNT(DISTINCT t.post_id) * 4 + COUNT(DISTINCT t.user_id) * 2 + COALESCE(SUM(e.likes + (e.comments * 2)),0))::int AS score
+      FROM tagged t
+      LEFT JOIN engagement e ON e.post_id=t.post_id
+     GROUP BY t.tag
+     ORDER BY score DESC, count DESC, t.tag ASC
+     LIMIT 12
   `);
   res.json(rows);
 }));
@@ -702,7 +815,7 @@ app.delete('/api/stories/:id', auth, asyncRoute(async (req, res) => {
 // --- V0.5: Reels -----------------------------------------------------------
 app.get('/api/reels', auth, asyncRoute(async (req, res) => {
   const { rows } = await pool.query(`
-    SELECT p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at,
+    SELECT p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
            u.username, u.name, u.avatar,
            COUNT(DISTINCT l.user_id)::int AS likes_count,
            COUNT(DISTINCT c.id)::int AS comments_count,
@@ -720,7 +833,7 @@ app.get('/api/reels', auth, asyncRoute(async (req, res) => {
      ORDER BY ((COUNT(DISTINCT l.user_id) * 2) + COUNT(DISTINCT c.id)) DESC, p.created_at DESC
      LIMIT 80
   `, [req.user.id]);
-  res.json(rows.map(normalizePost));
+  res.json(await enrichReposts(req.user.id, rows.map(normalizePost)));
 }));
 
 // --- V0.6: Mensajes privados en tiempo real -------------------------------
@@ -876,7 +989,7 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   await initDb();
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`OmniSocial V0.6 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`OmniSocial V0.7 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {
