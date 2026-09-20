@@ -48,7 +48,7 @@ Cuando el DNS haya propagado, Render emitirá automáticamente el certificado TL
 - `https://www.instantadmirers.com`
 - `https://instantadmirers.com/api/health`
 
-La respuesta de health debe mostrar `"version":"1.1.1"`.
+La respuesta de health debe mostrar `"version":"1.1.2"`.
 
 ## 5. Después de verificar
 

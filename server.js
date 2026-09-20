@@ -16,6 +16,7 @@ const io = new Server(httpServer, { cors: { origin: true, credentials: true } })
 const onlineUsers = new Map();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
+const CURRENT_TERMS_VERSION = '2026-09-20';
 const publicDir = path.join(__dirname, 'public');
 
 if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'dev-secret-change-me') {
@@ -107,6 +108,9 @@ function safeUser(row, includePrivate = false) {
     user.onboarding_completed = row.onboarding_completed !== false;
     user.is_admin = isAdminRecord(row);
     user.account_status = row.account_status || 'active';
+    user.terms_version = row.terms_version || '';
+    user.terms_accepted_at = row.terms_accepted_at || null;
+    user.age_confirmed_at = row.age_confirmed_at || null;
   }
   return user;
 }
@@ -396,12 +400,14 @@ function peopleRecommendationReason(row = {}) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.1.1', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata'] });
+  res.json({ ok: true, version: '1.1.2', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance'] });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
-  const { username, name, email, password } = req.body;
+  const { username, name, email, password, age_confirmed, terms_accepted, terms_version } = req.body;
   if (!username || !name || !email || !password) return res.status(400).json({ error: 'Faltan datos' });
+  if (age_confirmed !== true) return res.status(400).json({ error: 'Debes confirmar que tienes 18 años o más' });
+  if (terms_accepted !== true) return res.status(400).json({ error: 'Debes aceptar los Términos de Uso' });
 
   const normalizedUsername = String(username).trim().toLowerCase();
   const normalizedEmail = String(email).trim().toLowerCase();
@@ -415,10 +421,10 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
   const passwordHash = await bcrypt.hash(plainPassword, 10);
   try {
     const { rows } = await pool.query(`
-      INSERT INTO users (username, name, email, password_hash, onboarding_completed)
-      VALUES ($1, $2, $3, $4, FALSE)
+      INSERT INTO users (username, name, email, password_hash, onboarding_completed, age_confirmed_at, terms_accepted_at, terms_version)
+      VALUES ($1, $2, $3, $4, FALSE, NOW(), NOW(), $5)
       RETURNING *
-    `, [normalizedUsername, normalizedName, normalizedEmail, passwordHash]);
+    `, [normalizedUsername, normalizedName, normalizedEmail, passwordHash, CURRENT_TERMS_VERSION]);
     const user = rows[0];
     res.json({ token: tokenFor(user), user: safeUser(user, true) });
   } catch (err) {
@@ -1463,6 +1469,20 @@ app.post('/api/onboarding', auth, asyncRoute(async (req, res) => {
   res.json(safeUser(rows[0], true));
 }));
 
+app.post('/api/account/accept-terms', auth, asyncRoute(async (req, res) => {
+  if (req.body.age_confirmed !== true || req.body.terms_accepted !== true) {
+    return res.status(400).json({ error: 'Debes confirmar que tienes 18 años y aceptar los Términos de Uso' });
+  }
+  await pool.query(`
+    UPDATE users
+       SET age_confirmed_at = COALESCE(age_confirmed_at, NOW()),
+           terms_accepted_at = NOW(),
+           terms_version = $2
+     WHERE id = $1
+  `, [req.user.id, CURRENT_TERMS_VERSION]);
+  res.json({ ok:true, terms_version:CURRENT_TERMS_VERSION });
+}));
+
 app.post('/api/account/password', auth, asyncRoute(async (req, res) => {
   const currentPassword = String(req.body.current_password || '');
   const newPassword = String(req.body.new_password || '');
@@ -1586,7 +1606,7 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   await initDb();
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.1.1 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.1.2 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {

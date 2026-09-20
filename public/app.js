@@ -156,6 +156,16 @@ function brandLockup(size = '') {
   return `<span class="brand-lockup ${size}"><img src="/assets/brand/instant-admirers-mark.svg" alt="" aria-hidden="true"><span>Instant <b>Admirers</b></span></span>`;
 }
 
+function legalLinks() {
+  return `<div class="legal-mini">
+    <a href="/legal/" target="_blank" rel="noopener">Aviso legal</a>
+    <a href="/privacy/" target="_blank" rel="noopener">Privacidad</a>
+    <a href="/cookies/" target="_blank" rel="noopener">Cookies</a>
+    <a href="/terms/" target="_blank" rel="noopener">Términos</a>
+    <a href="/community-guidelines/" target="_blank" rel="noopener">Normas</a>
+  </div>`;
+}
+
 function authScreen() {
   $('#app').innerHTML = `
     <div class="auth-page">
@@ -165,13 +175,16 @@ function authScreen() {
         <p>Conecta con personas, comparte fotos y vídeos, descubre nuevas historias y crea una comunidad a tu manera.</p>
         <div class="hero-pills"><span>📸 Fotos</span><span>🎬 Vídeos</span><span>💬 Conversaciones</span><span>✨ Comunidad</span></div>
       </section>
-      <section class="auth-card card">
-        <div class="brand-logo-wrap mobile-brand">${brandLockup('card')}</div>
-        <div class="tabs">
-          <button id="loginTab" class="tab active" onclick="showAuth('login')">Entrar</button>
-          <button id="registerTab" class="tab" onclick="showAuth('register')">Crear cuenta</button>
-        </div>
-        <div id="authbox"></div>
+      <section class="auth-card-wrap">
+        <section class="auth-card card">
+          <div class="brand-logo-wrap mobile-brand">${brandLockup('card')}</div>
+          <div class="tabs">
+            <button id="loginTab" class="tab active" onclick="showAuth('login')">Entrar</button>
+            <button id="registerTab" class="tab" onclick="showAuth('register')">Crear cuenta</button>
+          </div>
+          <div id="authbox"></div>
+        </section>
+        ${legalLinks()}
       </section>
     </div>`;
   showAuth('login');
@@ -191,6 +204,7 @@ window.showAuth = (mode) => {
       <label>Usuario</label><input id="reguser" autocomplete="username" placeholder="tuusuario">
       <label>Email</label><input id="regemail" type="email" autocomplete="email" placeholder="tu@email.com">
       <label>Contraseña</label><input id="regpass" type="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres" onkeydown="if(event.key==='Enter')register()">
+      <label class="legal-check"><input id="reglegal" type="checkbox"><span>Confirmo que tengo <b>18 años o más</b> y acepto los <a href="/terms/" target="_blank" rel="noopener">Términos de Uso</a> y las <a href="/community-guidelines/" target="_blank" rel="noopener">Normas de la Comunidad</a>. He leído la <a href="/privacy/" target="_blank" rel="noopener">Política de Privacidad</a>.</span></label>
       <button id="registerSubmit" class="btn primary large" onclick="register()">Crear mi cuenta</button>
     </div>`;
 };
@@ -209,9 +223,10 @@ window.login = async () => {
 window.register = async () => {
   const btn = $('#registerSubmit');
   if (btn?.disabled) return;
+  if (!$('#reglegal')?.checked) return toast('Debes confirmar que tienes 18 años y aceptar los Términos de Uso','error');
   try {
     if (btn) { btn.disabled = true; btn.textContent = 'Creando cuenta…'; }
-    const d = await api('/api/auth/register', { method:'POST', body: JSON.stringify({ name: $('#regname').value, username: $('#reguser').value, email: $('#regemail').value, password: $('#regpass').value }) });
+    const d = await api('/api/auth/register', { method:'POST', body: JSON.stringify({ name: $('#regname').value, username: $('#reguser').value, email: $('#regemail').value, password: $('#regpass').value, age_confirmed:true, terms_accepted:true, terms_version:'2026-09-20' }) });
     state.token = d.token; localStorage.setItem('token', d.token); await init();
   } catch (e) { toast(e.message, 'error'); }
   finally { if (btn?.isConnected) { btn.disabled = false; btn.textContent = 'Crear mi cuenta'; } }
@@ -253,6 +268,7 @@ function layout() {
           </nav>
           <button class="btn primary compose-side" onclick="focusComposer()">Publicar</button>
           <button class="account-mini" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me, 'small')}<span><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></span></button>
+          ${legalLinks()}
         </div>
       </aside>
       <main id="main" class="main-col"></main>
@@ -1302,6 +1318,29 @@ window.skipOnboarding = async () => {
   } catch(e) { closeModal(); }
 };
 
+window.openLegalAcceptance = () => {
+  modal(`<div class="modal-head"><h3>Actualización legal</h3></div>
+    <div class="legal-acceptance">
+      <div class="legal-acceptance-icon">18+</div>
+      <h2>Antes de continuar</h2>
+      <p>Instant Admirers es una comunidad exclusivamente para mayores de 18 años. Para seguir usando tu cuenta debes confirmar tu edad y aceptar los Términos de Uso vigentes.</p>
+      <label class="legal-check"><input id="existingLegalCheck" type="checkbox"><span>Confirmo que tengo <b>18 años o más</b> y acepto los <a href="/terms/" target="_blank" rel="noopener">Términos de Uso</a> y las <a href="/community-guidelines/" target="_blank" rel="noopener">Normas de la Comunidad</a>. He leído la <a href="/privacy/" target="_blank" rel="noopener">Política de Privacidad</a>.</span></label>
+      <div class="legal-acceptance-actions"><button class="btn ghost" onclick="logout()">Salir</button><button id="acceptLegalBtn" class="btn primary" onclick="acceptCurrentLegal()">Aceptar y continuar</button></div>
+    </div>`);
+};
+
+window.acceptCurrentLegal = async () => {
+  if (!$('#existingLegalCheck')?.checked) return toast('Confirma la edad y aceptación para continuar','error');
+  const btn=$('#acceptLegalBtn'); if(btn?.disabled)return;
+  try{
+    if(btn){btn.disabled=true;btn.textContent='Guardando…';}
+    await api('/api/account/accept-terms',{method:'POST',body:JSON.stringify({age_confirmed:true,terms_accepted:true})});
+    closeModal();
+    await refreshMe(false);
+    if (state.me && state.me.onboarding_completed === false) setTimeout(openOnboarding, 100);
+  }catch(e){toast(e.message,'error');if(btn){btn.disabled=false;btn.textContent='Aceptar y continuar';}}
+};
+
 window.openAccountSettings = () => {
   modal(`<div class="modal-head"><h3>Ajustes de cuenta</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
     <div class="account-settings">
@@ -1314,6 +1353,10 @@ window.openAccountSettings = () => {
         <button class="btn ghost compact" onclick="closeModal();openPrivacySettings()">Abrir privacidad</button>
       </section>
       ${state.me?.is_admin ? `<section class="settings-block"><div><b>Administración</b><small>Revisa denuncias y actividad de moderación.</small></div><button class="btn ghost compact" onclick="closeModal();go('admin')">Abrir panel</button></section>` : ''}
+      <section class="settings-block">
+        <div><b>Legal y privacidad</b><small>Aviso legal, privacidad, cookies, términos y normas de la comunidad.</small></div>
+        <a class="btn ghost compact legal-settings-link" href="/legal/" target="_blank" rel="noopener">Ver documentos</a>
+      </section>
       <section class="settings-block danger-settings">
         <div><b>Eliminar cuenta</b><small>Esta acción elimina tu perfil y tus datos asociados de Instant Admirers.</small></div>
         <button class="btn danger compact" onclick="openDeleteAccount()">Eliminar cuenta</button>
@@ -1441,7 +1484,11 @@ async function init() {
     connectRealtime();
     layout();
     await renderView();
-    if (state.me && state.me.onboarding_completed === false) setTimeout(openOnboarding, 150);
+    if (!state.me?.terms_accepted_at || state.me?.terms_version !== '2026-09-20' || !state.me?.age_confirmed_at) {
+      setTimeout(openLegalAcceptance, 120);
+    } else if (state.me && state.me.onboarding_completed === false) {
+      setTimeout(openOnboarding, 150);
+    }
   } catch {
     logout();
   }

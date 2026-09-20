@@ -339,3 +339,9 @@ CREATE INDEX IF NOT EXISTS idx_users_status ON users(account_status, created_at 
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 CREATE INDEX IF NOT EXISTS idx_reports_review ON reports(status, reviewed_at, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_moderation_actions_created ON moderation_actions(created_at DESC);
+
+
+-- V1.1.2: registro 18+ y constancia de aceptación de términos.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS age_confirmed_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_version VARCHAR(40) NOT NULL DEFAULT '';

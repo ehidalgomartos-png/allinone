@@ -1,34 +1,41 @@
-# Instant Admirers V1.1.1 — Rebranding
+# Instant Admirers V1.1.2 — Legal + 18+
 
-Esta versión parte de OmniSocial V1.1 y cambia la identidad pública del proyecto a **Instant Admirers** sin tocar usuarios, publicaciones ni la base PostgreSQL.
+Actualización sobre V1.1.1 que cierra la primera capa legal visible de `instantadmirers.com` sin cambiar la arquitectura de Render/PostgreSQL.
 
-## Incluye
+## Identidad legal configurada
 
-- Marca **Instant Admirers**.
-- Tagline: **Conecta. Comparte. Descubre.**
-- Logo horizontal + isotipo.
-- Favicon `.ico`.
-- Apple Touch Icon.
-- Iconos 192/512 para PWA.
-- `manifest.webmanifest`.
-- Metadatos SEO y Open Graph.
-- Imagen social 1200×630.
-- `robots.txt` y `sitemap.xml`.
-- Guía para conectar `instantadmirers.com` con Render + DonDominio.
-- Borradores legales separados y no publicados hasta completar los datos del titular.
+- Titular: Hidalgo Entertaiment
+- CIF: B45656595
+- Domicilio: Calle Ancha, 6, Sevilla, España
+- Email: vrmatch.es@gmail.com
+- Edad mínima: 18 años
 
-## Importante
+## Páginas públicas
 
-No renombres el Web Service ni la base de datos en Render. Pueden seguir llamándose internamente `omnisocial` y `omnisocial-db`. Así evitamos crear recursos nuevos o romper conexiones existentes.
+- `https://instantadmirers.com/legal/`
+- `https://instantadmirers.com/privacy/`
+- `https://instantadmirers.com/cookies/`
+- `https://instantadmirers.com/terms/`
+- `https://instantadmirers.com/community-guidelines/`
 
-## Actualizar
+## Registro y aceptación
 
-1. Sube el contenido de esta carpeta al mismo repositorio GitHub `allinone`.
-2. Haz commit en `main`.
-3. Espera al Auto-Deploy de Render.
-4. Comprueba `/api/health` y confirma `"version":"1.1.1"`.
-5. Sigue `DOMINIO-INSTANTADMIRERS.md` para conectar el dominio.
+Las cuentas nuevas deben confirmar que tienen 18 años o más y aceptar los Términos de Uso y las Normas de la Comunidad. La aplicación registra:
 
-## Legal
+- `age_confirmed_at`
+- `terms_accepted_at`
+- `terms_version`
 
-Los documentos de `legal-drafts/` son borradores de trabajo. Antes de hacerlos públicos completa `LEGAL-COMPLETAR.md` y revisa los textos con tus datos reales y, si procede, asesoramiento profesional.
+Los usuarios creados antes de V1.1.2 reciben una pantalla de aceptación legal al volver a usar la aplicación.
+
+## Cookies / almacenamiento
+
+Actualmente no se integra publicidad, Google Analytics ni Meta Pixel. La app utiliza `localStorage` para el token de sesión y la preferencia del feed. Por ello no se incorpora un banner de cookies no necesarias en esta versión.
+
+## Actualización
+
+Consulta `ACTUALIZAR-A-V1.1.2.md`.
+
+## Pendiente antes de apertura pública
+
+Consulta `LEGAL-PENDIENTE.md` y completa los datos de inscripción registral si son aplicables.
