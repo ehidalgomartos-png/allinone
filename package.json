@@ -1,7 +1,7 @@
 {
   "name": "omnisocial-community",
-  "version": "0.4.1",
-  "description": "OmniSocial V0.4.1 - responsive login corregido",
+  "version": "0.5.0",
+  "description": "OmniSocial V0.5 - Stories, Reels y mensajes privados",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

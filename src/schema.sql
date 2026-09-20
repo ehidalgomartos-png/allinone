@@ -139,3 +139,56 @@ CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_i
 CREATE INDEX IF NOT EXISTS idx_cross_posts_post_id ON cross_posts(post_id);
 CREATE INDEX IF NOT EXISTS idx_meta_pages_user_id ON meta_pages(user_id);
 CREATE INDEX IF NOT EXISTS idx_cross_posts_status ON cross_posts(status, updated_at);
+
+-- V0.5: Stories, Reels y mensajes privados.
+CREATE TABLE IF NOT EXISTS stories (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  media_id BIGINT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+  media_type VARCHAR(20) NOT NULL CHECK (media_type IN ('image','video')),
+  text TEXT NOT NULL DEFAULT '',
+  visibility VARCHAR(20) NOT NULL DEFAULT 'public' CHECK (visibility IN ('public','followers')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '24 hours')
+);
+
+CREATE TABLE IF NOT EXISTS story_views (
+  story_id BIGINT NOT NULL REFERENCES stories(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  viewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (story_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS conversations (
+  id BIGSERIAL PRIMARY KEY,
+  user1_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user2_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (user1_id < user2_id),
+  UNIQUE (user1_id, user2_id)
+);
+
+CREATE TABLE IF NOT EXISTS conversation_reads (
+  conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  last_read_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (conversation_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS messages (
+  id BIGSERIAL PRIMARY KEY,
+  conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  sender_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  text TEXT NOT NULL DEFAULT '',
+  media_id BIGINT REFERENCES media(id) ON DELETE SET NULL,
+  media_type VARCHAR(20) NOT NULL DEFAULT 'none' CHECK (media_type IN ('none','image','video')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_stories_active ON stories(expires_at, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stories_user ON stories(user_id, expires_at DESC);
+CREATE INDEX IF NOT EXISTS idx_story_views_user ON story_views(user_id, viewed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conversations_user1 ON conversations(user1_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conversations_user2 ON conversations(user2_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at DESC, id DESC);

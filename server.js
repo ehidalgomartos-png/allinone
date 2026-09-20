@@ -26,7 +26,7 @@ app.use(express.static(publicDir));
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 12 * 1024 * 1024 },
+  limits: { fileSize: 25 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) return cb(null, true);
     cb(new Error('Solo se permiten imágenes o vídeos.'));
@@ -133,7 +133,7 @@ async function addNotification(client, { userId, actorId, type, postId = null, t
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '0.4.1', database: 'postgresql', mode: 'own-community' });
+  res.json({ ok: true, version: '0.5.0', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages'] });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
@@ -178,11 +178,19 @@ app.get('/api/me', auth, asyncRoute(async (req, res) => {
       (SELECT COUNT(*)::int FROM follows WHERE followed_id = u.id) AS followers_count,
       (SELECT COUNT(*)::int FROM follows WHERE follower_id = u.id) AS following_count,
       (SELECT COUNT(*)::int FROM posts WHERE user_id = u.id) AS posts_count,
-      (SELECT COUNT(*)::int FROM notifications WHERE user_id = u.id AND read_at IS NULL) AS unread_notifications
+      (SELECT COUNT(*)::int FROM notifications WHERE user_id = u.id AND read_at IS NULL) AS unread_notifications,
+      (SELECT COUNT(*)::int
+         FROM messages m
+         JOIN conversations cv ON cv.id = m.conversation_id
+         LEFT JOIN conversation_reads cr ON cr.conversation_id = cv.id AND cr.user_id = u.id
+        WHERE (cv.user1_id = u.id OR cv.user2_id = u.id)
+          AND m.sender_id <> u.id
+          AND m.created_at > COALESCE(cr.last_read_at, 'epoch'::timestamptz)
+      ) AS unread_messages
     FROM users u WHERE u.id = $1
   `, [req.user.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
-  res.json({ ...safeUser(rows[0]), followers_count: rows[0].followers_count, following_count: rows[0].following_count, posts_count: rows[0].posts_count, unread_notifications: rows[0].unread_notifications });
+  res.json({ ...safeUser(rows[0]), followers_count: rows[0].followers_count, following_count: rows[0].following_count, posts_count: rows[0].posts_count, unread_notifications: rows[0].unread_notifications, unread_messages: rows[0].unread_messages });
 }));
 
 app.patch('/api/me', auth, asyncRoute(async (req, res) => {
@@ -443,18 +451,199 @@ app.post('/api/notifications/read', auth, asyncRoute(async (req, res) => {
   res.json({ ok: true });
 }));
 
+
+// --- V0.5: Stories ---------------------------------------------------------
+app.get('/api/stories', auth, asyncRoute(async (req, res) => {
+  const { rows } = await pool.query(`
+    SELECT s.id, s.user_id, s.media_id, s.media_type, s.text, s.visibility, s.created_at, s.expires_at,
+           u.username, u.name, u.avatar,
+           EXISTS(SELECT 1 FROM story_views sv WHERE sv.story_id = s.id AND sv.user_id = $1) AS viewed,
+           (s.user_id = $1) AS own,
+           (SELECT COUNT(*)::int FROM story_views sv2 WHERE sv2.story_id = s.id) AS views_count,
+           EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followed_id = s.user_id) AS following
+      FROM stories s
+      JOIN users u ON u.id = s.user_id
+     WHERE s.expires_at > NOW()
+       AND (
+         s.visibility = 'public' OR s.user_id = $1 OR
+         (s.visibility = 'followers' AND EXISTS(
+           SELECT 1 FROM follows vf WHERE vf.follower_id = $1 AND vf.followed_id = s.user_id
+         ))
+       )
+     ORDER BY (s.user_id = $1) DESC, following DESC, s.created_at ASC
+     LIMIT 200
+  `, [req.user.id]);
+  res.json(rows.map(r => ({ ...r, media_url: `/media/${r.media_id}`, viewed: Boolean(r.viewed), own: Boolean(r.own), following: Boolean(r.following), views_count: Number(r.views_count || 0) })));
+}));
+
+app.post('/api/stories', auth, asyncRoute(async (req, res) => {
+  const mediaId = req.body.media_id ? String(req.body.media_id) : '';
+  const text = String(req.body.text || '').trim().slice(0, 500);
+  const visibility = ['public','followers'].includes(req.body.visibility) ? req.body.visibility : 'public';
+  if (!mediaId) return res.status(400).json({ error: 'Una Story necesita foto o vídeo' });
+  const media = await pool.query('SELECT id, mime_type FROM media WHERE id = $1 AND user_id = $2', [mediaId, req.user.id]);
+  if (!media.rowCount) return res.status(400).json({ error: 'Archivo multimedia inválido' });
+  const mediaType = media.rows[0].mime_type.startsWith('video/') ? 'video' : 'image';
+  const { rows } = await pool.query(`
+    INSERT INTO stories (user_id, media_id, media_type, text, visibility)
+    VALUES ($1,$2,$3,$4,$5) RETURNING id, expires_at
+  `, [req.user.id, mediaId, mediaType, text, visibility]);
+  res.json(rows[0]);
+}));
+
+app.post('/api/stories/:id/view', auth, asyncRoute(async (req, res) => {
+  const story = await pool.query(`
+    SELECT s.id, s.user_id, s.visibility
+      FROM stories s
+     WHERE s.id = $1 AND s.expires_at > NOW()
+       AND (s.visibility = 'public' OR s.user_id = $2 OR
+         (s.visibility = 'followers' AND EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = $2 AND f.followed_id = s.user_id)))
+  `, [req.params.id, req.user.id]);
+  if (!story.rowCount) return res.status(404).json({ error: 'Story no disponible' });
+  await pool.query(`INSERT INTO story_views (story_id, user_id) VALUES ($1,$2)
+                    ON CONFLICT (story_id,user_id) DO UPDATE SET viewed_at = NOW()`, [req.params.id, req.user.id]);
+  res.json({ ok: true });
+}));
+
+app.get('/api/stories/:id/viewers', auth, asyncRoute(async (req, res) => {
+  const own = await pool.query('SELECT 1 FROM stories WHERE id = $1 AND user_id = $2', [req.params.id, req.user.id]);
+  if (!own.rowCount) return res.status(403).json({ error: 'No puedes ver estas visualizaciones' });
+  const { rows } = await pool.query(`
+    SELECT u.id, u.username, u.name, u.avatar, sv.viewed_at
+      FROM story_views sv JOIN users u ON u.id = sv.user_id
+     WHERE sv.story_id = $1 ORDER BY sv.viewed_at DESC LIMIT 200
+  `, [req.params.id]);
+  res.json(rows);
+}));
+
+app.delete('/api/stories/:id', auth, asyncRoute(async (req, res) => {
+  const { rows } = await pool.query('DELETE FROM stories WHERE id = $1 AND user_id = $2 RETURNING id', [req.params.id, req.user.id]);
+  if (!rows[0]) return res.status(404).json({ error: 'Story no encontrada' });
+  res.json({ ok: true });
+}));
+
+// --- V0.5: Reels -----------------------------------------------------------
+app.get('/api/reels', auth, asyncRoute(async (req, res) => {
+  const { rows } = await pool.query(`
+    SELECT p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at,
+           u.username, u.name, u.avatar,
+           COUNT(DISTINCT l.user_id)::int AS likes_count,
+           COUNT(DISTINCT c.id)::int AS comments_count,
+           EXISTS(SELECT 1 FROM likes lx WHERE lx.post_id = p.id AND lx.user_id = $1) AS liked,
+           EXISTS(SELECT 1 FROM bookmarks b WHERE b.post_id = p.id AND b.user_id = $1) AS saved,
+           (p.user_id = $1) AS own
+      FROM posts p
+      JOIN users u ON u.id = p.user_id
+      LEFT JOIN likes l ON l.post_id = p.id
+      LEFT JOIN comments c ON c.post_id = p.id
+     WHERE p.media_type = 'video'
+       AND (p.visibility = 'public' OR p.user_id = $1 OR
+         (p.visibility = 'followers' AND EXISTS(SELECT 1 FROM follows vf WHERE vf.follower_id = $1 AND vf.followed_id = p.user_id)))
+     GROUP BY p.id, u.id
+     ORDER BY ((COUNT(DISTINCT l.user_id) * 2) + COUNT(DISTINCT c.id)) DESC, p.created_at DESC
+     LIMIT 80
+  `, [req.user.id]);
+  res.json(rows.map(normalizePost));
+}));
+
+// --- V0.5: Mensajes privados ----------------------------------------------
+async function requireConversationMember(conversationId, userId) {
+  const { rows } = await pool.query(`SELECT * FROM conversations WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)`, [conversationId, userId]);
+  if (!rows[0]) { const err = new Error('Conversación no encontrada'); err.status = 404; throw err; }
+  return rows[0];
+}
+
+app.post('/api/conversations/direct/:userId', auth, asyncRoute(async (req, res) => {
+  const otherId = Number(req.params.userId);
+  const myId = Number(req.user.id);
+  if (!Number.isInteger(otherId) || otherId === myId) return res.status(400).json({ error: 'Usuario inválido' });
+  const exists = await pool.query('SELECT 1 FROM users WHERE id = $1', [otherId]);
+  if (!exists.rowCount) return res.status(404).json({ error: 'Usuario no encontrado' });
+  const a = Math.min(myId, otherId), b = Math.max(myId, otherId);
+  const { rows } = await pool.query(`
+    INSERT INTO conversations (user1_id, user2_id) VALUES ($1,$2)
+    ON CONFLICT (user1_id,user2_id) DO UPDATE SET updated_at = conversations.updated_at
+    RETURNING id
+  `, [a,b]);
+  await pool.query(`INSERT INTO conversation_reads (conversation_id,user_id,last_read_at) VALUES ($1,$2,NOW()) ON CONFLICT DO NOTHING`, [rows[0].id, myId]);
+  res.json({ id: rows[0].id });
+}));
+
+app.get('/api/conversations', auth, asyncRoute(async (req, res) => {
+  const { rows } = await pool.query(`
+    SELECT c.id, c.created_at, c.updated_at,
+           u.id AS other_id, u.username, u.name, u.avatar,
+           lm.id AS last_message_id, lm.text AS last_message, lm.media_type AS last_media_type,
+           lm.sender_id AS last_sender_id, lm.created_at AS last_message_at,
+           (SELECT COUNT(*)::int FROM messages um
+             WHERE um.conversation_id = c.id AND um.sender_id <> $1
+               AND um.created_at > COALESCE(cr.last_read_at, 'epoch'::timestamptz)) AS unread_count
+      FROM conversations c
+      JOIN users u ON u.id = CASE WHEN c.user1_id = $1 THEN c.user2_id ELSE c.user1_id END
+      LEFT JOIN conversation_reads cr ON cr.conversation_id = c.id AND cr.user_id = $1
+      LEFT JOIN LATERAL (
+        SELECT m.id, m.text, m.media_type, m.sender_id, m.created_at
+          FROM messages m WHERE m.conversation_id = c.id
+         ORDER BY m.created_at DESC, m.id DESC LIMIT 1
+      ) lm ON TRUE
+     WHERE c.user1_id = $1 OR c.user2_id = $1
+     ORDER BY COALESCE(lm.created_at, c.updated_at) DESC
+     LIMIT 100
+  `, [req.user.id]);
+  res.json(rows.map(r => ({ ...r, unread_count: Number(r.unread_count || 0) })));
+}));
+
+app.get('/api/conversations/:id/messages', auth, asyncRoute(async (req, res) => {
+  await requireConversationMember(req.params.id, req.user.id);
+  await pool.query(`
+    INSERT INTO conversation_reads (conversation_id,user_id,last_read_at) VALUES ($1,$2,NOW())
+    ON CONFLICT (conversation_id,user_id) DO UPDATE SET last_read_at = NOW()
+  `, [req.params.id, req.user.id]);
+  const { rows } = await pool.query(`
+    SELECT * FROM (
+      SELECT m.id, m.conversation_id, m.sender_id, m.text, m.media_id, m.media_type, m.created_at,
+             u.username, u.name, u.avatar, (m.sender_id = $2) AS own
+        FROM messages m JOIN users u ON u.id = m.sender_id
+       WHERE m.conversation_id = $1
+       ORDER BY m.created_at DESC, m.id DESC LIMIT 120
+    ) x ORDER BY created_at ASC, id ASC
+  `, [req.params.id, req.user.id]);
+  res.json(rows.map(r => ({ ...r, media_url: r.media_id ? `/media/${r.media_id}` : '' })));
+}));
+
+app.post('/api/conversations/:id/messages', auth, asyncRoute(async (req, res) => {
+  await requireConversationMember(req.params.id, req.user.id);
+  const text = String(req.body.text || '').trim().slice(0, 4000);
+  const mediaId = req.body.media_id ? String(req.body.media_id) : null;
+  let mediaType = 'none';
+  if (mediaId) {
+    const media = await pool.query('SELECT id,mime_type FROM media WHERE id = $1 AND user_id = $2', [mediaId, req.user.id]);
+    if (!media.rowCount) return res.status(400).json({ error: 'Archivo multimedia inválido' });
+    mediaType = media.rows[0].mime_type.startsWith('video/') ? 'video' : 'image';
+  }
+  if (!text && !mediaId) return res.status(400).json({ error: 'El mensaje está vacío' });
+  const { rows } = await pool.query(`
+    INSERT INTO messages (conversation_id,sender_id,text,media_id,media_type)
+    VALUES ($1,$2,$3,$4,$5) RETURNING id,created_at
+  `, [req.params.id, req.user.id, text, mediaId, mediaType]);
+  await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [req.params.id]);
+  await pool.query(`INSERT INTO conversation_reads (conversation_id,user_id,last_read_at) VALUES ($1,$2,NOW())
+                    ON CONFLICT (conversation_id,user_id) DO UPDATE SET last_read_at = NOW()`, [req.params.id, req.user.id]);
+  res.json(rows[0]);
+}));
+
 app.get('*', (_req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 
 app.use((err, _req, res, _next) => {
   console.error(err);
-  if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'El archivo supera el límite de 12 MB de esta versión' });
+  if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'El archivo supera el límite de 25 MB de esta versión' });
   const status = err.status || 500;
   res.status(status).json({ error: status >= 500 ? 'Error interno del servidor' : err.message });
 });
 
 async function start() {
   await initDb();
-  app.listen(PORT, '0.0.0.0', () => console.log(`OmniSocial V0.4.1 en http://localhost:${PORT}`));
+  app.listen(PORT, '0.0.0.0', () => console.log(`OmniSocial V0.5 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {

@@ -1,22 +1,30 @@
-# Despliegue en Render — OmniSocial V0.4
+# Render — OmniSocial V0.5
 
-Si ya tienes OmniSocial V0.3 funcionando en Render, **no crees otro servicio ni otra base de datos**. Sube esta versión al mismo repositorio de GitHub y deja que Render despliegue el nuevo commit.
+La V0.5 está preparada para actualizar el servicio existente.
 
-## Comprobación
+## Configuración del Web Service
 
-Después del despliegue abre:
+- Runtime: Node
+- Build Command: `npm install`
+- Start Command: `npm start`
+- Health Check: `/api/health`
 
-`https://TU-APP.onrender.com/api/health`
+Variables necesarias:
 
-Debe aparecer:
+- `DATABASE_URL` — ya enlazada a `omnisocial-db`
+- `JWT_SECRET` — ya creada en Render
+- `NODE_ENV=production`
 
-```json
-{
-  "ok": true,
-  "version": "0.4.0",
-  "database": "postgresql",
-  "mode": "own-community"
-}
-```
+No hace falta crear otro Blueprint ni otra base de datos.
 
-La migración de base de datos se ejecuta al arrancar y conserva cuentas y publicaciones existentes.
+## Si falla el despliegue
+
+Revisa primero que GitHub contenga:
+
+- `src/db.js`
+- `src/schema.sql`
+- `public/app.js`
+- `public/styles.css`
+- `server.js`
+
+Luego abre los Logs del último deploy y localiza la primera línea que empiece por `Error:`.

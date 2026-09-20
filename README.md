@@ -1,37 +1,44 @@
-# OmniSocial V0.4 — Comunidad propia
+# OmniSocial V0.5 — Stories, Reels y Mensajes
 
-Esta versión deja en pausa las integraciones con redes externas y centra el proyecto en construir una red social propia.
+Versión centrada en convertir OmniSocial en una red social propia más completa.
 
-## Funciones incluidas
+## Novedades
 
-- Registro e inicio de sesión.
-- PostgreSQL persistente.
-- Feed de cuentas seguidas.
-- Descubrir contenido público.
-- Publicaciones de texto, foto y vídeo.
-- Visibilidad pública o solo seguidores.
-- Likes y comentarios.
-- Guardar publicaciones.
-- Eliminar publicaciones y comentarios propios.
-- Perfiles públicos dentro de la comunidad.
-- Seguir / dejar de seguir.
-- Contadores de publicaciones, seguidores y seguidos.
-- Edición de perfil: nombre, bio, ubicación, web y avatar.
-- Búsqueda de personas y publicaciones.
-- Hashtags y tendencias.
-- Notificaciones de nuevos seguidores, likes y comentarios.
-- Diseño responsive móvil / tablet / ordenador.
+- Stories de foto o vídeo con caducidad automática a las 24 horas.
+- Stories públicas o solo para seguidores.
+- Visualizaciones de tus propias Stories.
+- Pestaña Reels con vídeos verticales de publicaciones existentes.
+- Reproducción automática de Reels al entrar en pantalla.
+- Mensajes privados 1 a 1.
+- Envío de texto, fotografías y vídeos por mensaje.
+- Contador de mensajes sin leer.
+- Botón "Mensaje" en perfiles de otros usuarios.
+- Diseño responsive para ordenador, tablet y móvil.
+- Se conservan usuarios, posts, likes, comentarios, seguidores, guardados y notificaciones de V0.4.1.
 
-## Actualización desde V0.3
+## Arquitectura
 
-No borres la base de datos. Sustituye los archivos del repositorio por los de esta versión y haz commit. `src/schema.sql` aplica las nuevas tablas/columnas con `IF NOT EXISTS`, conservando los usuarios y posts existentes.
+- Node.js + Express
+- PostgreSQL
+- Frontend HTML/CSS/JavaScript sin framework
+- JWT para sesiones
+- Multer para subidas
 
-Render hará el deploy automáticamente. Comprueba después:
+## Arranque
 
-`/api/health`
+```bash
+npm install
+npm start
+```
 
-Debe responder con `version: "0.4.0"` y `mode: "own-community"`.
+Render utiliza `render.yaml` y la misma base `omnisocial-db`.
+
+## Comprobación
+
+`GET /api/health`
+
+Debe devolver `version: "0.5.0"` y las funciones `stories`, `reels` y `messages`.
 
 ## Nota sobre multimedia
 
-Para este MVP las imágenes y vídeos siguen guardándose en PostgreSQL. Es válido para pruebas y una comunidad inicial pequeña. Antes de crecer de forma seria conviene migrar multimedia a Cloudinary, S3 o equivalente.
+En este MVP, fotos y vídeos siguen almacenándose en PostgreSQL para que no se pierdan en reinicios de Render. El límite por archivo es 25 MB. Antes de crecer en usuarios conviene migrar multimedia a almacenamiento de objetos (por ejemplo S3/Cloudinary/R2) y dejar PostgreSQL para metadatos.
