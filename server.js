@@ -68,6 +68,8 @@ function safeUser(row) {
     headline: row.headline || '',
     interests: row.interests || '',
     cover: row.cover || '',
+    account_private: Boolean(row.account_private),
+    message_policy: row.message_policy || 'everyone',
     created_at: row.created_at
   };
 }
@@ -75,6 +77,46 @@ function safeUser(row) {
 function tokenFor(user) {
   return jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '30d' });
 }
+
+
+async function blockState(a, b, client = pool) {
+  const { rows } = await client.query(`
+    SELECT
+      EXISTS(SELECT 1 FROM blocks WHERE blocker_id=$1 AND blocked_id=$2) AS i_blocked,
+      EXISTS(SELECT 1 FROM blocks WHERE blocker_id=$2 AND blocked_id=$1) AS blocked_me
+  `, [a,b]);
+  return { iBlocked:Boolean(rows[0]?.i_blocked), blockedMe:Boolean(rows[0]?.blocked_me) };
+}
+
+async function assertNotBlocked(a, b, client = pool) {
+  const state = await blockState(a,b,client);
+  if (state.iBlocked || state.blockedMe) {
+    const err = new Error('Esta interacción no está disponible');
+    err.status = 403;
+    throw err;
+  }
+}
+
+async function canMessageUser(senderId, recipientId, client = pool) {
+  const blocked = await blockState(senderId, recipientId, client);
+  if (blocked.iBlocked || blocked.blockedMe) return false;
+  const { rows } = await client.query('SELECT message_policy FROM users WHERE id=$1',[recipientId]);
+  if (!rows[0]) return false;
+  const policy = rows[0].message_policy || 'everyone';
+  if (policy === 'everyone') return true;
+  if (policy === 'nobody') return false;
+  if (policy === 'followers') {
+    const q = await client.query('SELECT 1 FROM follows WHERE follower_id=$1 AND followed_id=$2',[senderId,recipientId]);
+    return q.rowCount > 0;
+  }
+  if (policy === 'friends') {
+    const [a,b] = friendshipPair(senderId,recipientId);
+    const q = await client.query('SELECT 1 FROM friendships WHERE user1_id=$1 AND user2_id=$2',[a,b]);
+    return q.rowCount > 0;
+  }
+  return false;
+}
+
 
 
 function mediaIdFromStoredUrl(value) {
@@ -116,7 +158,12 @@ async function presenceTargets(userId) {
     SELECT CASE WHEN user1_id = $1 THEN user2_id ELSE user1_id END AS id
       FROM conversations WHERE user1_id = $1 OR user2_id = $1
   `, [userId]);
-  return rows.map(r => String(r.id));
+  const visible = [];
+  for (const row of rows) {
+    const bs = await blockState(userId,row.id).catch(()=>({iBlocked:false,blockedMe:false}));
+    if (!bs.iBlocked && !bs.blockedMe) visible.push(String(row.id));
+  }
+  return visible;
 }
 
 async function broadcastPresence(userId, online) {
@@ -149,6 +196,7 @@ io.on('connection', async (socket) => {
       const { rows } = await pool.query(`SELECT user1_id,user2_id FROM conversations WHERE id=$1 AND (user1_id=$2 OR user2_id=$2)`, [conversationId, socket.user.id]);
       if (!rows[0]) return;
       const otherId = Number(rows[0].user1_id) === Number(socket.user.id) ? rows[0].user2_id : rows[0].user1_id;
+      if (!(await canMessageUser(socket.user.id,otherId))) return;
       io.to(`user:${otherId}`).emit('typing', { conversationId, userId: Number(socket.user.id), typing: Boolean(payload.typing) });
     } catch {}
   });
@@ -183,10 +231,13 @@ async function enrichReposts(userId, posts = []) {
   const { rows } = await pool.query(`
     SELECT p.id,p.user_id,p.text,p.media_id,p.media_type,p.visibility,p.created_at,p.edited_at,
            u.username,u.name,u.avatar,
-           (p.visibility='public' OR p.user_id=$1 OR
+           ((p.user_id=$1 OR (NOT u.account_private) OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
+            AND (p.visibility='public' OR p.user_id=$1 OR
              (p.visibility='followers' AND EXISTS(
                SELECT 1 FROM follows f WHERE f.follower_id=$1 AND f.followed_id=p.user_id
-             ))) AS can_view
+             )))
+            AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
+            AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)) AS can_view
       FROM posts p
       JOIN users u ON u.id=p.user_id
      WHERE p.id = ANY($2::bigint[])
@@ -240,7 +291,10 @@ async function postQuery(userId, { mode = 'following', profileId = null, search 
     clauses.push(`(p.text ILIKE $${params.length} OR u.username ILIKE $${params.length} OR u.name ILIKE $${params.length})`);
   }
 
-  // Los posts de seguidores solo son visibles para seguidores; los públicos se ven siempre.
+  // Privacidad V0.9: bloqueos, perfiles privados y silencios en feeds automáticos.
+  clauses.push(`NOT EXISTS (SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))`);
+  clauses.push(`(p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))`);
+  if (!profileId) clauses.push(`NOT EXISTS (SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)`);
   clauses.push(`(p.visibility = 'public' OR p.user_id = $1 OR (p.visibility = 'followers' AND EXISTS (SELECT 1 FROM follows vf WHERE vf.follower_id = $1 AND vf.followed_id = p.user_id)))`);
 
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
@@ -269,6 +323,10 @@ async function postQuery(userId, { mode = 'following', profileId = null, search 
 
 async function addNotification(client, { userId, actorId, type, postId = null, text = '' }) {
   if (String(userId) === String(actorId)) return null;
+  if (actorId) {
+    const blocked = await client.query('SELECT 1 FROM blocks WHERE (blocker_id=$1 AND blocked_id=$2) OR (blocker_id=$2 AND blocked_id=$1) LIMIT 1',[userId,actorId]).catch(()=>({rowCount:0}));
+    if (blocked.rowCount) return null;
+  }
   const { rows } = await client.query(`
     INSERT INTO notifications (user_id, actor_id, type, post_id, text)
     VALUES ($1, $2, $3, $4, $5)
@@ -297,7 +355,7 @@ function peopleRecommendationReason(row = {}) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '0.8.0', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery'] });
+  res.json({ ok: true, version: '0.9.0', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy'] });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
@@ -344,19 +402,24 @@ app.get('/api/me', auth, asyncRoute(async (req, res) => {
       (SELECT COUNT(*)::int FROM posts WHERE user_id = u.id) AS posts_count,
       (SELECT COUNT(*)::int FROM friendships WHERE user1_id = u.id OR user2_id = u.id) AS friends_count,
       (SELECT COUNT(*)::int FROM friend_requests WHERE to_user_id = u.id AND status = 'pending') AS friend_requests_count,
-      (SELECT COUNT(*)::int FROM notifications WHERE user_id = u.id AND read_at IS NULL) AS unread_notifications,
+      (SELECT COUNT(*)::int FROM follow_requests WHERE followed_id = u.id) AS follow_requests_count,
+      (SELECT COUNT(*)::int FROM blocks WHERE blocker_id = u.id) AS blocked_count,
+      (SELECT COUNT(*)::int FROM mutes WHERE muter_id = u.id) AS muted_count,
+      (SELECT COUNT(*)::int FROM notifications n WHERE n.user_id = u.id AND n.read_at IS NULL
+        AND (n.actor_id IS NULL OR NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=u.id AND bl.blocked_id=n.actor_id) OR (bl.blocker_id=n.actor_id AND bl.blocked_id=u.id)))) AS unread_notifications,
       (SELECT COUNT(*)::int
          FROM messages m
          JOIN conversations cv ON cv.id = m.conversation_id
          LEFT JOIN conversation_reads cr ON cr.conversation_id = cv.id AND cr.user_id = u.id
         WHERE (cv.user1_id = u.id OR cv.user2_id = u.id)
           AND m.sender_id <> u.id
+          AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=u.id AND bl.blocked_id=m.sender_id) OR (bl.blocker_id=m.sender_id AND bl.blocked_id=u.id))
           AND m.created_at > COALESCE(cr.last_read_at, 'epoch'::timestamptz)
       ) AS unread_messages
     FROM users u WHERE u.id = $1
   `, [req.user.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
-  res.json({ ...safeUser(rows[0]), followers_count: rows[0].followers_count, following_count: rows[0].following_count, posts_count: rows[0].posts_count, friends_count: rows[0].friends_count, friend_requests_count: rows[0].friend_requests_count, unread_notifications: rows[0].unread_notifications, unread_messages: rows[0].unread_messages, online: true, last_seen_at: rows[0].last_seen_at });
+  res.json({ ...safeUser(rows[0]), followers_count: rows[0].followers_count, following_count: rows[0].following_count, posts_count: rows[0].posts_count, friends_count: rows[0].friends_count, friend_requests_count: rows[0].friend_requests_count, follow_requests_count: rows[0].follow_requests_count, blocked_count: rows[0].blocked_count, muted_count: rows[0].muted_count, unread_notifications: rows[0].unread_notifications, unread_messages: rows[0].unread_messages, online: true, last_seen_at: rows[0].last_seen_at });
 }));
 
 app.patch('/api/me', auth, asyncRoute(async (req, res) => {
@@ -446,6 +509,7 @@ app.patch('/api/posts/:id', auth, asyncRoute(async (req, res) => {
 
 app.post('/api/posts/:id/repost', auth, asyncRoute(async (req, res) => {
   const postId = Number(req.params.id);
+  if (!(await canUserViewPost(postId,req.user.id))) return res.status(404).json({error:'Publicación no disponible'});
   const text = String(req.body.text || '').trim().slice(0, 1500);
   const visibility = ['public','followers'].includes(req.body.visibility) ? req.body.visibility : 'public';
   const result = await withTransaction(async client => {
@@ -522,7 +586,10 @@ app.get('/api/for-you', auth, asyncRoute(async (req, res) => {
       LEFT JOIN likes l ON l.post_id = p.id
       LEFT JOIN comments c ON c.post_id = p.id
       LEFT JOIN affinity a ON a.author_id = p.user_id
-      WHERE p.visibility = 'public' OR p.user_id = $1
+      WHERE (p.visibility = 'public' OR p.user_id = $1)
+        AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
+        AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
+        AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)
       GROUP BY p.id, u.id, a.score
     )
     SELECT *,
@@ -558,8 +625,9 @@ app.get('/api/suggestions', auth, asyncRoute(async (req, res) => {
         SELECT p.user_id, 5::numeric FROM bookmarks x JOIN posts p ON p.id=x.post_id WHERE x.user_id=$1
       ) q GROUP BY author_id
     )
-    SELECT u.id,u.username,u.name,u.bio,u.avatar,u.location,u.headline,u.interests,u.created_at,u.last_seen_at,
+    SELECT u.id,u.username,u.name,u.bio,u.avatar,u.location,u.headline,u.interests,u.created_at,u.last_seen_at,u.account_private,
       FALSE AS following,
+      EXISTS(SELECT 1 FROM follow_requests frq WHERE frq.follower_id=$1 AND frq.followed_id=u.id) AS follow_requested,
       (SELECT COUNT(*)::int FROM follows f WHERE f.followed_id=u.id) AS followers_count,
       COALESCE(i.score,0)::numeric AS interaction_score,
       (SELECT COUNT(*)::int
@@ -579,6 +647,8 @@ app.get('/api/suggestions', auth, asyncRoute(async (req, res) => {
     LEFT JOIN interactions i ON i.author_id=u.id
     WHERE u.id <> $1
       AND NOT EXISTS (SELECT 1 FROM follows f WHERE f.follower_id=$1 AND f.followed_id=u.id)
+      AND NOT EXISTS (SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=u.id) OR (bl.blocker_id=u.id AND bl.blocked_id=$1))
+      AND NOT EXISTS (SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=u.id)
     ORDER BY
       (CASE WHEN EXISTS (
         SELECT 1 FROM regexp_split_to_table((SELECT interests FROM viewer), '\s*,\s*') AS term
@@ -613,7 +683,10 @@ app.get('/api/discover', auth, asyncRoute(async (req, res) => {
     JOIN users u ON u.id = p.user_id
     LEFT JOIN likes l ON l.post_id = p.id
     LEFT JOIN comments c ON c.post_id = p.id
-    WHERE p.visibility = 'public' OR p.user_id = $1
+    WHERE (p.visibility = 'public' OR p.user_id = $1)
+      AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
+      AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
+      AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)
     GROUP BY p.id, u.id
     ORDER BY ((COUNT(DISTINCT l.user_id) * 2) + COUNT(DISTINCT c.id)) DESC, p.created_at DESC
     LIMIT 80
@@ -637,6 +710,8 @@ app.get('/api/bookmarks', auth, asyncRoute(async (req, res) => {
     LEFT JOIN likes l ON l.post_id = p.id
     LEFT JOIN comments c ON c.post_id = p.id
     WHERE bk.user_id = $1
+      AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
+      AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
     GROUP BY p.id, u.id, bk.created_at
     ORDER BY bk.created_at DESC
   `, [req.user.id]);
@@ -645,6 +720,7 @@ app.get('/api/bookmarks', auth, asyncRoute(async (req, res) => {
 
 app.post('/api/posts/:id/like', auth, asyncRoute(async (req, res) => {
   const postId = req.params.id;
+  if (!(await canUserViewPost(postId,req.user.id))) return res.status(404).json({error:'Publicación no disponible'});
   const result = await withTransaction(async (client) => {
     const post = await client.query('SELECT id, user_id FROM posts WHERE id = $1', [postId]);
     if (!post.rowCount) { const err = new Error('Publicación no encontrada'); err.status = 404; throw err; }
@@ -662,6 +738,7 @@ app.post('/api/posts/:id/like', auth, asyncRoute(async (req, res) => {
 }));
 
 app.post('/api/posts/:id/bookmark', auth, asyncRoute(async (req, res) => {
+  if (!(await canUserViewPost(req.params.id,req.user.id))) return res.status(404).json({error:'Publicación no disponible'});
   const result = await withTransaction(async (client) => {
     const exists = await client.query('SELECT 1 FROM posts WHERE id = $1', [req.params.id]);
     if (!exists.rowCount) { const err = new Error('Publicación no encontrada'); err.status = 404; throw err; }
@@ -674,6 +751,7 @@ app.post('/api/posts/:id/bookmark', auth, asyncRoute(async (req, res) => {
 }));
 
 app.post('/api/posts/:id/comments', auth, asyncRoute(async (req, res) => {
+  if (!(await canUserViewPost(req.params.id,req.user.id))) return res.status(404).json({error:'Publicación no disponible'});
   const text = String(req.body.text || '').trim().slice(0, 1000);
   if (!text) return res.status(400).json({ error: 'Comentario vacío' });
   const result = await withTransaction(async (client) => {
@@ -688,11 +766,14 @@ app.post('/api/posts/:id/comments', auth, asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/posts/:id/comments', auth, asyncRoute(async (req, res) => {
+  if (!(await canUserViewPost(req.params.id,req.user.id))) return res.status(404).json({error:'Publicación no disponible'});
   const { rows } = await pool.query(`
     SELECT c.id, c.post_id, c.user_id, c.text, c.created_at, u.username, u.name, u.avatar,
            (c.user_id = $2) AS own
     FROM comments c JOIN users u ON u.id = c.user_id
-    WHERE c.post_id = $1 ORDER BY c.created_at ASC, c.id ASC
+    WHERE c.post_id = $1
+      AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$2 AND bl.blocked_id=c.user_id) OR (bl.blocker_id=c.user_id AND bl.blocked_id=$2))
+    ORDER BY c.created_at ASC, c.id ASC
   `, [req.params.id, req.user.id]);
   res.json(rows);
 }));
@@ -707,9 +788,10 @@ app.get('/api/users', auth, asyncRoute(async (req, res) => {
   const q = String(req.query.q || '').trim().slice(0, 100);
   const pattern = `%${q}%`;
   const { rows } = await pool.query(`
-    SELECT u.id, u.username, u.name, u.bio, u.avatar, u.location, u.headline, u.interests, u.created_at, u.last_seen_at,
+    SELECT u.id, u.username, u.name, u.bio, u.avatar, u.location, u.headline, u.interests, u.created_at, u.last_seen_at, u.account_private,
       EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followed_id = u.id) AS following,
       (SELECT COUNT(*)::int FROM follows WHERE followed_id = u.id) AS followers_count,
+      EXISTS(SELECT 1 FROM follow_requests frq WHERE frq.follower_id=$1 AND frq.followed_id=u.id) AS follow_requested,
       CASE
         WHEN EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user1_id=$1 AND fr.user2_id=u.id) OR (fr.user1_id=u.id AND fr.user2_id=$1)) THEN 'friends'
         WHEN EXISTS(SELECT 1 FROM friend_requests fq WHERE fq.from_user_id=$1 AND fq.to_user_id=u.id AND fq.status='pending') THEN 'sent'
@@ -717,7 +799,9 @@ app.get('/api/users', auth, asyncRoute(async (req, res) => {
         ELSE 'none'
       END AS friendship_status
     FROM users u
-    WHERE u.id <> $1 AND ($2 = '%%' OR u.username ILIKE $2 OR u.name ILIKE $2 OR u.bio ILIKE $2)
+    WHERE u.id <> $1
+      AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=u.id) OR (bl.blocker_id=u.id AND bl.blocked_id=$1))
+      AND ($2 = '%%' OR u.username ILIKE $2 OR u.name ILIKE $2 OR u.bio ILIKE $2)
     ORDER BY followers_count DESC, u.created_at DESC LIMIT 50
   `, [req.user.id, pattern]);
   res.json(rows.map(r => ({ ...r, online: isOnline(r.id) })));
@@ -731,6 +815,10 @@ app.get('/api/users/:username', auth, asyncRoute(async (req, res) => {
       (SELECT COUNT(*)::int FROM posts WHERE user_id = u.id) AS posts_count,
       (SELECT COUNT(*)::int FROM friendships WHERE user1_id = u.id OR user2_id = u.id) AS friends_count,
       EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followed_id = u.id) AS following,
+      EXISTS(SELECT 1 FROM follow_requests frq WHERE frq.follower_id=$1 AND frq.followed_id=u.id) AS follow_requested,
+      EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=u.id) AS muted,
+      EXISTS(SELECT 1 FROM blocks bl WHERE bl.blocker_id=$1 AND bl.blocked_id=u.id) AS blocked_by_me,
+      EXISTS(SELECT 1 FROM blocks bl WHERE bl.blocker_id=u.id AND bl.blocked_id=$1) AS blocked_me,
       CASE
         WHEN u.id=$1 THEN 'self'
         WHEN EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user1_id=$1 AND fr.user2_id=u.id) OR (fr.user1_id=u.id AND fr.user2_id=$1)) THEN 'friends'
@@ -744,7 +832,9 @@ app.get('/api/users/:username', auth, asyncRoute(async (req, res) => {
   `, [req.user.id, req.params.username]);
   if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
   const row = rows[0];
-  res.json({ ...safeUser(row), followers_count: row.followers_count, following_count: row.following_count, posts_count: row.posts_count, friends_count: row.friends_count, following: row.following, friendship_status: row.friendship_status, friend_request_id: row.friend_request_id, own: row.own, online: isOnline(row.id), last_seen_at: row.last_seen_at });
+  if (row.blocked_me && !row.own) return res.status(404).json({ error:'Perfil no disponible' });
+  const canMessage = row.own ? false : await canMessageUser(req.user.id,row.id);
+  res.json({ ...safeUser(row), can_message:canMessage, followers_count: row.followers_count, following_count: row.following_count, posts_count: row.posts_count, friends_count: row.friends_count, following: Boolean(row.following), follow_requested:Boolean(row.follow_requested), muted:Boolean(row.muted), blocked_by_me:Boolean(row.blocked_by_me), friendship_status: row.friendship_status, friend_request_id: row.friend_request_id, own: Boolean(row.own), online: isOnline(row.id), last_seen_at: row.last_seen_at });
 }));
 
 app.get('/api/users/:username/posts', auth, asyncRoute(async (req, res) => {
@@ -754,21 +844,135 @@ app.get('/api/users/:username/posts', auth, asyncRoute(async (req, res) => {
 }));
 
 app.post('/api/users/:id/follow', auth, asyncRoute(async (req, res) => {
-  const followedId = req.params.id;
-  if (String(followedId) === String(req.user.id)) return res.status(400).json({ error: 'No puedes seguirte' });
+  const followedId = Number(req.params.id);
+  const me = Number(req.user.id);
+  if (!Number.isInteger(followedId) || followedId === me) return res.status(400).json({ error: 'No puedes seguirte' });
   const result = await withTransaction(async (client) => {
-    const userExists = await client.query('SELECT 1 FROM users WHERE id = $1', [followedId]);
-    if (!userExists.rowCount) { const err = new Error('Usuario no encontrado'); err.status = 404; throw err; }
-    const deleted = await client.query('DELETE FROM follows WHERE follower_id = $1 AND followed_id = $2 RETURNING follower_id', [req.user.id, followedId]);
-    if (deleted.rowCount) return { following: false };
-    await client.query('INSERT INTO follows (follower_id, followed_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [req.user.id, followedId]);
-    await addNotification(client, { userId: followedId, actorId: req.user.id, type: 'follow' });
-    return { following: true };
+    const target = await client.query('SELECT id,account_private FROM users WHERE id=$1',[followedId]);
+    if (!target.rowCount) { const err=new Error('Usuario no encontrado'); err.status=404; throw err; }
+    await assertNotBlocked(me,followedId,client);
+    const existing = await client.query('DELETE FROM follows WHERE follower_id=$1 AND followed_id=$2 RETURNING follower_id',[me,followedId]);
+    if (existing.rowCount) return { following:false, requested:false, status:'none' };
+    const pending = await client.query('SELECT id FROM follow_requests WHERE follower_id=$1 AND followed_id=$2',[me,followedId]);
+    if (target.rows[0].account_private) {
+      if (pending.rowCount) {
+        await client.query('DELETE FROM follow_requests WHERE follower_id=$1 AND followed_id=$2',[me,followedId]);
+        return { following:false, requested:false, status:'none' };
+      }
+      await client.query('INSERT INTO follow_requests (follower_id,followed_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',[me,followedId]);
+      await addNotification(client,{userId:followedId,actorId:me,type:'follow_request'});
+      return { following:false, requested:true, status:'requested' };
+    }
+    if (pending.rowCount) await client.query('DELETE FROM follow_requests WHERE follower_id=$1 AND followed_id=$2',[me,followedId]);
+    await client.query('INSERT INTO follows (follower_id,followed_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',[me,followedId]);
+    await addNotification(client,{userId:followedId,actorId:me,type:'follow'});
+    return { following:true, requested:false, status:'following' };
   });
   res.json(result);
 }));
 
+// --- V0.9: privacidad, solicitudes de seguimiento y control --------------
+app.get('/api/privacy', auth, asyncRoute(async (req,res)=>{
+  const {rows}=await pool.query(`SELECT account_private,message_policy,
+    (SELECT COUNT(*)::int FROM follow_requests WHERE followed_id=$1) AS follow_requests_count,
+    (SELECT COUNT(*)::int FROM blocks WHERE blocker_id=$1) AS blocked_count,
+    (SELECT COUNT(*)::int FROM mutes WHERE muter_id=$1) AS muted_count
+    FROM users WHERE id=$1`,[req.user.id]);
+  res.json(rows[0]);
+}));
 
+app.patch('/api/privacy', auth, asyncRoute(async (req,res)=>{
+  const accountPrivate = req.body.account_private === undefined ? null : Boolean(req.body.account_private);
+  const messagePolicy = req.body.message_policy === undefined ? null : String(req.body.message_policy);
+  if (messagePolicy !== null && !['everyone','followers','friends','nobody'].includes(messagePolicy)) return res.status(400).json({error:'Privacidad de mensajes inválida'});
+  const result=await withTransaction(async client=>{
+    const {rows}=await client.query(`UPDATE users SET account_private=COALESCE($2,account_private), message_policy=COALESCE($3,message_policy) WHERE id=$1 RETURNING account_private,message_policy`,[req.user.id,accountPrivate,messagePolicy]);
+    if (accountPrivate === false) {
+      await client.query(`INSERT INTO follows(follower_id,followed_id) SELECT follower_id,followed_id FROM follow_requests WHERE followed_id=$1 ON CONFLICT DO NOTHING`,[req.user.id]);
+      await client.query('DELETE FROM follow_requests WHERE followed_id=$1',[req.user.id]);
+    }
+    return rows[0];
+  });
+  res.json(result);
+}));
+
+app.get('/api/follow-requests', auth, asyncRoute(async (req,res)=>{
+  const {rows}=await pool.query(`SELECT fr.id,fr.follower_id AS user_id,fr.created_at,u.username,u.name,u.avatar,u.headline,u.last_seen_at
+    FROM follow_requests fr JOIN users u ON u.id=fr.follower_id
+    WHERE fr.followed_id=$1
+      AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=u.id) OR (bl.blocker_id=u.id AND bl.blocked_id=$1))
+    ORDER BY fr.created_at DESC LIMIT 100`,[req.user.id]);
+  res.json(rows.map(r=>({...r,online:isOnline(r.user_id)})));
+}));
+
+app.post('/api/follow-requests/:id/accept', auth, asyncRoute(async (req,res)=>{
+  await withTransaction(async client=>{
+    const {rows}=await client.query('DELETE FROM follow_requests WHERE id=$1 AND followed_id=$2 RETURNING follower_id',[req.params.id,req.user.id]);
+    if(!rows[0]){const e=new Error('Solicitud no encontrada');e.status=404;throw e;}
+    await assertNotBlocked(req.user.id,rows[0].follower_id,client);
+    await client.query('INSERT INTO follows (follower_id,followed_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',[rows[0].follower_id,req.user.id]);
+    await addNotification(client,{userId:rows[0].follower_id,actorId:req.user.id,type:'follow_accept'});
+  });
+  res.json({ok:true});
+}));
+
+app.post('/api/follow-requests/:id/decline', auth, asyncRoute(async (req,res)=>{
+  const {rows}=await pool.query('DELETE FROM follow_requests WHERE id=$1 AND followed_id=$2 RETURNING id',[req.params.id,req.user.id]);
+  if(!rows[0]) return res.status(404).json({error:'Solicitud no encontrada'});
+  res.json({ok:true});
+}));
+
+app.post('/api/users/:id/mute', auth, asyncRoute(async (req,res)=>{
+  const target=Number(req.params.id); if(target===Number(req.user.id)) return res.status(400).json({error:'No puedes silenciarte'});
+  await assertNotBlocked(req.user.id,target);
+  const deleted=await pool.query('DELETE FROM mutes WHERE muter_id=$1 AND muted_id=$2 RETURNING muter_id',[req.user.id,target]);
+  if(deleted.rowCount) return res.json({muted:false});
+  await pool.query('INSERT INTO mutes (muter_id,muted_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',[req.user.id,target]);
+  res.json({muted:true});
+}));
+
+app.post('/api/users/:id/block', auth, asyncRoute(async (req,res)=>{
+  const target=Number(req.params.id); if(target===Number(req.user.id)) return res.status(400).json({error:'No puedes bloquearte'});
+  const exists=await pool.query('SELECT 1 FROM users WHERE id=$1',[target]); if(!exists.rowCount) return res.status(404).json({error:'Usuario no encontrado'});
+  const result=await withTransaction(async client=>{
+    const deleted=await client.query('DELETE FROM blocks WHERE blocker_id=$1 AND blocked_id=$2 RETURNING blocker_id',[req.user.id,target]);
+    if(deleted.rowCount) return {blocked:false};
+    await client.query('INSERT INTO blocks (blocker_id,blocked_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',[req.user.id,target]);
+    await client.query('DELETE FROM mutes WHERE muter_id=$1 AND muted_id=$2',[req.user.id,target]);
+    await client.query('DELETE FROM follows WHERE (follower_id=$1 AND followed_id=$2) OR (follower_id=$2 AND followed_id=$1)',[req.user.id,target]);
+    await client.query('DELETE FROM follow_requests WHERE (follower_id=$1 AND followed_id=$2) OR (follower_id=$2 AND followed_id=$1)',[req.user.id,target]);
+    const [a,b]=friendshipPair(req.user.id,target);
+    await client.query('DELETE FROM friendships WHERE user1_id=$1 AND user2_id=$2',[a,b]);
+    await client.query("DELETE FROM friend_requests WHERE status='pending' AND ((from_user_id=$1 AND to_user_id=$2) OR (from_user_id=$2 AND to_user_id=$1))",[req.user.id,target]);
+    return {blocked:true};
+  });
+  res.json(result);
+}));
+
+app.get('/api/blocked', auth, asyncRoute(async (req,res)=>{
+  const {rows}=await pool.query('SELECT u.id,u.username,u.name,u.avatar,b.created_at FROM blocks b JOIN users u ON u.id=b.blocked_id WHERE b.blocker_id=$1 ORDER BY b.created_at DESC',[req.user.id]);
+  res.json(rows);
+}));
+app.get('/api/muted', auth, asyncRoute(async (req,res)=>{
+  const {rows}=await pool.query('SELECT u.id,u.username,u.name,u.avatar,m.created_at FROM mutes m JOIN users u ON u.id=m.muted_id WHERE m.muter_id=$1 ORDER BY m.created_at DESC',[req.user.id]);
+  res.json(rows);
+}));
+
+app.post('/api/reports', auth, asyncRoute(async (req,res)=>{
+  const targetUserId=req.body.target_user_id?Number(req.body.target_user_id):null;
+  const postId=req.body.post_id?Number(req.body.post_id):null;
+  const reason=String(req.body.reason||'').trim();
+  const details=String(req.body.details||'').trim().slice(0,1000);
+  const allowed=['spam','harassment','impersonation','nudity','violence','hate','scam','other'];
+  if(!targetUserId&&!postId) return res.status(400).json({error:'Falta el contenido a denunciar'});
+  if(!allowed.includes(reason)) return res.status(400).json({error:'Motivo inválido'});
+  let resolvedTarget=targetUserId;
+  if(postId){ const post=await pool.query('SELECT user_id FROM posts WHERE id=$1',[postId]); if(!post.rowCount) return res.status(404).json({error:'Publicación no encontrada'}); resolvedTarget=resolvedTarget||Number(post.rows[0].user_id); }
+  if(resolvedTarget){ const usr=await pool.query('SELECT 1 FROM users WHERE id=$1',[resolvedTarget]); if(!usr.rowCount) return res.status(404).json({error:'Usuario no encontrado'}); }
+  if(resolvedTarget===Number(req.user.id)) return res.status(400).json({error:'No puedes denunciar tu propio contenido'});
+  const {rows}=await pool.query('INSERT INTO reports (reporter_id,target_user_id,post_id,reason,details) VALUES ($1,$2,$3,$4,$5) RETURNING id',[req.user.id,resolvedTarget,postId,reason,details]);
+  res.json({ok:true,id:rows[0].id});
+}));
 
 // --- V0.6: Amigos y solicitudes -----------------------------------------
 function friendshipPair(a, b) {
@@ -809,6 +1013,7 @@ app.post('/api/friends/request/:userId', auth, asyncRoute(async (req,res)=>{
   if(!Number.isInteger(otherId)||otherId===myId) return res.status(400).json({error:'Usuario inválido'});
   const exists=await pool.query('SELECT 1 FROM users WHERE id=$1',[otherId]);
   if(!exists.rowCount) return res.status(404).json({error:'Usuario no encontrado'});
+  await assertNotBlocked(myId,otherId);
   const [a,b]=friendshipPair(myId,otherId);
   const friendship=await pool.query('SELECT 1 FROM friendships WHERE user1_id=$1 AND user2_id=$2',[a,b]);
   if(friendship.rowCount) return res.json({status:'friends'});
@@ -859,30 +1064,36 @@ app.get('/api/search', auth, asyncRoute(async (req, res) => {
   const personTerm = q.startsWith('@') ? q.slice(1) : q;
   const pattern = `%${personTerm}%`;
   const users = await pool.query(`
-    SELECT u.id, u.username, u.name, u.bio, u.avatar, u.headline, u.interests, u.last_seen_at,
+    SELECT u.id, u.username, u.name, u.bio, u.avatar, u.headline, u.interests, u.last_seen_at, u.account_private,
       EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followed_id = u.id) AS following,
+      EXISTS(SELECT 1 FROM follow_requests frq WHERE frq.follower_id=$1 AND frq.followed_id=u.id) AS follow_requested,
       CASE
         WHEN EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user1_id=$1 AND fr.user2_id=u.id) OR (fr.user1_id=u.id AND fr.user2_id=$1)) THEN 'friends'
         WHEN EXISTS(SELECT 1 FROM friend_requests fq WHERE fq.from_user_id=$1 AND fq.to_user_id=u.id AND fq.status='pending') THEN 'sent'
         WHEN EXISTS(SELECT 1 FROM friend_requests fq WHERE fq.from_user_id=u.id AND fq.to_user_id=$1 AND fq.status='pending') THEN 'received'
         ELSE 'none'
       END AS friendship_status
-    FROM users u WHERE u.id <> $1 AND (u.username ILIKE $2 OR u.name ILIKE $2 OR u.bio ILIKE $2 OR u.headline ILIKE $2 OR u.interests ILIKE $2)
+    FROM users u WHERE u.id <> $1
+      AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=u.id) OR (bl.blocker_id=u.id AND bl.blocked_id=$1))
+      AND (u.username ILIKE $2 OR u.name ILIKE $2 OR u.bio ILIKE $2 OR u.headline ILIKE $2 OR u.interests ILIKE $2)
     ORDER BY u.name LIMIT 20
   `, [req.user.id, pattern]);
   const posts = await postQuery(req.user.id, { mode: 'all', search: q.startsWith('@') ? personTerm : q, limit: 30 });
   res.json({ users: users.rows.map(r => ({ ...r, online: isOnline(r.id) })), posts });
 }));
 
-app.get('/api/trending', auth, asyncRoute(async (_req, res) => {
+app.get('/api/trending', auth, asyncRoute(async (req, res) => {
   const { rows } = await pool.query(`
     WITH tagged AS (
       SELECT p.id AS post_id, p.user_id, LOWER(rx.tag_match[1]) AS tag
       FROM posts p
+      JOIN users u ON u.id=p.user_id
       CROSS JOIN LATERAL regexp_matches(p.text, '#[[:alnum:]_áéíóúñü]+', 'g') AS rx(tag_match)
       WHERE p.created_at > NOW() - INTERVAL '7 days' AND p.visibility = 'public'
-    ),
-    engagement AS (
+        AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
+        AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
+        AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)
+    ), engagement AS (
       SELECT p.id AS post_id,
              COUNT(DISTINCT l.user_id)::int AS likes,
              COUNT(DISTINCT c.id)::int AS comments
@@ -901,7 +1112,7 @@ app.get('/api/trending', auth, asyncRoute(async (_req, res) => {
      GROUP BY t.tag
      ORDER BY score DESC, count DESC, t.tag ASC
      LIMIT 12
-  `);
+  `,[req.user.id]);
   res.json(rows);
 }));
 
@@ -912,6 +1123,7 @@ app.get('/api/notifications', auth, asyncRoute(async (req, res) => {
     FROM notifications n
     LEFT JOIN users a ON a.id = n.actor_id
     WHERE n.user_id = $1
+      AND (n.actor_id IS NULL OR NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=n.actor_id) OR (bl.blocker_id=n.actor_id AND bl.blocked_id=$1)))
     ORDER BY n.created_at DESC LIMIT 100
   `, [req.user.id]);
   res.json(rows);
@@ -935,6 +1147,9 @@ app.get('/api/stories', auth, asyncRoute(async (req, res) => {
       FROM stories s
       JOIN users u ON u.id = s.user_id
      WHERE s.expires_at > NOW()
+       AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=s.user_id) OR (bl.blocker_id=s.user_id AND bl.blocked_id=$1))
+       AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=s.user_id)
+       AND (s.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=s.user_id))
        AND (
          s.visibility = 'public' OR s.user_id = $1 OR
          (s.visibility = 'followers' AND EXISTS(
@@ -965,8 +1180,10 @@ app.post('/api/stories', auth, asyncRoute(async (req, res) => {
 app.post('/api/stories/:id/view', auth, asyncRoute(async (req, res) => {
   const story = await pool.query(`
     SELECT s.id, s.user_id, s.visibility
-      FROM stories s
-     WHERE s.id = $1 AND s.expires_at > NOW()
+      FROM stories s JOIN users u ON u.id=s.user_id
+     WHERE s.id = $1
+       AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$2 AND bl.blocked_id=s.user_id) OR (bl.blocker_id=s.user_id AND bl.blocked_id=$2))
+       AND (s.user_id=$2 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$2 AND pf.followed_id=s.user_id)) AND s.expires_at > NOW()
        AND (s.visibility = 'public' OR s.user_id = $2 OR
          (s.visibility = 'followers' AND EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = $2 AND f.followed_id = s.user_id)))
   `, [req.params.id, req.user.id]);
@@ -1008,6 +1225,9 @@ app.get('/api/reels', auth, asyncRoute(async (req, res) => {
       LEFT JOIN likes l ON l.post_id = p.id
       LEFT JOIN comments c ON c.post_id = p.id
      WHERE p.media_type = 'video'
+       AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
+       AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)
+       AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
        AND (p.visibility = 'public' OR p.user_id = $1 OR
          (p.visibility = 'followers' AND EXISTS(SELECT 1 FROM follows vf WHERE vf.follower_id = $1 AND vf.followed_id = p.user_id)))
      GROUP BY p.id, u.id
@@ -1030,11 +1250,13 @@ function conversationOtherId(conversation, userId) {
 
 async function canUserViewPost(postId, viewerId) {
   const { rows } = await pool.query(`
-    SELECT p.id FROM posts p
-     WHERE p.id=$1 AND (
-       p.visibility='public' OR p.user_id=$2 OR
-       (p.visibility='followers' AND EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=$2 AND f.followed_id=p.user_id))
-     ) LIMIT 1
+    SELECT p.id FROM posts p JOIN users u ON u.id=p.user_id
+     WHERE p.id=$1
+       AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$2 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$2))
+       AND (p.user_id=$2 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$2 AND pf.followed_id=p.user_id))
+       AND (p.visibility='public' OR p.user_id=$2 OR
+       (p.visibility='followers' AND EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=$2 AND f.followed_id=p.user_id)))
+     LIMIT 1
   `,[postId,viewerId]);
   return Boolean(rows[0]);
 }
@@ -1045,6 +1267,8 @@ app.post('/api/conversations/direct/:userId', auth, asyncRoute(async (req, res) 
   if (!Number.isInteger(otherId) || otherId === myId) return res.status(400).json({ error: 'Usuario inválido' });
   const exists = await pool.query('SELECT 1 FROM users WHERE id = $1', [otherId]);
   if (!exists.rowCount) return res.status(404).json({ error: 'Usuario no encontrado' });
+  await assertNotBlocked(myId,otherId);
+  if (!(await canMessageUser(myId,otherId))) return res.status(403).json({error:'Esta persona no acepta mensajes tuyos'});
   const a = Math.min(myId, otherId), b = Math.max(myId, otherId);
   const { rows } = await pool.query(`
     INSERT INTO conversations (user1_id, user2_id) VALUES ($1,$2)
@@ -1073,7 +1297,8 @@ app.get('/api/conversations', auth, asyncRoute(async (req, res) => {
           FROM messages m WHERE m.conversation_id = c.id
          ORDER BY m.created_at DESC, m.id DESC LIMIT 1
       ) lm ON TRUE
-     WHERE c.user1_id = $1 OR c.user2_id = $1
+     WHERE (c.user1_id = $1 OR c.user2_id = $1)
+       AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=u.id) OR (bl.blocker_id=u.id AND bl.blocked_id=$1))
      ORDER BY COALESCE(lm.created_at, c.updated_at) DESC
      LIMIT 100
   `, [req.user.id]);
@@ -1092,20 +1317,28 @@ app.get('/api/conversations/:id/messages', auth, asyncRoute(async (req, res) => 
              u.username, u.name, u.avatar, (m.sender_id = $2) AS own,
              rm.text AS reply_text, rm.media_type AS reply_media_type, ru.name AS reply_name, ru.username AS reply_username,
              CASE WHEN sp.id IS NOT NULL AND (
-               sp.visibility='public' OR sp.user_id=$2 OR
-               (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id))
+               (sp.user_id=$2 OR NOT spu.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$2 AND pf.followed_id=sp.user_id))
+               AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$2 AND bl.blocked_id=sp.user_id) OR (bl.blocker_id=sp.user_id AND bl.blocked_id=$2))
+               AND (sp.visibility='public' OR sp.user_id=$2 OR
+               (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id)))
              ) THEN sp.id END AS shared_visible_id,
              CASE WHEN sp.id IS NOT NULL AND (
-               sp.visibility='public' OR sp.user_id=$2 OR
-               (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id))
+               (sp.user_id=$2 OR NOT spu.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$2 AND pf.followed_id=sp.user_id))
+               AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$2 AND bl.blocked_id=sp.user_id) OR (bl.blocker_id=sp.user_id AND bl.blocked_id=$2))
+               AND (sp.visibility='public' OR sp.user_id=$2 OR
+               (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id)))
              ) THEN sp.text ELSE NULL END AS shared_text,
              CASE WHEN sp.id IS NOT NULL AND (
-               sp.visibility='public' OR sp.user_id=$2 OR
-               (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id))
+               (sp.user_id=$2 OR NOT spu.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$2 AND pf.followed_id=sp.user_id))
+               AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$2 AND bl.blocked_id=sp.user_id) OR (bl.blocker_id=sp.user_id AND bl.blocked_id=$2))
+               AND (sp.visibility='public' OR sp.user_id=$2 OR
+               (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id)))
              ) THEN sp.media_id ELSE NULL END AS shared_media_id,
              CASE WHEN sp.id IS NOT NULL AND (
-               sp.visibility='public' OR sp.user_id=$2 OR
-               (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id))
+               (sp.user_id=$2 OR NOT spu.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$2 AND pf.followed_id=sp.user_id))
+               AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$2 AND bl.blocked_id=sp.user_id) OR (bl.blocker_id=sp.user_id AND bl.blocked_id=$2))
+               AND (sp.visibility='public' OR sp.user_id=$2 OR
+               (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id)))
              ) THEN sp.media_type ELSE NULL END AS shared_media_type,
              spu.username AS shared_username, spu.name AS shared_name, spu.avatar AS shared_avatar
         FROM messages m
@@ -1129,6 +1362,8 @@ app.get('/api/conversations/:id/messages', auth, asyncRoute(async (req, res) => 
 app.post('/api/conversations/:id/messages', auth, asyncRoute(async (req, res) => {
   const conversation = await requireConversationMember(req.params.id, req.user.id);
   const otherId = conversationOtherId(conversation, req.user.id);
+  await assertNotBlocked(req.user.id,otherId);
+  if (!(await canMessageUser(req.user.id,otherId))) return res.status(403).json({error:'Esta persona no acepta mensajes tuyos'});
   const text = String(req.body.text || '').trim().slice(0, 4000);
   const mediaId = req.body.media_id ? String(req.body.media_id) : null;
   const replyToId = req.body.reply_to_id ? Number(req.body.reply_to_id) : null;
@@ -1170,7 +1405,7 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   await initDb();
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`OmniSocial V0.7 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`OmniSocial V0.9 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {

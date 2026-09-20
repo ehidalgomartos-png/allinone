@@ -249,3 +249,60 @@ CREATE INDEX IF NOT EXISTS idx_posts_repost_of ON posts(repost_of_id);
 -- V0.8: índices auxiliares para recomendaciones personalizadas.
 CREATE INDEX IF NOT EXISTS idx_comments_user_created ON comments(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_visibility_created ON posts(visibility, created_at DESC);
+
+
+-- V0.9: privacidad y control del usuario.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS account_private BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS message_policy VARCHAR(20) NOT NULL DEFAULT 'everyone';
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_message_policy_check;
+ALTER TABLE users ADD CONSTRAINT users_message_policy_check
+  CHECK (message_policy IN ('everyone','followers','friends','nobody'));
+
+CREATE TABLE IF NOT EXISTS follow_requests (
+  id BIGSERIAL PRIMARY KEY,
+  follower_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  followed_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (follower_id <> followed_id),
+  UNIQUE (follower_id, followed_id)
+);
+
+CREATE TABLE IF NOT EXISTS blocks (
+  blocker_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  blocked_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (blocker_id, blocked_id),
+  CHECK (blocker_id <> blocked_id)
+);
+
+CREATE TABLE IF NOT EXISTS mutes (
+  muter_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  muted_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (muter_id, muted_id),
+  CHECK (muter_id <> muted_id)
+);
+
+CREATE TABLE IF NOT EXISTS reports (
+  id BIGSERIAL PRIMARY KEY,
+  reporter_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  target_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  post_id BIGINT REFERENCES posts(id) ON DELETE SET NULL,
+  reason VARCHAR(40) NOT NULL,
+  details TEXT NOT NULL DEFAULT '',
+  status VARCHAR(20) NOT NULL DEFAULT 'open' CHECK (status IN ('open','reviewing','closed')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
+  CHECK (type IN ('follow','like','comment','friend_request','friend_accept','message','mention','repost','follow_request','follow_accept'));
+
+ALTER TABLE reports DROP CONSTRAINT IF EXISTS reports_check;
+
+CREATE INDEX IF NOT EXISTS idx_follow_requests_followed ON follow_requests(followed_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_follow_requests_follower ON follow_requests(follower_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_blocks_blocked ON blocks(blocked_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mutes_muter ON mutes(muter_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at DESC);

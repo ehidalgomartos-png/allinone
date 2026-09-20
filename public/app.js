@@ -321,7 +321,7 @@ function postHtml(p) {
     ${p.repost_of_id ? `<div class="repost-label">↻ ${escapeHtml(p.name)} republicó una publicación</div>` : ''}
     <div class="post-head">
       <button class="person-link" onclick="openProfile('${escapeAttr(p.username)}')">${avatar(p)}<span><b>${escapeHtml(p.name)}</b><small>@${escapeHtml(p.username)} · ${timeAgo(p.created_at)}${edited}${privacy}</small></span></button>
-      ${p.own ? `<button class="icon-btn" title="Opciones" onclick="openPostMenu(${p.id},'${encodedText}','${escapeAttr(p.visibility || 'public')}')">•••</button>` : ''}
+      ${p.own ? `<button class="icon-btn" title="Opciones" onclick="openPostMenu(${p.id},'${encodedText}','${escapeAttr(p.visibility || 'public')}')">•••</button>` : `<button class="icon-btn" title="Opciones" onclick="openOtherPostMenu(${p.id},${Number(p.user_id)},'${escapeAttr(p.username)}')">•••</button>`}
     </div>
     ${p.text ? `<div class="post-text">${formatText(p.text)}</div>` : ''}
     ${media}
@@ -340,6 +340,17 @@ window.openPostMenu = (id, encodedText, visibility) => {
     <div class="post-menu">
       <button onclick="editPostModal(${id},'${encodedText}','${escapeAttr(visibility)}')"><span>✎</span><div><b>Editar publicación</b><small>Cambiar texto o privacidad</small></div></button>
       <button class="danger-option" onclick="closeModal();deletePost(${id})"><span>⌫</span><div><b>Eliminar publicación</b><small>Se eliminará definitivamente</small></div></button>
+    </div>`);
+};
+
+
+window.openOtherPostMenu = (postId, userId, username) => {
+  modal(`<div class="modal-head"><h3>Opciones</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <div class="post-menu">
+      <button onclick="closeModal();openProfile('${escapeAttr(username)}')"><span>◎</span><div><b>Ver perfil</b><small>@${escapeHtml(username)}</small></div></button>
+      <button onclick="closeModal();toggleMute(${userId},'${escapeAttr(username)}')"><span>◌</span><div><b>Silenciar</b><small>Dejar de ver su contenido en tus feeds</small></div></button>
+      <button onclick="reportModal({postId:${postId},userId:${userId},username:'${escapeAttr(username)}'})"><span>!</span><div><b>Denunciar publicación</b><small>Enviar a revisión por las normas de la comunidad</small></div></button>
+      <button class="danger-option" onclick="closeModal();toggleBlock(${userId},'${escapeAttr(username)}')"><span>⊘</span><div><b>Bloquear a @${escapeHtml(username)}</b><small>Dejaréis de poder interactuar entre vosotros</small></div></button>
     </div>`);
 };
 
@@ -389,12 +400,20 @@ async function renderFeed() {
   $('#main').innerHTML = `<div class="feed-start">${storyStrip(stories)}${composer()}${feedTabs()}${personalizeHint()}</div><div class="post-list">${rows.length ? rows.map(postHtml).join('') : empty}</div>`;
 }
 
+
+function followButtonHtml(u, klass = 'btn primary compact') {
+  if (u.following) return `<button class="btn ghost compact follow-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Siguiendo</button>`;
+  if (u.follow_requested) return `<button class="btn ghost compact follow-btn requested" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Solicitud enviada</button>`;
+  const label = u.account_private ? 'Solicitar seguir' : 'Seguir';
+  return `<button class="${klass} follow-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.account_private ? '🔒 ' : ''}${label}</button>`;
+}
+
 function suggestionCard(u) {
   return `<article class="suggestion-card">
     <button class="suggestion-person" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'large')}<b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small></button>
     ${u.headline ? `<p>${escapeHtml(u.headline).slice(0,90)}</p>` : ''}
     <div class="suggestion-reason">✦ ${escapeHtml(u.recommendation_reason || 'Sugerido para ti')}</div>
-    <button class="btn primary compact" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Seguir</button>
+    ${followButtonHtml(u)}
   </article>`;
 }
 
@@ -473,34 +492,52 @@ window.searchTag = async (tag) => { state.search = tag; await go('search'); };
 
 function userRow(u) {
   const summary = u.headline || u.bio || '';
-  return `<div class="user-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u)}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small>${summary ? `<em>${escapeHtml(summary).slice(0,90)}</em>` : ''}</span></button><button class="btn ${u.following ? 'ghost' : 'primary'} compact follow-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.following ? 'Siguiendo' : 'Seguir'}</button></div>`;
+  return `<div class="user-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u)}<span><b>${escapeHtml(u.name)}${u.account_private ? ' <i class="private-mini">🔒</i>' : ''}</b><small>@${escapeHtml(u.username)}</small>${summary ? `<em>${escapeHtml(summary).slice(0,90)}</em>` : ''}</span></button>${followButtonHtml(u)}</div>`;
 }
 
 window.openProfile = async (username) => { if (state.messagePoll) { clearInterval(state.messagePoll); state.messagePoll = null; } state.view = 'profile'; state.profile = username; layout(); await renderProfile(username); };
 
 async function renderProfile(username) {
-  const [u, posts] = await Promise.all([
-    api('/api/users/' + encodeURIComponent(username)),
-    api('/api/users/' + encodeURIComponent(username) + '/posts')
-  ]);
+  const u = await api('/api/users/' + encodeURIComponent(username));
+  let posts = [];
+  if (!u.blocked_by_me) posts = await api('/api/users/' + encodeURIComponent(username) + '/posts');
   const website = u.website ? `<a class="profile-link" href="${escapeAttr(normalizeUrl(u.website))}" target="_blank" rel="noopener">↗ ${escapeHtml(u.website)}</a>` : '';
   const interests = String(u.interests || '').split(',').map(x=>x.trim()).filter(Boolean).slice(0,10);
+  const privateLocked = u.account_private && !u.own && !u.following;
+  let actions = '';
+  if (u.own) {
+    actions = `<button class="btn ghost compact" onclick="go('friends')">Amigos</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad</button><button class="btn ghost compact" onclick="editProfile()">Editar perfil</button>`;
+  } else if (u.blocked_by_me) {
+    actions = `<button class="btn primary compact" onclick="toggleBlock(${u.id},'${escapeAttr(u.username)}')">Desbloquear</button>`;
+  } else {
+    actions = `${u.can_message?`<button class="btn ghost compact" onclick="startMessage(${u.id})">Mensaje</button>`:''}${friendButton(u)}${followButtonHtml(u)}<button class="icon-btn profile-more" title="Más opciones" onclick="openProfileMenu(${u.id},'${escapeAttr(u.username)}',${u.muted?'true':'false'})">•••</button>`;
+  }
   $('#main').innerHTML = `<section class="card profile-card profile-card-v7">
     <div class="profile-cover ${u.cover ? 'has-cover' : ''}">${u.cover ? `<img src="${escapeAttr(u.cover)}" alt="">` : ''}</div>
     <div class="profile-main-v7">
-      <div class="profile-top">${avatar(u, 'xl')}<div class="profile-cta">${u.own ? `<button class="btn ghost compact" onclick="go('friends')">Amigos</button><button class="btn ghost compact" onclick="editProfile()">Editar perfil</button>` : `<button class="btn ghost compact" onclick="startMessage(${u.id})">Mensaje</button>${friendButton(u)}<button class="btn ${u.following ? 'ghost' : 'primary'} compact" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.following ? 'Siguiendo' : 'Seguir'}</button>`}</div></div>
-      <h2>${escapeHtml(u.name)}</h2><div class="handle">@${escapeHtml(u.username)}</div>
+      <div class="profile-top">${avatar(u, 'xl')}<div class="profile-cta">${actions}</div></div>
+      <h2>${escapeHtml(u.name)}${u.account_private ? ' <span class="private-badge" title="Cuenta privada">🔒</span>' : ''}</h2><div class="handle">@${escapeHtml(u.username)}</div>
       ${u.headline ? `<div class="profile-headline">${escapeHtml(u.headline)}</div>` : ''}
-      <div class="profile-presence">${presenceHtml(u)}</div>
-      ${u.bio ? `<p class="profile-bio">${formatText(u.bio)}</p>` : ''}
-      <div class="profile-meta">${u.location ? `<span>⌖ ${escapeHtml(u.location)}</span>` : ''}${website}</div>
-      ${interests.length ? `<div class="interest-chips">${interests.map(x=>`<button onclick="searchTag('#${escapeAttr(x.replace(/^#/,'').replace(/\s+/g,'_'))}')">${escapeHtml(x)}</button>`).join('')}</div>` : ''}
+      ${!u.blocked_by_me ? `<div class="profile-presence">${presenceHtml(u)}</div>` : ''}
+      ${u.blocked_by_me ? `<div class="privacy-notice blocked-notice"><b>Has bloqueado a esta persona</b><span>No podéis ver vuestro contenido ni interactuar mientras esté bloqueada.</span></div>` : ''}
+      ${u.bio && !u.blocked_by_me ? `<p class="profile-bio">${formatText(u.bio)}</p>` : ''}
+      ${!u.blocked_by_me ? `<div class="profile-meta">${u.location ? `<span>⌖ ${escapeHtml(u.location)}</span>` : ''}${website}</div>` : ''}
+      ${interests.length && !u.blocked_by_me ? `<div class="interest-chips">${interests.map(x=>`<button onclick="searchTag('#${escapeAttr(x.replace(/^#/,'').replace(/\s+/g,'_'))}')">${escapeHtml(x)}</button>`).join('')}</div>` : ''}
       <div class="profile-stats"><span><b>${u.posts_count}</b> publicaciones</span><span><b>${u.followers_count}</b> seguidores</span><span><b>${u.following_count}</b> siguiendo</span>${u.own ? `<button onclick="go('friends')"><b>${u.friends_count || 0}</b> amigos</button>` : `<span><b>${u.friends_count || 0}</b> amigos</span>`}</div>
     </div>
   </section>
-  <div class="profile-section-title">Publicaciones</div>
-  <div class="post-list">${posts.length ? posts.map(postHtml).join('') : `<div class="card empty"><h3>Sin publicaciones todavía</h3></div>`}</div>`;
+  ${privateLocked ? `<div class="card private-profile-lock"><div>🔒</div><h3>Esta cuenta es privada</h3><p>Envía una solicitud para ver sus publicaciones y Stories.</p>${u.follow_requested ? '<span>Solicitud de seguimiento enviada</span>' : followButtonHtml(u)}</div>` : ''}
+  ${!u.blocked_by_me && !privateLocked ? `<div class="profile-section-title">Publicaciones</div><div class="post-list">${posts.length ? posts.map(postHtml).join('') : `<div class="card empty"><h3>Sin publicaciones todavía</h3></div>`}</div>` : ''}`;
 }
+
+window.openProfileMenu = (userId, username, muted = false) => {
+  modal(`<div class="modal-head"><h3>@${escapeHtml(username)}</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <div class="post-menu">
+      <button onclick="closeModal();toggleMute(${userId},'${escapeAttr(username)}')"><span>◌</span><div><b>${muted ? 'Dejar de silenciar' : 'Silenciar'}</b><small>${muted ? 'Volver a mostrar su contenido' : 'Ocultar sus posts y Stories de tus feeds'}</small></div></button>
+      <button onclick="reportModal({userId:${userId},username:'${escapeAttr(username)}'})"><span>!</span><div><b>Denunciar perfil</b><small>Enviar este perfil a revisión</small></div></button>
+      <button class="danger-option" onclick="closeModal();toggleBlock(${userId},'${escapeAttr(username)}')"><span>⊘</span><div><b>Bloquear</b><small>Impide seguimiento, amistad y mensajes</small></div></button>
+    </div>`);
+};
 
 
 function friendButton(u) {
@@ -514,10 +551,55 @@ function friendButton(u) {
 function normalizeUrl(url) { return /^https?:\/\//i.test(url) ? url : `https://${url}`; }
 
 window.toggleFollow = async (id, username = '') => {
-  try { await api(`/api/users/${id}/follow`, { method:'POST' }); await refreshMe(false); if (state.view === 'profile' && username) await renderProfile(username); else await renderView(); }
-  catch (e) { toast(e.message, 'error'); }
+  try {
+    const d = await api(`/api/users/${id}/follow`, { method:'POST' });
+    if (d.status === 'requested') toast('Solicitud de seguimiento enviada');
+    else if (d.status === 'following') toast('Ahora sigues a esta persona');
+    else toast('Ya no la sigues');
+    await refreshMe(false);
+    if (state.view === 'profile' && username) await renderProfile(username); else await renderView();
+  } catch (e) { toast(e.message, 'error'); }
 };
 
+
+
+window.openPrivacySettings = async () => {
+  try {
+    const [settings,requests,blocked,muted] = await Promise.all([api('/api/privacy'),api('/api/follow-requests'),api('/api/blocked'),api('/api/muted')]);
+    modal(`<div class="modal-head"><h3>Privacidad y control</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+      <div class="privacy-settings">
+        <section class="privacy-section"><div><b>Cuenta privada</b><small>Solo los seguidores que apruebes podrán ver tus publicaciones y Stories.</small></div><label class="switch"><input id="privacyPrivate" type="checkbox" ${settings.account_private?'checked':''}><span></span></label></section>
+        <label class="privacy-field"><span><b>Quién puede enviarte mensajes</b><small>Controla quién puede iniciar o continuar una conversación contigo.</small></span><select id="privacyMessages"><option value="everyone" ${settings.message_policy==='everyone'?'selected':''}>Todo el mundo</option><option value="followers" ${settings.message_policy==='followers'?'selected':''}>Personas que me siguen</option><option value="friends" ${settings.message_policy==='friends'?'selected':''}>Solo amigos</option><option value="nobody" ${settings.message_policy==='nobody'?'selected':''}>Nadie</option></select></label>
+        <button class="btn primary" onclick="savePrivacySettings()">Guardar privacidad</button>
+        <section class="privacy-list"><div class="section-row"><h3>Solicitudes para seguirte</h3><span>${requests.length}</span></div>${requests.length?requests.map(followRequestRow).join(''):'<p class="muted">No tienes solicitudes pendientes.</p>'}</section>
+        <section class="privacy-list"><div class="section-row"><h3>Perfiles bloqueados</h3><span>${blocked.length}</span></div>${blocked.length?blocked.map(u=>privacyPersonRow(u,'block')).join(''):'<p class="muted">No has bloqueado a nadie.</p>'}</section>
+        <section class="privacy-list"><div class="section-row"><h3>Perfiles silenciados</h3><span>${muted.length}</span></div>${muted.length?muted.map(u=>privacyPersonRow(u,'mute')).join(''):'<p class="muted">No has silenciado a nadie.</p>'}</section>
+      </div>`);
+  } catch(e){ toast(e.message,'error'); }
+};
+
+function followRequestRow(r){
+  return `<div class="privacy-person">${avatar(r,'small')}<span><b>${escapeHtml(r.name)}</b><small>@${escapeHtml(r.username)}</small></span><div><button class="btn primary compact" onclick="acceptFollowRequest(${r.id})">Aceptar</button><button class="btn ghost compact" onclick="declineFollowRequest(${r.id})">Eliminar</button></div></div>`;
+}
+function privacyPersonRow(u,type){
+  const action = type==='block' ? `toggleBlock(${u.id},'${escapeAttr(u.username)}',true)` : `toggleMute(${u.id},'${escapeAttr(u.username)}',true)`;
+  return `<div class="privacy-person">${avatar(u,'small')}<button class="privacy-person-name" onclick="closeModal();openProfile('${escapeAttr(u.username)}')"><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small></button><button class="btn ghost compact" onclick="${action}">${type==='block'?'Desbloquear':'Mostrar'}</button></div>`;
+}
+window.savePrivacySettings = async () => {
+  try { await api('/api/privacy',{method:'PATCH',body:JSON.stringify({account_private:$('#privacyPrivate').checked,message_policy:$('#privacyMessages').value})}); await refreshMe(false); toast('Privacidad actualizada'); await openPrivacySettings(); }
+  catch(e){toast(e.message,'error');}
+};
+window.acceptFollowRequest = async id => { try{await api(`/api/follow-requests/${id}/accept`,{method:'POST'});await refreshMe(false);toast('Solicitud aceptada');await openPrivacySettings();}catch(e){toast(e.message,'error');} };
+window.declineFollowRequest = async id => { try{await api(`/api/follow-requests/${id}/decline`,{method:'POST'});await refreshMe(false);toast('Solicitud eliminada');await openPrivacySettings();}catch(e){toast(e.message,'error');} };
+window.toggleMute = async (userId,username='',fromSettings=false) => { try{const d=await api(`/api/users/${userId}/mute`,{method:'POST'});toast(d.muted?'Perfil silenciado':'Perfil visible de nuevo');if(fromSettings)return openPrivacySettings();if(state.view==='profile'&&username)return renderProfile(username);await renderView();}catch(e){toast(e.message,'error');} };
+window.toggleBlock = async (userId,username='',fromSettings=false) => {
+  if(!fromSettings && !confirm('¿Cambiar el bloqueo de esta persona? Al bloquearla se eliminarán seguimientos, solicitudes y amistad entre ambos.')) return;
+  try{const d=await api(`/api/users/${userId}/block`,{method:'POST'});await refreshMe(false);toast(d.blocked?'Usuario bloqueado':'Usuario desbloqueado');if(fromSettings)return openPrivacySettings();if(state.view==='profile'&&username)return renderProfile(username);await go('discover');}catch(e){toast(e.message,'error');}
+};
+window.reportModal = ({postId=null,userId=null,username=''}) => {
+  modal(`<div class="modal-head"><h3>Denunciar${username?' @'+escapeHtml(username):''}</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="report-form"><p>La denuncia quedará registrada para revisión.</p><label>Motivo<select id="reportReason"><option value="spam">Spam</option><option value="harassment">Acoso</option><option value="impersonation">Suplantación</option><option value="nudity">Desnudos o contenido sexual</option><option value="violence">Violencia</option><option value="hate">Odio</option><option value="scam">Estafa</option><option value="other">Otro</option></select></label><label>Detalles opcionales<textarea id="reportDetails" rows="4" maxlength="1000" placeholder="Cuéntanos qué ocurre…"></textarea></label><button class="btn primary" onclick="submitReport(${postId||'null'},${userId||'null'})">Enviar denuncia</button></div>`);
+};
+window.submitReport = async (postId,userId) => { try{await api('/api/reports',{method:'POST',body:JSON.stringify({post_id:postId,target_user_id:userId,reason:$('#reportReason').value,details:$('#reportDetails').value})});closeModal();toast('Denuncia enviada para revisión');}catch(e){toast(e.message,'error');} };
 
 window.sendFriendRequest = async (userId, username = '') => {
   try {
@@ -628,7 +710,7 @@ window.saveProfile = async () => {
 async function renderNotifications() {
   const rows = await api('/api/notifications');
   const browserButton = ('Notification' in window && Notification.permission !== 'granted') ? `<button class="btn ghost compact browser-alert-btn" onclick="requestBrowserNotifications()">Activar avisos del navegador</button>` : '';
-  $('#main').innerHTML = `${pageHeader('Actividad','Lo que está pasando alrededor de tu perfil')}<div class="activity-tools">${browserButton}<button class="btn ghost compact" onclick="go('friends')">Amigos y solicitudes</button></div><div class="card notification-list">${rows.length ? rows.map(notificationHtml).join('') : `<div class="empty"><div class="empty-icon">♡</div><h3>Aún no hay actividad</h3><p>Cuando alguien interactúe contigo, aparecerá aquí.</p></div>`}</div>`;
+  $('#main').innerHTML = `${pageHeader('Actividad','Lo que está pasando alrededor de tu perfil')}<div class="activity-tools">${browserButton}<button class="btn ghost compact" onclick="go('friends')">Amigos y solicitudes</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad${Number(state.me?.follow_requests_count||0)?` · ${state.me.follow_requests_count}`:''}</button></div><div class="card notification-list">${rows.length ? rows.map(notificationHtml).join('') : `<div class="empty"><div class="empty-icon">♡</div><h3>Aún no hay actividad</h3><p>Cuando alguien interactúe contigo, aparecerá aquí.</p></div>`}</div>`;
   await api('/api/notifications/read', { method:'POST' });
   state.me.unread_notifications = 0;
   setTimeout(() => { if (state.view === 'notifications') layoutNavOnly(); }, 100);
@@ -658,7 +740,7 @@ async function loadRightbar() {
   try {
     const [suggestions, tags] = await Promise.all([api('/api/suggestions?limit=4'), api('/api/trending')]);
     box.innerHTML = `<div class="card side-card"><div class="side-title">Tu perfil</div><button class="profile-summary" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me)}<span><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></span></button><div class="mini-stats"><span><b>${state.me.posts_count || 0}</b>posts</span><span><b>${state.me.followers_count || 0}</b>seguidores</span><span><b>${state.me.following_count || 0}</b>siguiendo</span></div></div>
-      <div class="card side-card"><div class="side-title">Personas para ti</div>${suggestions.length ? suggestions.map(u => `<div class="side-user suggested-side-user"><button onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small><em>✦ ${escapeHtml(u.recommendation_reason || 'Sugerido')}</em></span></button><button class="text-btn" onclick="toggleFollow(${u.id})">Seguir</button></div>`).join('') : '<p class="muted">Sigue interactuando y aparecerán sugerencias.</p>'}</div>
+      <div class="card side-card"><div class="side-title">Personas para ti</div>${suggestions.length ? suggestions.map(u => `<div class="side-user suggested-side-user"><button onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small><em>✦ ${escapeHtml(u.recommendation_reason || 'Sugerido')}</em></span></button>${u.follow_requested?`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Solicitada</button>`:`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.account_private?'Solicitar':'Seguir'}</button>`}</div>`).join('') : '<p class="muted">Sigue interactuando y aparecerán sugerencias.</p>'}</div>
       <div class="card side-card"><div class="side-title">Tendencias · 7 días</div>${tags.length ? tags.map(t => `<button class="trend" onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} posts · ${t.authors || 1} personas · ${t.engagement || 0} interacciones</small></button>`).join('') : '<p class="muted">Los hashtags aparecerán aquí cuando se usen.</p>'}</div>
       <button class="logout-link" onclick="logout()">Cerrar sesión</button>`;
   } catch {
@@ -1011,7 +1093,7 @@ function connectRealtime() {
   });
   state.socket.on('notification:new', (event) => {
     state.me.unread_notifications=Number(state.me.unread_notifications||0)+1; updateNavBadges();
-    const labels={follow:'Nuevo seguidor',like:'Nuevo me gusta',comment:'Nuevo comentario',friend_request:'Nueva solicitud de amistad',friend_accept:'Solicitud aceptada',mention:'Te han mencionado',repost:'Han republicado tu post'};
+    const labels={follow:'Nuevo seguidor',follow_request:'Nueva solicitud de seguimiento',follow_accept:'Solicitud de seguimiento aceptada',like:'Nuevo me gusta',comment:'Nuevo comentario',friend_request:'Nueva solicitud de amistad',friend_accept:'Solicitud aceptada',mention:'Te han mencionado',repost:'Han republicado tu post'};
     browserNotice('OmniSocial', labels[event.type] || 'Tienes nueva actividad');
   });
 }

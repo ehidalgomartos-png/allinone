@@ -1,32 +1,51 @@
-# OmniSocial V0.8 — Para ti y recomendaciones
+# OmniSocial V0.9 — Privacidad y control
 
-V0.8 mantiene todo lo existente en V0.7.1 y añade una capa de descubrimiento personalizado dentro de la red propia.
+V0.9 añade una capa de privacidad sobre la comunidad propia construida hasta V0.8.
 
 ## Novedades
 
-- Feed de Inicio con dos modos: **Siguiendo** y **Para ti**.
-- `Para ti` ordena contenido público usando señales explicables: intereses, cuentas seguidas, likes, comentarios, guardados, conexiones en común, actividad del post y recencia.
-- Cada post recomendado puede mostrar por qué aparece.
-- Nueva API `/api/for-you`.
-- Nueva API `/api/suggestions`.
-- **Personas para ti** en Descubrir y en la columna lateral de escritorio.
-- Las sugerencias tienen motivos como intereses comunes, conexiones en común o interacción previa.
-- Descubrir separa personas recomendadas, tendencias y publicaciones populares.
-- Si el perfil no tiene intereses, OmniSocial muestra una invitación compacta para añadirlos.
-- V0.7.1 se conserva completa: perfiles, eliminación de avatar/portada, Stories, Reels, mensajes, amigos, tiempo real, menciones, hashtags, reposts y edición.
+- Cuentas públicas o privadas.
+- Solicitudes de seguimiento para cuentas privadas.
+- Aceptar o rechazar solicitudes desde Privacidad.
+- Si una cuenta vuelve a pública, las solicitudes pendientes se convierten en seguidores.
+- Bloquear / desbloquear usuarios.
+- Silenciar / volver a mostrar usuarios.
+- Denunciar perfiles y publicaciones.
+- Control de mensajes: todo el mundo, seguidores, amigos o nadie.
+- Feeds, Stories, Reels, búsqueda, recomendaciones y tendencias respetan bloqueos y privacidad.
+- El contenido de cuentas privadas solo se muestra a seguidores aprobados.
+- Los bloqueos eliminan seguimiento, solicitudes de seguimiento, amistad y solicitudes de amistad entre ambas personas.
+- Los mensajes nuevos respetan bloqueo y política de mensajes.
 
-## Persistencia
+## Migración
 
-No se borran ni recrean tablas. La V0.8 solo añade índices auxiliares para acelerar recomendaciones.
+`src/schema.sql` usa migraciones aditivas con `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` y `CREATE TABLE IF NOT EXISTS`. No borra usuarios, publicaciones, mensajes, Stories, Reels ni relaciones existentes.
 
-## Despliegue
+Nuevas tablas:
 
-Usa el mismo repositorio GitHub, Web Service de Render y PostgreSQL. Sustituye los archivos, haz commit y espera el Auto Deploy.
+- `follow_requests`
+- `blocks`
+- `mutes`
+- `reports`
 
-Comprueba después:
+Nuevos campos en `users`:
 
-```text
-https://TU-SERVICIO.onrender.com/api/health
-```
+- `account_private`
+- `message_policy`
 
-Debe responder con `version: "0.8.0"`.
+## Desarrollo local
+
+1. Configura `DATABASE_URL` y `JWT_SECRET`.
+2. Ejecuta `npm install`.
+3. Ejecuta `npm start`.
+4. Abre `http://localhost:3000`.
+
+## Render
+
+Mantén el mismo Web Service y la misma base PostgreSQL. Al desplegar, `initDb()` aplica las migraciones automáticamente.
+
+Comprueba `/api/health`; debe indicar `version: "0.9.0"`.
+
+## Nota de moderación
+
+Las denuncias ya se guardan en PostgreSQL con estado `open`. El panel administrativo para revisar y resolver denuncias queda preparado como evolución posterior; V0.9 se centra en las herramientas del usuario.
