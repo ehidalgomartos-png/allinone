@@ -1,18 +1,21 @@
-# Instant Admirers V1.1.4 — Portada móvil optimizada
+# Instant Admirers V1.1.5 — Identidad visual
 
-Actualización visual sobre V1.1.3. No cambia la base de datos ni elimina ninguna función.
+Actualización visual sobre V1.1.4. No cambia PostgreSQL ni elimina ninguna función.
 
 ## Mejoras de esta versión
 
-- Portada de acceso mucho más compacta en móvil.
-- El formulario de login aparece antes y requiere menos desplazamiento.
-- Logo superior más pequeño y equilibrado.
-- Titular móvil reducido y con mejor salto de líneas.
-- Texto introductorio específico y más corto para móvil.
-- Se elimina la repetición del logo dentro de la tarjeta de acceso.
-- Los chips Fotos / Vídeos / Conversaciones / Comunidad se ocultan en teléfonos pequeños.
-- Menos padding y espacios verticales en formulario, pestañas y enlaces legales.
-- Escritorio conserva la presentación amplia de la marca.
-- Mantiene las mejoras V1.1.3: perfil móvil compacto, Cerrar sesión y editor antes del selector multimedia.
+- Navegación de escritorio con estado activo más claro y coherente con la marca.
+- Dock móvil renovado: el icono de la sección activa usa el degradado fucsia/violeta.
+- Cabecera móvil más limpia y consistente.
+- Perfil renovado: portada, avatar, estadísticas y jerarquía tipográfica más compactas.
+- Estadísticas del perfil agrupadas en un único bloque de cuatro columnas.
+- Tarjetas, botones y bordes usan un lenguaje visual más uniforme.
+- Feed, Stories y selector “Siguiendo / Para ti” integrados mejor con la identidad Instant Admirers.
+- Tarjetas de Descubrir y tendencias con estados hover más discretos.
+- Estados vacíos más cuidados y con iconografía visual.
+- Modales y formularios con superficies y focos más consistentes.
+- Escritorio, tablet y móvil conservan la misma identidad.
 
-No requiere migraciones PostgreSQL.
+## Datos
+
+No requiere migraciones. Usuarios, publicaciones, Stories, Reels, mensajes, privacidad, amigos, administración y contenido multimedia permanecen intactos.

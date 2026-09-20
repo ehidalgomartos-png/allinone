@@ -327,7 +327,7 @@ async function renderView() {
     if (state.view === 'admin') return renderAdmin();
     if (state.view === 'profile') return renderProfile(state.profile || state.me.username);
   } catch (e) {
-    main.innerHTML = `<div class="card empty"><h3>No se pudo cargar</h3><p>${escapeHtml(e.message)}</p><button class="btn" onclick="renderView()">Reintentar</button></div>`;
+    main.innerHTML = `<div class="card empty"><div class="empty-icon">!</div><h3>No se pudo cargar</h3><p>${escapeHtml(e.message)}</p><button class="btn primary compact" onclick="renderView()">Reintentar</button></div>`;
   }
 }
 window.renderView = renderView;
@@ -498,8 +498,8 @@ async function renderFeed() {
   const endpoint = state.feedMode === 'for-you' ? '/api/for-you' : '/api/feed';
   const [rows, stories] = await Promise.all([api(endpoint), api('/api/stories')]);
   const empty = state.feedMode === 'for-you'
-    ? `<div class="card empty feed-empty"><h3>Estamos preparando tu Para ti</h3><p>Interactúa con publicaciones, sigue perfiles o añade intereses para afinarlo.</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button><button class="btn ghost compact" onclick="editProfile()">Mis intereses</button></div></div>`
-    : `<div class="card empty feed-empty"><h3>Tu feed está empezando</h3><p>Sigue personas desde Descubrir o crea tu primera publicación.</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button><button class="btn ghost compact" onclick="openComposerModal()">Publicar</button></div></div>`;
+    ? `<div class="card empty feed-empty"><div class="empty-icon">✦</div><h3>Estamos preparando tu Para ti</h3><p>Interactúa con publicaciones, sigue perfiles o añade intereses para afinarlo.</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button><button class="btn ghost compact" onclick="editProfile()">Mis intereses</button></div></div>`
+    : `<div class="card empty feed-empty"><div class="empty-icon">⌂</div><h3>Tu feed está empezando</h3><p>Sigue personas desde Descubrir o crea tu primera publicación.</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button><button class="btn ghost compact" onclick="openComposerModal()">Publicar</button></div></div>`;
   $('#main').innerHTML = `<div class="feed-start">${storyStrip(stories)}${composer()}${feedTabs()}${personalizeHint()}</div><div class="post-list">${rows.length ? rows.map(postHtml).join('') : empty}</div>`;
 }
 
@@ -524,7 +524,7 @@ async function renderDiscover() {
   const [rows,trends,suggestions] = await Promise.all([api('/api/discover'),api('/api/trending'),api('/api/suggestions?limit=8')]);
   const trendStrip = trends.length ? `<div class="trend-strip">${trends.slice(0,8).map(t=>`<button onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} posts · ${t.authors} personas</small></button>`).join('')}</div>` : '';
   const people = suggestions.length ? `<section class="discover-people"><div class="section-heading"><div><h3>Personas para ti</h3><p>Perfiles recomendados según tu actividad e intereses.</p></div></div><div class="suggestion-scroll">${suggestions.map(suggestionCard).join('')}</div></section>` : '';
-  $('#main').innerHTML = `${pageHeader('Descubrir','Encuentra personas, temas y contenido nuevo')}${people}${trendStrip}<div class="section-heading post-discover-heading"><div><h3>Popular ahora</h3><p>Publicaciones públicas con más conversación reciente.</p></div></div><div class="post-list">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty"><h3>Aún no hay contenido público</h3></div>`}</div>`;
+  $('#main').innerHTML = `${pageHeader('Descubrir','Encuentra personas, temas y contenido nuevo')}${people}${trendStrip}<div class="section-heading post-discover-heading"><div><h3>Popular ahora</h3><p>Publicaciones públicas con más conversación reciente.</p></div></div><div class="post-list">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty"><div class="empty-icon">✦</div><h3>Aún no hay contenido público</h3><p>Cuando la comunidad publique contenido público, aparecerá aquí.</p></div>`}</div>`;
 }
 
 async function renderBookmarks() {
@@ -656,7 +656,7 @@ async function renderProfile(username) {
     </div>
   </section>
   ${privateLocked ? `<div class="card private-profile-lock"><div>🔒</div><h3>Esta cuenta es privada</h3><p>Envía una solicitud para ver sus publicaciones y Stories.</p>${u.follow_requested ? '<span>Solicitud de seguimiento enviada</span>' : followButtonHtml(u)}</div>` : ''}
-  ${!u.blocked_by_me && !privateLocked ? `<div class="profile-section-title">Publicaciones</div><div class="post-list">${posts.length ? posts.map(postHtml).join('') : `<div class="card empty"><h3>Sin publicaciones todavía</h3></div>`}</div>` : ''}`;
+  ${!u.blocked_by_me && !privateLocked ? `<div class="profile-section-title">Publicaciones</div><div class="post-list">${posts.length ? posts.map(postHtml).join('') : `<div class="card empty profile-empty"><div class="empty-icon">▧</div><h3>Sin publicaciones todavía</h3><p>${u.own ? 'Tu primera publicación aparecerá aquí.' : 'Cuando publique algo, aparecerá aquí.'}</p>${u.own ? '<button class="btn primary compact" onclick="openComposerModal()">Crear publicación</button>' : ''}</div>`}</div>` : ''}`;
 }
 
 window.openProfileMenu = (userId, username, muted = false) => {

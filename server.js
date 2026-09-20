@@ -400,7 +400,7 @@ function peopleRecommendationReason(row = {}) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.1.4', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth'] });
+  res.json({ ok: true, version: '1.1.5', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh'] });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
@@ -1606,7 +1606,7 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   await initDb();
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.1.4 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.1.5 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {
