@@ -1,10 +1,27 @@
-# Render — OmniSocial V0.9
+# Render — OmniSocial V1.0
 
-Esta versión se despliega sobre el mismo servicio y la misma base PostgreSQL de las versiones anteriores.
+Mantén el mismo Web Service y la misma PostgreSQL que ya utilizas.
 
-1. Sube V0.9 al repositorio GitHub conectado a Render.
-2. Render ejecutará `npm install` y `npm start`.
-3. `src/schema.sql` aplicará las migraciones al iniciar.
-4. Comprueba `/api/health` y que la versión sea `0.9.0`.
+Render debe usar:
 
-No crees otra base de datos y no elimines `DATABASE_URL` ni `JWT_SECRET`.
+```text
+Build Command: npm install
+Start Command: npm start
+Health Check: /api/health
+```
+
+Variables necesarias:
+
+```text
+DATABASE_URL     (ya enlazada a PostgreSQL)
+JWT_SECRET       (ya configurada)
+NODE_ENV=production
+```
+
+Para usar el panel de moderación añade manualmente:
+
+```text
+ADMIN_EMAILS=tu@email.com
+```
+
+No es necesario modificar `DATABASE_URL` ni recrear la base.

@@ -1,51 +1,55 @@
-# OmniSocial V0.9 — Privacidad y control
+# OmniSocial V1.0
 
-V0.9 añade una capa de privacidad sobre la comunidad propia construida hasta V0.8.
+Primera versión completa de la comunidad propia OmniSocial.
 
-## Novedades
+## Incluye
 
-- Cuentas públicas o privadas.
-- Solicitudes de seguimiento para cuentas privadas.
-- Aceptar o rechazar solicitudes desde Privacidad.
-- Si una cuenta vuelve a pública, las solicitudes pendientes se convierten en seguidores.
-- Bloquear / desbloquear usuarios.
-- Silenciar / volver a mostrar usuarios.
-- Denunciar perfiles y publicaciones.
-- Control de mensajes: todo el mundo, seguidores, amigos o nadie.
-- Feeds, Stories, Reels, búsqueda, recomendaciones y tendencias respetan bloqueos y privacidad.
-- El contenido de cuentas privadas solo se muestra a seguidores aprobados.
-- Los bloqueos eliminan seguimiento, solicitudes de seguimiento, amistad y solicitudes de amistad entre ambas personas.
-- Los mensajes nuevos respetan bloqueo y política de mensajes.
+- Registro, login y perfiles completos.
+- Feed Siguiendo y feed Para ti.
+- Fotos, vídeos, Stories, Reels y publicaciones de texto.
+- Likes, comentarios, guardados, reposts, menciones y hashtags.
+- Amigos, seguidores, cuentas privadas y solicitudes de seguimiento.
+- Mensajes privados en tiempo real con respuestas y contenido compartido.
+- Bloqueos, silencios, denuncias y control de quién puede escribirte.
+- Onboarding inicial para nuevos usuarios.
+- Ajustes de cuenta, cambio de contraseña y eliminación de cuenta.
+- Panel de administración para revisar denuncias, retirar posts y suspender/reactivar cuentas.
+- PostgreSQL y despliegue en Render.
 
-## Migración
+## Administrador
 
-`src/schema.sql` usa migraciones aditivas con `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` y `CREATE TABLE IF NOT EXISTS`. No borra usuarios, publicaciones, mensajes, Stories, Reels ni relaciones existentes.
+Para activar el panel de administración, añade en Render una variable de entorno:
 
-Nuevas tablas:
+```text
+ADMIN_EMAILS=tu@email.com
+```
 
-- `follow_requests`
-- `blocks`
-- `mutes`
-- `reports`
+Puedes indicar varios emails separados por comas. El email debe coincidir con el utilizado por la cuenta de OmniSocial.
 
-Nuevos campos en `users`:
+Después reinicia/redeploy el servicio y vuelve a iniciar sesión. Aparecerá **Administración** en el menú y en tu perfil.
 
-- `account_private`
-- `message_policy`
+## Health check
+
+```text
+/api/health
+```
+
+Debe devolver `version: "1.0.0"`.
 
 ## Desarrollo local
 
-1. Configura `DATABASE_URL` y `JWT_SECRET`.
-2. Ejecuta `npm install`.
-3. Ejecuta `npm start`.
-4. Abre `http://localhost:3000`.
+1. Instala PostgreSQL.
+2. Copia `.env.example` a `.env`.
+3. Ajusta `DATABASE_URL`, `JWT_SECRET` y opcionalmente `ADMIN_EMAILS`.
+4. Ejecuta:
 
-## Render
+```bash
+npm install
+npm start
+```
 
-Mantén el mismo Web Service y la misma base PostgreSQL. Al desplegar, `initDb()` aplica las migraciones automáticamente.
+Abre `http://localhost:3000`.
 
-Comprueba `/api/health`; debe indicar `version: "0.9.0"`.
+## Nota sobre multimedia
 
-## Nota de moderación
-
-Las denuncias ya se guardan en PostgreSQL con estado `open`. El panel administrativo para revisar y resolver denuncias queda preparado como evolución posterior; V0.9 se centra en las herramientas del usuario.
+En esta versión MVP las imágenes y vídeos siguen guardándose en PostgreSQL. Antes de crecer a un volumen importante conviene mover multimedia a almacenamiento de objetos (S3/Cloudinary/R2 o similar).

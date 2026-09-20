@@ -1,7 +1,7 @@
 {
   "name": "omnisocial-community",
-  "version": "0.9.0",
-  "description": "OmniSocial V0.9 - Privacidad, perfiles privados, bloqueo, silencio y denuncias",
+  "version": "1.0.0",
+  "description": "OmniSocial V1.0 - Red social propia con privacidad, recomendaciones, moderación y gestión de cuenta",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

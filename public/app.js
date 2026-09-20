@@ -126,7 +126,7 @@ window.showAuth = (mode) => {
       <label>Nombre</label><input id="regname" placeholder="Tu nombre">
       <label>Usuario</label><input id="reguser" autocomplete="username" placeholder="tuusuario">
       <label>Email</label><input id="regemail" type="email" autocomplete="email" placeholder="tu@email.com">
-      <label>Contraseña</label><input id="regpass" type="password" autocomplete="new-password" placeholder="Mínimo 6 caracteres">
+      <label>Contraseña</label><input id="regpass" type="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres">
       <button class="btn primary large" onclick="register()">Crear mi cuenta</button>
     </div>`;
 };
@@ -176,6 +176,7 @@ function layout() {
             ${navButton('messages','✉','Mensajes')}
             ${navButton('notifications','♡','Actividad')}
             ${navButton('bookmarks','▱','Guardados')}
+            ${state.me?.is_admin ? navButton('admin','⚙','Administración') : ''}
             <button class="nav-item ${state.view === 'profile' ? 'active' : ''}" onclick="openProfile('${escapeAttr(state.me.username)}')"><span class="nav-icon">◎</span><span>Perfil</span></button>
           </nav>
           <button class="btn primary compose-side" onclick="focusComposer()">Publicar</button>
@@ -228,6 +229,7 @@ async function renderView() {
     if (state.view === 'notifications') return renderNotifications();
     if (state.view === 'bookmarks') return renderBookmarks();
     if (state.view === 'friends') return renderFriends();
+    if (state.view === 'admin') return renderAdmin();
     if (state.view === 'profile') return renderProfile(state.profile || state.me.username);
   } catch (e) {
     main.innerHTML = `<div class="card empty"><h3>No se pudo cargar</h3><p>${escapeHtml(e.message)}</p><button class="btn" onclick="renderView()">Reintentar</button></div>`;
@@ -506,7 +508,7 @@ async function renderProfile(username) {
   const privateLocked = u.account_private && !u.own && !u.following;
   let actions = '';
   if (u.own) {
-    actions = `<button class="btn ghost compact" onclick="go('friends')">Amigos</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad</button><button class="btn ghost compact" onclick="editProfile()">Editar perfil</button>`;
+    actions = `<button class="btn ghost compact" onclick="go('friends')">Amigos</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad</button><button class="btn ghost compact" onclick="openAccountSettings()">Ajustes</button>${state.me?.is_admin ? `<button class="btn ghost compact" onclick="go('admin')">Administración</button>` : ''}<button class="btn ghost compact" onclick="editProfile()">Editar perfil</button>`;
   } else if (u.blocked_by_me) {
     actions = `<button class="btn primary compact" onclick="toggleBlock(${u.id},'${escapeAttr(u.username)}')">Desbloquear</button>`;
   } else {
@@ -720,6 +722,8 @@ function notificationHtml(n) {
   let action = 'ha interactuado contigo';
   let click = `openProfile('${escapeAttr(n.username || '')}')`;
   if (n.type === 'follow') action = 'ha empezado a seguirte';
+  else if (n.type === 'follow_request') { action = 'quiere seguir tu cuenta privada'; click = `openPrivacySettings()`; }
+  else if (n.type === 'follow_accept') { action = 'ha aceptado tu solicitud de seguimiento'; }
   else if (n.type === 'like') { action = 'ha indicado que le gusta tu publicación'; click = `openComments(${Number(n.post_id)})`; }
   else if (n.type === 'comment') { action = 'ha comentado tu publicación'; click = `openComments(${Number(n.post_id)})`; }
   else if (n.type === 'friend_request') { action = 'quiere añadirte como amigo'; click = `go('friends')`; }
@@ -732,7 +736,7 @@ function notificationHtml(n) {
 
 function layoutNavOnly() {
   const desktop = $('#desktopNav');
-  if (desktop) desktop.innerHTML = `${navButton('feed','⌂','Inicio')}${navButton('reels','▶','Reels')}${navButton('discover','✦','Descubrir')}${navButton('search','⌕','Buscar')}${navButton('messages','✉','Mensajes')}${navButton('notifications','♡','Actividad')}${navButton('bookmarks','▱','Guardados')}<button class="nav-item ${state.view === 'profile' ? 'active' : ''}" onclick="openProfile('${escapeAttr(state.me.username)}')"><span class="nav-icon">◎</span><span>Perfil</span></button>`;
+  if (desktop) desktop.innerHTML = `${navButton('feed','⌂','Inicio')}${navButton('reels','▶','Reels')}${navButton('discover','✦','Descubrir')}${navButton('search','⌕','Buscar')}${navButton('messages','✉','Mensajes')}${navButton('notifications','♡','Actividad')}${navButton('bookmarks','▱','Guardados')}${state.me?.is_admin ? navButton('admin','⚙','Administración') : ''}<button class="nav-item ${state.view === 'profile' ? 'active' : ''}" onclick="openProfile('${escapeAttr(state.me.username)}')"><span class="nav-icon">◎</span><span>Perfil</span></button>`;
 }
 
 async function loadRightbar() {
@@ -1104,6 +1108,181 @@ async function refreshMe(rebuild = true) {
   else loadRightbar();
 }
 
+
+// --- V1.0: onboarding, cuenta y administración -----------------------------
+window.openOnboarding = () => {
+  const u = state.me || {};
+  modal(`<div class="modal-head"><h3>Bienvenido a OmniSocial</h3><button class="icon-btn" onclick="skipOnboarding()">×</button></div>
+    <div class="onboarding">
+      <div class="onboarding-intro">
+        <span>✨</span>
+        <h2>Haz tu perfil un poco más tuyo</h2>
+        <p>Esto ayuda a que “Para ti” y las recomendaciones empiecen con mejores señales.</p>
+      </div>
+      <label>Frase de perfil<input id="onHeadline" maxlength="140" value="${escapeAttr(u.headline || '')}" placeholder="Diseñador, creador, viajero…"></label>
+      <label>Intereses<input id="onInterests" maxlength="500" value="${escapeAttr(u.interests || '')}" placeholder="música, viajes, tecnología"></label>
+      <label>Ubicación<input id="onLocation" maxlength="120" value="${escapeAttr(u.location || '')}" placeholder="Valencia, España"></label>
+      <div class="onboarding-actions"><button class="btn ghost" onclick="skipOnboarding()">Ahora no</button><button class="btn primary" onclick="saveOnboarding()">Guardar y empezar</button></div>
+    </div>`);
+};
+
+window.saveOnboarding = async () => {
+  try {
+    await api('/api/onboarding', { method:'POST', body:JSON.stringify({
+      headline:$('#onHeadline')?.value || '',
+      interests:$('#onInterests')?.value || '',
+      location:$('#onLocation')?.value || ''
+    }) });
+    closeModal();
+    await refreshMe();
+    toast('Perfil preparado');
+  } catch(e) { toast(e.message,'error'); }
+};
+
+window.skipOnboarding = async () => {
+  try {
+    await api('/api/onboarding', { method:'POST', body:JSON.stringify({
+      headline:state.me?.headline || '',
+      interests:state.me?.interests || '',
+      location:state.me?.location || ''
+    }) });
+    closeModal();
+    await refreshMe(false);
+  } catch(e) { closeModal(); }
+};
+
+window.openAccountSettings = () => {
+  modal(`<div class="modal-head"><h3>Ajustes de cuenta</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <div class="account-settings">
+      <section class="settings-block">
+        <div><b>Contraseña</b><small>Cambia tu contraseña usando la actual.</small></div>
+        <button class="btn ghost compact" onclick="openPasswordChange()">Cambiar contraseña</button>
+      </section>
+      <section class="settings-block">
+        <div><b>Privacidad</b><small>Cuenta privada, mensajes, bloqueos y silencios.</small></div>
+        <button class="btn ghost compact" onclick="closeModal();openPrivacySettings()">Abrir privacidad</button>
+      </section>
+      ${state.me?.is_admin ? `<section class="settings-block"><div><b>Administración</b><small>Revisa denuncias y actividad de moderación.</small></div><button class="btn ghost compact" onclick="closeModal();go('admin')">Abrir panel</button></section>` : ''}
+      <section class="settings-block danger-settings">
+        <div><b>Eliminar cuenta</b><small>Esta acción elimina tu perfil y tus datos asociados de OmniSocial.</small></div>
+        <button class="btn danger compact" onclick="openDeleteAccount()">Eliminar cuenta</button>
+      </section>
+    </div>`);
+};
+
+window.openPasswordChange = () => {
+  modal(`<div class="modal-head"><h3>Cambiar contraseña</h3><button class="icon-btn" onclick="openAccountSettings()">×</button></div>
+    <div class="account-form">
+      <label>Contraseña actual<input id="currentPassword" type="password" autocomplete="current-password"></label>
+      <label>Nueva contraseña<input id="newPassword" type="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres"></label>
+      <label>Repite la nueva contraseña<input id="newPassword2" type="password" autocomplete="new-password"></label>
+      <button class="btn primary" onclick="changePassword()">Guardar contraseña</button>
+    </div>`);
+};
+
+window.changePassword = async () => {
+  const a=$('#newPassword')?.value || '', b=$('#newPassword2')?.value || '';
+  if(a!==b) return toast('Las nuevas contraseñas no coinciden','error');
+  try {
+    await api('/api/account/password',{method:'POST',body:JSON.stringify({current_password:$('#currentPassword').value,new_password:a})});
+    closeModal(); toast('Contraseña actualizada');
+  } catch(e){ toast(e.message,'error'); }
+};
+
+window.openDeleteAccount = () => {
+  modal(`<div class="modal-head"><h3>Eliminar cuenta</h3><button class="icon-btn" onclick="openAccountSettings()">×</button></div>
+    <div class="delete-account-box">
+      <div class="danger-callout"><b>Esta acción es permanente</b><p>Se eliminarán tu perfil, publicaciones, Stories, mensajes y relaciones asociadas a la cuenta.</p></div>
+      <label>Contraseña<input id="deletePassword" type="password" autocomplete="current-password"></label>
+      <label>Escribe <b>ELIMINAR</b><input id="deleteConfirm" autocomplete="off" placeholder="ELIMINAR"></label>
+      <button class="btn danger" onclick="deleteAccount()">Eliminar mi cuenta definitivamente</button>
+    </div>`);
+};
+
+window.deleteAccount = async () => {
+  if(!confirm('¿Confirmas que quieres eliminar tu cuenta definitivamente?')) return;
+  try{
+    await api('/api/account',{method:'DELETE',body:JSON.stringify({password:$('#deletePassword').value,confirmation:$('#deleteConfirm').value})});
+    closeModal(); logout();
+  }catch(e){toast(e.message,'error');}
+};
+
+function reportReasonLabel(reason='') {
+  return ({spam:'Spam',harassment:'Acoso',impersonation:'Suplantación',nudity:'Desnudos / contenido sexual',violence:'Violencia',hate:'Odio',scam:'Estafa',other:'Otro'})[reason] || reason;
+}
+
+async function renderAdmin() {
+  if(!state.me?.is_admin){
+    $('#main').innerHTML=`<div class="card empty"><h3>Acceso no disponible</h3><p>Este panel está reservado a administración.</p></div>`;
+    return;
+  }
+  const [stats,reports,actions]=await Promise.all([
+    api('/api/admin/stats'),
+    api('/api/admin/reports?status=all'),
+    api('/api/admin/actions')
+  ]);
+  $('#main').innerHTML=`${pageHeader('Administración','Moderación y estado general de OmniSocial')}
+    <div class="admin-stats">
+      <div class="card admin-stat"><b>${stats.users}</b><span>Usuarios</span><small>+${stats.new_users_7d} esta semana</small></div>
+      <div class="card admin-stat"><b>${stats.posts}</b><span>Publicaciones</span><small>+${stats.new_posts_7d} esta semana</small></div>
+      <div class="card admin-stat"><b>${stats.open_reports}</b><span>Denuncias abiertas</span><small>${stats.reviewing_reports} en revisión</small></div>
+      <div class="card admin-stat"><b>${stats.suspended_users}</b><span>Suspendidos</span><small>${stats.closed_reports} denuncias cerradas</small></div>
+    </div>
+    <section class="card admin-section">
+      <div class="section-row"><h3>Denuncias</h3><span>${reports.length}</span></div>
+      <div class="admin-report-list">${reports.length?reports.map(adminReportHtml).join(''):'<div class="empty compact-empty">No hay denuncias.</div>'}</div>
+    </section>
+    <section class="card admin-section">
+      <div class="section-row"><h3>Últimas acciones</h3><span>${actions.length}</span></div>
+      <div class="admin-action-list">${actions.length?actions.map(a=>`<div class="admin-action"><b>${escapeHtml(a.action)}</b><span>${a.target_username?'@'+escapeHtml(a.target_username):''}${a.report_id?` · denuncia #${a.report_id}`:''}</span><small>${a.admin_username?'@'+escapeHtml(a.admin_username)+' · ':''}${timeAgo(a.created_at)}</small></div>`).join(''):'<p class="muted">Todavía no hay acciones de moderación.</p>'}</div>
+    </section>`;
+}
+
+function adminReportHtml(r){
+  const target=r.target_username?`@${escapeHtml(r.target_username)}`:'contenido eliminado';
+  const post=r.post_id?`<div class="admin-report-post"><b>Publicación #${r.post_id}</b><p>${escapeHtml(r.post_text || '').slice(0,220)}</p></div>`:'';
+  return `<article class="admin-report status-${escapeAttr(r.status)}">
+    <div class="admin-report-head"><div><b>#${r.id} · ${escapeHtml(reportReasonLabel(r.reason))}</b><small>Denuncia de @${escapeHtml(r.reporter_username)} · ${timeAgo(r.created_at)}</small></div><span>${escapeHtml(r.status)}</span></div>
+    <p><b>Objetivo:</b> ${target}</p>
+    ${r.details?`<p>${escapeHtml(r.details)}</p>`:''}
+    ${post}
+    ${r.admin_note?`<div class="admin-note">Nota: ${escapeHtml(r.admin_note)}</div>`:''}
+    <div class="admin-report-actions">
+      ${r.status!=='reviewing'?`<button class="btn ghost compact" onclick="adminSetReport(${r.id},'reviewing')">En revisión</button>`:''}
+      ${r.status!=='closed'?`<button class="btn primary compact" onclick="adminSetReport(${r.id},'closed')">Cerrar</button>`:''}
+      ${r.status!=='open'?`<button class="btn ghost compact" onclick="adminSetReport(${r.id},'open')">Reabrir</button>`:''}
+      ${r.post_id?`<button class="btn danger compact" onclick="adminRemovePost(${r.post_id},${r.id})">Eliminar post</button>`:''}
+      ${r.target_user_id?`<button class="btn ${r.target_status==='suspended'?'ghost':'danger'} compact" onclick="adminToggleUser(${r.target_user_id},'${r.target_status==='suspended'?'active':'suspended'}',${r.id})">${r.target_status==='suspended'?'Reactivar usuario':'Suspender usuario'}</button>`:''}
+    </div>
+  </article>`;
+}
+
+window.adminSetReport = async (id,status) => {
+  const note=prompt('Nota de moderación (opcional):','') ?? '';
+  try{await api(`/api/admin/reports/${id}`,{method:'PATCH',body:JSON.stringify({status,note})});toast('Denuncia actualizada');await renderAdmin();}catch(e){toast(e.message,'error');}
+};
+
+window.adminRemovePost = async (postId,reportId) => {
+  if(!confirm('¿Eliminar esta publicación?')) return;
+  const note=prompt('Motivo interno (opcional):','') ?? '';
+  try{
+    await api(`/api/admin/posts/${postId}`,{method:'DELETE',body:JSON.stringify({note})});
+    if(reportId) await api(`/api/admin/reports/${reportId}`,{method:'PATCH',body:JSON.stringify({status:'closed',note:note||'Publicación eliminada por moderación'})});
+    toast('Publicación eliminada');await renderAdmin();
+  }catch(e){toast(e.message,'error');}
+};
+
+window.adminToggleUser = async (userId,status,reportId) => {
+  const label=status==='suspended'?'suspender':'reactivar';
+  if(!confirm(`¿Quieres ${label} esta cuenta?`)) return;
+  const note=prompt('Motivo interno (opcional):','') ?? '';
+  try{
+    await api(`/api/admin/users/${userId}/status`,{method:'POST',body:JSON.stringify({status,note})});
+    if(reportId && status==='suspended') await api(`/api/admin/reports/${reportId}`,{method:'PATCH',body:JSON.stringify({status:'closed',note:note||'Cuenta suspendida por moderación'})});
+    toast(status==='suspended'?'Cuenta suspendida':'Cuenta reactivada');await renderAdmin();
+  }catch(e){toast(e.message,'error');}
+};
+
 async function init() {
   if (!state.token) return authScreen();
   try {
@@ -1111,6 +1290,7 @@ async function init() {
     connectRealtime();
     layout();
     await renderView();
+    if (state.me && state.me.onboarding_completed === false) setTimeout(openOnboarding, 150);
   } catch {
     logout();
   }

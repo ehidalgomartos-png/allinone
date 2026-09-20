@@ -306,3 +306,36 @@ CREATE INDEX IF NOT EXISTS idx_follow_requests_follower ON follow_requests(follo
 CREATE INDEX IF NOT EXISTS idx_blocks_blocked ON blocks(blocked_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_mutes_muter ON mutes(muter_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status, created_at DESC);
+
+-- V1.0: cuentas, onboarding y moderación.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'user';
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
+ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('user','admin'));
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status VARCHAR(20) NOT NULL DEFAULT 'active';
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_account_status_check;
+ALTER TABLE users ADD CONSTRAINT users_account_status_check CHECK (account_status IN ('active','suspended'));
+
+-- TRUE por defecto conserva la experiencia de los usuarios existentes.
+-- Los nuevos registros se crean explícitamente con FALSE desde el servidor.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT TRUE;
+
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS admin_note TEXT NOT NULL DEFAULT '';
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS reviewed_by BIGINT REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE reports ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS moderation_actions (
+  id BIGSERIAL PRIMARY KEY,
+  admin_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  action VARCHAR(40) NOT NULL,
+  target_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  post_id BIGINT REFERENCES posts(id) ON DELETE SET NULL,
+  report_id BIGINT REFERENCES reports(id) ON DELETE SET NULL,
+  note TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_status ON users(account_status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_reports_review ON reports(status, reviewed_at, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_moderation_actions_created ON moderation_actions(created_at DESC);

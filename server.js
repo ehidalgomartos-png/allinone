@@ -42,25 +42,47 @@ function asyncRoute(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
 
-function auth(req, res, next) {
+async function auth(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'No autenticado' });
   try {
-    req.user = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const { rows } = await pool.query('SELECT id,username,email,role,account_status FROM users WHERE id=$1', [decoded.id]);
+    const dbUser = rows[0];
+    if (!dbUser) return res.status(401).json({ error: 'La cuenta ya no existe' });
+    if (dbUser.account_status === 'suspended') return res.status(403).json({ error: 'Esta cuenta está suspendida' });
+    req.user = { ...decoded, ...dbUser };
     return next();
-  } catch {
+  } catch (err) {
+    if (err?.status) return next(err);
     return res.status(401).json({ error: 'Sesión inválida' });
   }
 }
 
-function safeUser(row) {
+function configuredAdminEmails() {
+  return new Set(String(process.env.ADMIN_EMAILS || '').split(',').map(v => v.trim().toLowerCase()).filter(Boolean));
+}
+
+function isAdminRecord(user = {}) {
+  return user.role === 'admin' || configuredAdminEmails().has(String(user.email || '').toLowerCase());
+}
+
+async function adminOnly(req, res, next) {
+  try {
+    if (isAdminRecord(req.user)) return next();
+    return res.status(403).json({ error: 'Acceso reservado a administración' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+function safeUser(row, includePrivate = false) {
   if (!row) return null;
-  return {
+  const user = {
     id: row.id,
     username: row.username,
     name: row.name,
-    email: row.email,
     bio: row.bio || '',
     avatar: row.avatar || '',
     website: row.website || '',
@@ -69,9 +91,16 @@ function safeUser(row) {
     interests: row.interests || '',
     cover: row.cover || '',
     account_private: Boolean(row.account_private),
-    message_policy: row.message_policy || 'everyone',
     created_at: row.created_at
   };
+  if (includePrivate) {
+    user.email = row.email;
+    user.message_policy = row.message_policy || 'everyone';
+    user.onboarding_completed = row.onboarding_completed !== false;
+    user.is_admin = isAdminRecord(row);
+    user.account_status = row.account_status || 'active';
+  }
+  return user;
 }
 
 function tokenFor(user) {
@@ -171,11 +200,14 @@ async function broadcastPresence(userId, online) {
   for (const id of targets) io.to(`user:${id}`).emit('presence', { userId: Number(userId), online, lastSeenAt: online ? null : new Date().toISOString() });
 }
 
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth?.token || socket.handshake.query?.token;
     if (!token) return next(new Error('No autenticado'));
-    socket.user = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const { rows } = await pool.query('SELECT id,username,email,role,account_status FROM users WHERE id=$1', [decoded.id]);
+    if (!rows[0] || rows[0].account_status === 'suspended') return next(new Error('Cuenta no disponible'));
+    socket.user = { ...decoded, ...rows[0] };
     next();
   } catch {
     next(new Error('Sesión inválida'));
@@ -231,13 +263,13 @@ async function enrichReposts(userId, posts = []) {
   const { rows } = await pool.query(`
     SELECT p.id,p.user_id,p.text,p.media_id,p.media_type,p.visibility,p.created_at,p.edited_at,
            u.username,u.name,u.avatar,
-           ((p.user_id=$1 OR (NOT u.account_private) OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
+           (u.account_status='active' AND (p.user_id=$1 OR (NOT u.account_private) OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
             AND (p.visibility='public' OR p.user_id=$1 OR
              (p.visibility='followers' AND EXISTS(
                SELECT 1 FROM follows f WHERE f.follower_id=$1 AND f.followed_id=p.user_id
              )))
             AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
-            AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)) AS can_view
+            AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id))) AS can_view
       FROM posts p
       JOIN users u ON u.id=p.user_id
      WHERE p.id = ANY($2::bigint[])
@@ -295,6 +327,7 @@ async function postQuery(userId, { mode = 'following', profileId = null, search 
   clauses.push(`NOT EXISTS (SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))`);
   clauses.push(`(p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))`);
   if (!profileId) clauses.push(`NOT EXISTS (SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)`);
+  clauses.push(`u.account_status = 'active'`);
   clauses.push(`(p.visibility = 'public' OR p.user_id = $1 OR (p.visibility = 'followers' AND EXISTS (SELECT 1 FROM follows vf WHERE vf.follower_id = $1 AND vf.followed_id = p.user_id)))`);
 
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
@@ -355,7 +388,7 @@ function peopleRecommendationReason(row = {}) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '0.9.0', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy'] });
+  res.json({ ok: true, version: '1.0.0', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review'] });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
@@ -369,17 +402,17 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
 
   if (!/^[a-zA-Z0-9_.]{3,30}$/.test(normalizedUsername)) return res.status(400).json({ error: 'El usuario debe tener 3-30 caracteres: letras, números, _ o .' });
   if (!normalizedEmail.includes('@') || normalizedEmail.length > 255) return res.status(400).json({ error: 'Email inválido' });
-  if (plainPassword.length < 6) return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+  if (plainPassword.length < 8) return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
 
   const passwordHash = await bcrypt.hash(plainPassword, 10);
   try {
     const { rows } = await pool.query(`
-      INSERT INTO users (username, name, email, password_hash)
-      VALUES ($1, $2, $3, $4)
+      INSERT INTO users (username, name, email, password_hash, onboarding_completed)
+      VALUES ($1, $2, $3, $4, FALSE)
       RETURNING *
     `, [normalizedUsername, normalizedName, normalizedEmail, passwordHash]);
     const user = rows[0];
-    res.json({ token: tokenFor(user), user: safeUser(user) });
+    res.json({ token: tokenFor(user), user: safeUser(user, true) });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Usuario o email ya existe' });
     throw err;
@@ -391,7 +424,8 @@ app.post('/api/auth/login', asyncRoute(async (req, res) => {
   const { rows } = await pool.query('SELECT * FROM users WHERE email = $1 OR username = $1 LIMIT 1', [value]);
   const user = rows[0];
   if (!user || !(await bcrypt.compare(String(req.body.password || ''), user.password_hash))) return res.status(401).json({ error: 'Datos incorrectos' });
-  res.json({ token: tokenFor(user), user: safeUser(user) });
+  if (user.account_status === 'suspended') return res.status(403).json({ error: 'Esta cuenta está suspendida' });
+  res.json({ token: tokenFor(user), user: safeUser(user, true) });
 }));
 
 app.get('/api/me', auth, asyncRoute(async (req, res) => {
@@ -419,7 +453,7 @@ app.get('/api/me', auth, asyncRoute(async (req, res) => {
     FROM users u WHERE u.id = $1
   `, [req.user.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
-  res.json({ ...safeUser(rows[0]), followers_count: rows[0].followers_count, following_count: rows[0].following_count, posts_count: rows[0].posts_count, friends_count: rows[0].friends_count, friend_requests_count: rows[0].friend_requests_count, follow_requests_count: rows[0].follow_requests_count, blocked_count: rows[0].blocked_count, muted_count: rows[0].muted_count, unread_notifications: rows[0].unread_notifications, unread_messages: rows[0].unread_messages, online: true, last_seen_at: rows[0].last_seen_at });
+  res.json({ ...safeUser(rows[0], true), followers_count: rows[0].followers_count, following_count: rows[0].following_count, posts_count: rows[0].posts_count, friends_count: rows[0].friends_count, friend_requests_count: rows[0].friend_requests_count, follow_requests_count: rows[0].follow_requests_count, blocked_count: rows[0].blocked_count, muted_count: rows[0].muted_count, unread_notifications: rows[0].unread_notifications, unread_messages: rows[0].unread_messages, online: true, last_seen_at: rows[0].last_seen_at });
 }));
 
 app.patch('/api/me', auth, asyncRoute(async (req, res) => {
@@ -438,7 +472,7 @@ app.patch('/api/me', auth, asyncRoute(async (req, res) => {
       headline = COALESCE($7, headline), interests = COALESCE($8, interests), cover = COALESCE($9, cover)
     WHERE id = $1 RETURNING *
   `, [req.user.id, name, bio, avatar, website, location, headline, interests, cover]);
-  res.json(safeUser(rows[0]));
+  res.json(safeUser(rows[0], true));
 }));
 
 
@@ -586,7 +620,8 @@ app.get('/api/for-you', auth, asyncRoute(async (req, res) => {
       LEFT JOIN likes l ON l.post_id = p.id
       LEFT JOIN comments c ON c.post_id = p.id
       LEFT JOIN affinity a ON a.author_id = p.user_id
-      WHERE (p.visibility = 'public' OR p.user_id = $1)
+      WHERE u.account_status='active'
+        AND (p.visibility = 'public' OR p.user_id = $1)
         AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
         AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
         AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)
@@ -646,6 +681,7 @@ app.get('/api/suggestions', auth, asyncRoute(async (req, res) => {
     FROM users u
     LEFT JOIN interactions i ON i.author_id=u.id
     WHERE u.id <> $1
+      AND u.account_status='active'
       AND NOT EXISTS (SELECT 1 FROM follows f WHERE f.follower_id=$1 AND f.followed_id=u.id)
       AND NOT EXISTS (SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=u.id) OR (bl.blocker_id=u.id AND bl.blocked_id=$1))
       AND NOT EXISTS (SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=u.id)
@@ -683,7 +719,8 @@ app.get('/api/discover', auth, asyncRoute(async (req, res) => {
     JOIN users u ON u.id = p.user_id
     LEFT JOIN likes l ON l.post_id = p.id
     LEFT JOIN comments c ON c.post_id = p.id
-    WHERE (p.visibility = 'public' OR p.user_id = $1)
+    WHERE u.account_status='active'
+      AND (p.visibility = 'public' OR p.user_id = $1)
       AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
       AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
       AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)
@@ -800,6 +837,7 @@ app.get('/api/users', auth, asyncRoute(async (req, res) => {
       END AS friendship_status
     FROM users u
     WHERE u.id <> $1
+      AND u.account_status='active'
       AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=u.id) OR (bl.blocker_id=u.id AND bl.blocked_id=$1))
       AND ($2 = '%%' OR u.username ILIKE $2 OR u.name ILIKE $2 OR u.bio ILIKE $2)
     ORDER BY followers_count DESC, u.created_at DESC LIMIT 50
@@ -828,7 +866,7 @@ app.get('/api/users/:username', auth, asyncRoute(async (req, res) => {
       END AS friendship_status,
       (SELECT fq.id FROM friend_requests fq WHERE fq.status='pending' AND ((fq.from_user_id=$1 AND fq.to_user_id=u.id) OR (fq.from_user_id=u.id AND fq.to_user_id=$1)) ORDER BY fq.created_at DESC LIMIT 1) AS friend_request_id,
       (u.id = $1) AS own
-    FROM users u WHERE LOWER(u.username) = LOWER($2) LIMIT 1
+    FROM users u WHERE LOWER(u.username) = LOWER($2) AND u.account_status='active' LIMIT 1
   `, [req.user.id, req.params.username]);
   if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
   const row = rows[0];
@@ -1074,6 +1112,7 @@ app.get('/api/search', auth, asyncRoute(async (req, res) => {
         ELSE 'none'
       END AS friendship_status
     FROM users u WHERE u.id <> $1
+      AND u.account_status='active'
       AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=u.id) OR (bl.blocker_id=u.id AND bl.blocked_id=$1))
       AND (u.username ILIKE $2 OR u.name ILIKE $2 OR u.bio ILIKE $2 OR u.headline ILIKE $2 OR u.interests ILIKE $2)
     ORDER BY u.name LIMIT 20
@@ -1147,6 +1186,7 @@ app.get('/api/stories', auth, asyncRoute(async (req, res) => {
       FROM stories s
       JOIN users u ON u.id = s.user_id
      WHERE s.expires_at > NOW()
+       AND u.account_status='active'
        AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=s.user_id) OR (bl.blocker_id=s.user_id AND bl.blocked_id=$1))
        AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=s.user_id)
        AND (s.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=s.user_id))
@@ -1182,6 +1222,7 @@ app.post('/api/stories/:id/view', auth, asyncRoute(async (req, res) => {
     SELECT s.id, s.user_id, s.visibility
       FROM stories s JOIN users u ON u.id=s.user_id
      WHERE s.id = $1
+       AND u.account_status='active'
        AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$2 AND bl.blocked_id=s.user_id) OR (bl.blocker_id=s.user_id AND bl.blocked_id=$2))
        AND (s.user_id=$2 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$2 AND pf.followed_id=s.user_id)) AND s.expires_at > NOW()
        AND (s.visibility = 'public' OR s.user_id = $2 OR
@@ -1225,6 +1266,7 @@ app.get('/api/reels', auth, asyncRoute(async (req, res) => {
       LEFT JOIN likes l ON l.post_id = p.id
       LEFT JOIN comments c ON c.post_id = p.id
      WHERE p.media_type = 'video'
+       AND u.account_status='active'
        AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
        AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)
        AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
@@ -1252,6 +1294,7 @@ async function canUserViewPost(postId, viewerId) {
   const { rows } = await pool.query(`
     SELECT p.id FROM posts p JOIN users u ON u.id=p.user_id
      WHERE p.id=$1
+       AND u.account_status='active'
        AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$2 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$2))
        AND (p.user_id=$2 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$2 AND pf.followed_id=p.user_id))
        AND (p.visibility='public' OR p.user_id=$2 OR
@@ -1394,6 +1437,136 @@ app.post('/api/conversations/:id/messages', auth, asyncRoute(async (req, res) =>
   res.json(rows[0]);
 }));
 
+
+// --- V1.0: onboarding, cuenta y administración -----------------------------
+app.post('/api/onboarding', auth, asyncRoute(async (req, res) => {
+  const headline = String(req.body.headline || '').trim().slice(0, 140);
+  const interests = String(req.body.interests || '').trim().slice(0, 500);
+  const location = String(req.body.location || '').trim().slice(0, 120);
+  const avatar = req.body.avatar !== undefined ? String(req.body.avatar || '').trim().slice(0, 2000) : null;
+  const cover = req.body.cover !== undefined ? String(req.body.cover || '').trim().slice(0, 2000) : null;
+  const { rows } = await pool.query(`
+    UPDATE users SET
+      headline=$2, interests=$3, location=$4,
+      avatar=COALESCE($5,avatar), cover=COALESCE($6,cover),
+      onboarding_completed=TRUE
+    WHERE id=$1 RETURNING *
+  `, [req.user.id, headline, interests, location, avatar, cover]);
+  res.json(safeUser(rows[0], true));
+}));
+
+app.post('/api/account/password', auth, asyncRoute(async (req, res) => {
+  const currentPassword = String(req.body.current_password || '');
+  const newPassword = String(req.body.new_password || '');
+  if (newPassword.length < 8) return res.status(400).json({ error:'La nueva contraseña debe tener al menos 8 caracteres' });
+  const { rows } = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.user.id]);
+  if (!rows[0] || !(await bcrypt.compare(currentPassword, rows[0].password_hash))) return res.status(400).json({ error:'La contraseña actual no es correcta' });
+  const hash = await bcrypt.hash(newPassword, 10);
+  await pool.query('UPDATE users SET password_hash=$2 WHERE id=$1', [req.user.id, hash]);
+  res.json({ ok:true });
+}));
+
+app.delete('/api/account', auth, asyncRoute(async (req, res) => {
+  const password = String(req.body.password || '');
+  const confirmation = String(req.body.confirmation || '').trim().toUpperCase();
+  if (confirmation !== 'ELIMINAR') return res.status(400).json({ error:'Escribe ELIMINAR para confirmar' });
+  const { rows } = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.user.id]);
+  if (!rows[0] || !(await bcrypt.compare(password, rows[0].password_hash))) return res.status(400).json({ error:'La contraseña no es correcta' });
+  await pool.query('DELETE FROM users WHERE id=$1', [req.user.id]);
+  res.json({ ok:true });
+}));
+
+app.get('/api/admin/stats', auth, adminOnly, asyncRoute(async (_req, res) => {
+  const { rows } = await pool.query(`
+    SELECT
+      (SELECT COUNT(*)::int FROM users) AS users,
+      (SELECT COUNT(*)::int FROM users WHERE account_status='suspended') AS suspended_users,
+      (SELECT COUNT(*)::int FROM posts) AS posts,
+      (SELECT COUNT(*)::int FROM comments) AS comments,
+      (SELECT COUNT(*)::int FROM reports WHERE status='open') AS open_reports,
+      (SELECT COUNT(*)::int FROM reports WHERE status='reviewing') AS reviewing_reports,
+      (SELECT COUNT(*)::int FROM reports WHERE status='closed') AS closed_reports,
+      (SELECT COUNT(*)::int FROM users WHERE created_at >= NOW()-INTERVAL '7 days') AS new_users_7d,
+      (SELECT COUNT(*)::int FROM posts WHERE created_at >= NOW()-INTERVAL '7 days') AS new_posts_7d
+  `);
+  res.json(rows[0]);
+}));
+
+app.get('/api/admin/reports', auth, adminOnly, asyncRoute(async (req, res) => {
+  const status = String(req.query.status || 'open');
+  const allowed = ['open','reviewing','closed','all'];
+  if (!allowed.includes(status)) return res.status(400).json({ error:'Estado no válido' });
+  const params = [];
+  let where = '';
+  if (status !== 'all') { params.push(status); where = `WHERE r.status=$1`; }
+  const { rows } = await pool.query(`
+    SELECT r.*,
+      rep.username AS reporter_username, rep.name AS reporter_name,
+      target.username AS target_username, target.name AS target_name, target.account_status AS target_status,
+      p.text AS post_text, p.media_type AS post_media_type,
+      reviewer.username AS reviewer_username
+    FROM reports r
+    JOIN users rep ON rep.id=r.reporter_id
+    LEFT JOIN users target ON target.id=r.target_user_id
+    LEFT JOIN posts p ON p.id=r.post_id
+    LEFT JOIN users reviewer ON reviewer.id=r.reviewed_by
+    ${where}
+    ORDER BY CASE r.status WHEN 'open' THEN 0 WHEN 'reviewing' THEN 1 ELSE 2 END, r.created_at DESC
+    LIMIT 250
+  `, params);
+  res.json(rows);
+}));
+
+app.patch('/api/admin/reports/:id', auth, adminOnly, asyncRoute(async (req, res) => {
+  const status = String(req.body.status || '');
+  const note = String(req.body.note || '').trim().slice(0, 2000);
+  if (!['open','reviewing','closed'].includes(status)) return res.status(400).json({ error:'Estado no válido' });
+  const { rows } = await pool.query(`
+    UPDATE reports SET status=$2,admin_note=$3,reviewed_by=$4,reviewed_at=NOW()
+    WHERE id=$1 RETURNING *
+  `, [req.params.id, status, note, req.user.id]);
+  if (!rows[0]) return res.status(404).json({ error:'Denuncia no encontrada' });
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,report_id,note) VALUES($1,'report_status',$2,$3)`, [req.user.id, req.params.id, `${status}: ${note}`.slice(0,2000)]);
+  res.json(rows[0]);
+}));
+
+app.delete('/api/admin/posts/:id', auth, adminOnly, asyncRoute(async (req, res) => {
+  const result = await withTransaction(async (client) => {
+    const { rows } = await client.query('SELECT id,user_id FROM posts WHERE id=$1 FOR UPDATE', [req.params.id]);
+    if (!rows[0]) return null;
+    await client.query(`INSERT INTO moderation_actions(admin_id,action,target_user_id,post_id,note) VALUES($1,'remove_post',$2,$3,$4)`,
+      [req.user.id, rows[0].user_id, rows[0].id, String(req.body?.note || '').slice(0,1000)]);
+    await client.query('DELETE FROM posts WHERE id=$1', [req.params.id]);
+    return rows[0];
+  });
+  if (!result) return res.status(404).json({ error:'Publicación no encontrada' });
+  res.json({ ok:true });
+}));
+
+app.post('/api/admin/users/:id/status', auth, adminOnly, asyncRoute(async (req, res) => {
+  const targetId = Number(req.params.id);
+  const status = String(req.body.status || '');
+  const note = String(req.body.note || '').trim().slice(0, 1000);
+  if (!['active','suspended'].includes(status)) return res.status(400).json({ error:'Estado no válido' });
+  if (targetId === Number(req.user.id)) return res.status(400).json({ error:'No puedes suspender tu propia cuenta' });
+  const { rows } = await pool.query('UPDATE users SET account_status=$2 WHERE id=$1 RETURNING id,username,name,account_status', [targetId,status]);
+  if (!rows[0]) return res.status(404).json({ error:'Usuario no encontrado' });
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,target_user_id,note) VALUES($1,$2,$3,$4)`,
+    [req.user.id, status === 'suspended' ? 'suspend_user' : 'restore_user', targetId, note]);
+  res.json(rows[0]);
+}));
+
+app.get('/api/admin/actions', auth, adminOnly, asyncRoute(async (_req, res) => {
+  const { rows } = await pool.query(`
+    SELECT a.*, adm.username AS admin_username, target.username AS target_username
+    FROM moderation_actions a
+    LEFT JOIN users adm ON adm.id=a.admin_id
+    LEFT JOIN users target ON target.id=a.target_user_id
+    ORDER BY a.created_at DESC LIMIT 100
+  `);
+  res.json(rows);
+}));
+
 app.get('*', (_req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 
 app.use((err, _req, res, _next) => {
@@ -1405,7 +1578,7 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   await initDb();
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`OmniSocial V0.9 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`OmniSocial V1.0 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {
