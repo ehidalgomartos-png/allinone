@@ -1,27 +1,8 @@
-# Render — OmniSocial V1.0
+# Render — OmniSocial V1.1
 
-Mantén el mismo Web Service y la misma PostgreSQL que ya utilizas.
+Usa el servicio y PostgreSQL que ya tienes. No crees recursos nuevos.
 
-Render debe usar:
-
-```text
-Build Command: npm install
-Start Command: npm start
-Health Check: /api/health
-```
-
-Variables necesarias:
-
-```text
-DATABASE_URL     (ya enlazada a PostgreSQL)
-JWT_SECRET       (ya configurada)
-NODE_ENV=production
-```
-
-Para usar el panel de moderación añade manualmente:
-
-```text
-ADMIN_EMAILS=tu@email.com
-```
-
-No es necesario modificar `DATABASE_URL` ni recrear la base.
+- Build Command: `npm install`
+- Start Command: `npm start`
+- Mantén `DATABASE_URL`, `JWT_SECRET` y `ADMIN_EMAILS`.
+- No necesitas variables nuevas para V1.1.

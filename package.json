@@ -1,7 +1,7 @@
 {
   "name": "omnisocial-community",
-  "version": "1.0.1",
-  "description": "OmniSocial V1.0.1 - Red social propia con privacidad, recomendaciones, moderación y gestión de cuenta",
+  "version": "1.1.0",
+  "description": "OmniSocial V1.1 - Red social propia pulida para estabilidad, rendimiento y experiencia de uso",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

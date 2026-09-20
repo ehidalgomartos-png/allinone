@@ -25,6 +25,14 @@ if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'dev-secret-change-m
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(cors());
+app.use((req,res,next) => {
+  res.set('X-Content-Type-Options','nosniff');
+  res.set('X-Frame-Options','DENY');
+  res.set('Referrer-Policy','strict-origin-when-cross-origin');
+  res.set('Permissions-Policy','camera=(), microphone=(), geolocation=()');
+  next();
+});
+app.use('/api', (_req,res,next) => { res.set('Cache-Control','no-store'); next(); });
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(publicDir));
@@ -388,7 +396,7 @@ function peopleRecommendationReason(row = {}) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.0.1', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review'] });
+  res.json({ ok: true, version: '1.1.0', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions'] });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
@@ -1578,7 +1586,7 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   await initDb();
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`OmniSocial V1.0 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`OmniSocial V1.1 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {

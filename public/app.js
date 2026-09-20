@@ -11,20 +11,78 @@ const state = {
   messagePoll: null,
   socket: null,
   replyTo: null,
-  typingTimer: null
+  typingTimer: null,
+  messageSending: false,
+  requestCount: 0,
+  sessionExpiring: false
 };
 
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
 
+function setGlobalLoading(active) {
+  state.requestCount = Math.max(0, state.requestCount + (active ? 1 : -1));
+  let bar = $('#globalLoadingBar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'globalLoadingBar';
+    bar.className = 'global-loading-bar';
+    bar.setAttribute('aria-hidden','true');
+    document.body.appendChild(bar);
+  }
+  bar.classList.toggle('active', state.requestCount > 0);
+}
+
+function showNetworkState(online, temporary = false) {
+  let box = $('#networkState');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'networkState';
+    box.className = 'network-state';
+    box.setAttribute('role','status');
+    box.setAttribute('aria-live','polite');
+    document.body.appendChild(box);
+  }
+  box.className = `network-state show ${online ? 'online' : 'offline'}`;
+  box.textContent = online ? 'Conexión recuperada' : 'Sin conexión · algunas funciones no están disponibles';
+  clearTimeout(showNetworkState.timer);
+  if (online || temporary) showNetworkState.timer = setTimeout(() => box.classList.remove('show'), 2200);
+}
+
 async function api(url, opts = {}) {
   const headers = { ...(opts.headers || {}) };
   if (state.token) headers.Authorization = 'Bearer ' + state.token;
   if (!(opts.body instanceof FormData)) headers['Content-Type'] = 'application/json';
-  const r = await fetch(url, { ...opts, headers });
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data.error || 'Ha ocurrido un error');
-  return data;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(opts.timeout || 75000));
+  const slowTimer = setTimeout(() => document.body.classList.add('slow-network'), 1800);
+  setGlobalLoading(true);
+  try {
+    const r = await fetch(url, { ...opts, headers, signal: opts.signal || controller.signal });
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      if (r.status === 401 && state.token && !state.sessionExpiring) {
+        state.sessionExpiring = true;
+        setTimeout(() => {
+          toast('Tu sesión ha caducado. Vuelve a entrar.', 'error');
+          logout();
+          state.sessionExpiring = false;
+        }, 50);
+      }
+      throw new Error(data.error || 'Ha ocurrido un error');
+    }
+    return data;
+  } catch (err) {
+    if (err?.name === 'AbortError') throw new Error('La conexión está tardando demasiado. Inténtalo de nuevo.');
+    if (!navigator.onLine) throw new Error('No tienes conexión a Internet.');
+    if (err instanceof TypeError) throw new Error('No se pudo conectar con OmniSocial. Inténtalo de nuevo.');
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+    clearTimeout(slowTimer);
+    document.body.classList.remove('slow-network');
+    setGlobalLoading(false);
+  }
 }
 
 function escapeHtml(value = '') {
@@ -77,6 +135,8 @@ function toast(message, kind = '') {
   if (!box) {
     box = document.createElement('div');
     box.id = 'toast';
+    box.setAttribute('role','status');
+    box.setAttribute('aria-live','polite');
     document.body.appendChild(box);
   }
   box.className = `toast show ${kind}`;
@@ -119,30 +179,38 @@ window.showAuth = (mode) => {
   $('#authbox').innerHTML = mode === 'login' ? `
     <div class="auth-form">
       <label>Email o usuario</label><input id="loginid" autocomplete="username" placeholder="tuusuario">
-      <label>Contraseña</label><input id="loginpass" type="password" autocomplete="current-password" placeholder="••••••••">
-      <button class="btn primary large" onclick="login()">Entrar</button>
+      <label>Contraseña</label><input id="loginpass" type="password" autocomplete="current-password" placeholder="••••••••" onkeydown="if(event.key==='Enter')login()">
+      <button id="loginSubmit" class="btn primary large" onclick="login()">Entrar</button>
     </div>` : `
     <div class="auth-form">
       <label>Nombre</label><input id="regname" placeholder="Tu nombre">
       <label>Usuario</label><input id="reguser" autocomplete="username" placeholder="tuusuario">
       <label>Email</label><input id="regemail" type="email" autocomplete="email" placeholder="tu@email.com">
-      <label>Contraseña</label><input id="regpass" type="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres">
-      <button class="btn primary large" onclick="register()">Crear mi cuenta</button>
+      <label>Contraseña</label><input id="regpass" type="password" autocomplete="new-password" placeholder="Mínimo 8 caracteres" onkeydown="if(event.key==='Enter')register()">
+      <button id="registerSubmit" class="btn primary large" onclick="register()">Crear mi cuenta</button>
     </div>`;
 };
 
 window.login = async () => {
+  const btn = $('#loginSubmit');
+  if (btn?.disabled) return;
   try {
+    if (btn) { btn.disabled = true; btn.textContent = 'Entrando…'; }
     const d = await api('/api/auth/login', { method:'POST', body: JSON.stringify({ emailOrUsername: $('#loginid').value, password: $('#loginpass').value }) });
     state.token = d.token; localStorage.setItem('token', d.token); await init();
   } catch (e) { toast(e.message, 'error'); }
+  finally { if (btn?.isConnected) { btn.disabled = false; btn.textContent = 'Entrar'; } }
 };
 
 window.register = async () => {
+  const btn = $('#registerSubmit');
+  if (btn?.disabled) return;
   try {
+    if (btn) { btn.disabled = true; btn.textContent = 'Creando cuenta…'; }
     const d = await api('/api/auth/register', { method:'POST', body: JSON.stringify({ name: $('#regname').value, username: $('#reguser').value, email: $('#regemail').value, password: $('#regpass').value }) });
     state.token = d.token; localStorage.setItem('token', d.token); await init();
   } catch (e) { toast(e.message, 'error'); }
+  finally { if (btn?.isConnected) { btn.disabled = false; btn.textContent = 'Crear mi cuenta'; } }
 };
 
 function navButton(view, icon, label) {
@@ -216,10 +284,18 @@ window.focusComposer = async () => {
   setTimeout(() => openComposerModal(), 50);
 };
 
+function skeletonView() {
+  return `<div class="skeleton-page" aria-label="Cargando">
+    <div class="skeleton skeleton-line title"></div>
+    <div class="skeleton-card card"><div class="skeleton-row"><div class="skeleton skeleton-avatar"></div><div class="skeleton-grow"><div class="skeleton skeleton-line"></div><div class="skeleton skeleton-line short"></div></div></div><div class="skeleton skeleton-block"></div></div>
+    <div class="skeleton-card card"><div class="skeleton-row"><div class="skeleton skeleton-avatar"></div><div class="skeleton-grow"><div class="skeleton skeleton-line"></div><div class="skeleton skeleton-line short"></div></div></div><div class="skeleton skeleton-block small"></div></div>
+  </div>`;
+}
+
 async function renderView() {
   const main = $('#main');
   if (!main) return;
-  main.innerHTML = `<div class="loading-card card">Cargando…</div>`;
+  main.innerHTML = skeletonView();
   try {
     if (state.view === 'feed') return renderFeed();
     if (state.view === 'reels') return renderReels();
@@ -432,13 +508,35 @@ async function renderBookmarks() {
 }
 
 window.likePost = async (id) => {
-  try { await api(`/api/posts/${id}/like`, { method:'POST' }); await renderView(); await refreshMe(false); }
-  catch (e) { toast(e.message, 'error'); }
+  const buttons = [...document.querySelectorAll(`[data-post="${Number(id)}"] .post-actions .action`)].filter((_,i)=>i===0);
+  if (buttons.some(b => b.disabled)) return;
+  buttons.forEach(b => b.disabled = true);
+  try {
+    const d = await api(`/api/posts/${id}/like`, { method:'POST' });
+    buttons.forEach(btn => {
+      btn.classList.toggle('liked', Boolean(d.liked));
+      const icon=btn.querySelector('span'); if(icon) icon.textContent=d.liked?'♥':'♡';
+      const count=btn.querySelector('b'); if(count) count.textContent=String(d.count ?? 0);
+    });
+  } catch (e) { toast(e.message, 'error'); }
+  finally { buttons.forEach(b => b.disabled = false); }
 };
 
 window.savePost = async (id) => {
-  try { const d = await api(`/api/posts/${id}/bookmark`, { method:'POST' }); toast(d.saved ? 'Guardado' : 'Eliminado de guardados'); await renderView(); }
-  catch (e) { toast(e.message, 'error'); }
+  const article = document.querySelector(`[data-post="${Number(id)}"]`);
+  const btn = article?.querySelector('.post-actions .action.push');
+  if (btn?.disabled) return;
+  if (btn) btn.disabled = true;
+  try {
+    const d = await api(`/api/posts/${id}/bookmark`, { method:'POST' });
+    if (btn) { btn.classList.toggle('saved', Boolean(d.saved)); const icon=btn.querySelector('span'); if(icon) icon.textContent=d.saved?'▰':'▱'; }
+    toast(d.saved ? 'Guardado' : 'Eliminado de guardados');
+    if (!d.saved && state.view === 'bookmarks' && article) {
+      article.remove();
+      if (!document.querySelector('.post-list .post')) $('#main').innerHTML = `${pageHeader('Guardados','Solo tú puedes ver lo que guardas')}<div class="post-list"><div class="card empty"><div class="empty-icon">▱</div><h3>No has guardado nada todavía</h3><p>Usa el icono de marcador de cualquier publicación.</p></div></div>`;
+    }
+  } catch (e) { toast(e.message, 'error'); }
+  finally { if (btn?.isConnected) btn.disabled = false; }
 };
 
 window.deletePost = async (id) => {
@@ -452,7 +550,7 @@ window.openComments = async (postId) => {
     const rows = await api(`/api/posts/${postId}/comments`);
     modal(`<div class="modal-head"><h3>Comentarios</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
       <div class="comments" id="commentList">${rows.length ? rows.map(commentHtml).join('') : `<div class="empty compact-empty">Sé la primera persona en comentar.</div>`}</div>
-      <div class="comment-compose"><input id="commentText" maxlength="1000" placeholder="Escribe un comentario…" onkeydown="if(event.key==='Enter')sendComment(${postId})"><button class="btn primary compact" onclick="sendComment(${postId})">Enviar</button></div>`);
+      <div class="comment-compose"><input id="commentText" maxlength="1000" placeholder="Escribe un comentario…" onkeydown="if(event.key==='Enter')sendComment(${postId})"><button id="commentSendBtn" class="btn primary compact" onclick="sendComment(${postId})">Enviar</button></div>`);
     setTimeout(() => $('#commentText')?.focus(), 50);
   } catch (e) { toast(e.message, 'error'); }
 };
@@ -462,9 +560,13 @@ function commentHtml(c) {
 }
 
 window.sendComment = async (postId) => {
-  const input = $('#commentText'); const text = input?.value.trim(); if (!text) return;
-  try { await api(`/api/posts/${postId}/comments`, { method:'POST', body:JSON.stringify({ text }) }); await openComments(postId); await refreshMe(false); }
-  catch (e) { toast(e.message, 'error'); }
+  const input = $('#commentText'); const btn=$('#commentSendBtn'); const text = input?.value.trim(); if (!text || btn?.disabled) return;
+  try {
+    if(btn){btn.disabled=true;btn.textContent='Enviando…';} if(input) input.disabled=true;
+    await api(`/api/posts/${postId}/comments`, { method:'POST', body:JSON.stringify({ text }) });
+    await openComments(postId); await refreshMe(false);
+  } catch (e) { toast(e.message, 'error'); }
+  finally { if(btn?.isConnected){btn.disabled=false;btn.textContent='Enviar';} if(input?.isConnected) input.disabled=false; }
 };
 window.deleteComment = async (id, postId) => {
   try { await api(`/api/comments/${id}`, { method:'DELETE' }); await openComments(postId); }
@@ -1007,7 +1109,7 @@ function chatPanelHtml(c, messages, isMobile) {
     <div class="typing-indicator" id="typingIndicator"></div>
     ${reply}
     <div id="messageMediaPreview"></div>
-    <div class="message-compose"><label class="attach-btn">＋<input id="messageFile" type="file" accept="image/*,video/*" onchange="previewMessageFile(this)" hidden></label><textarea id="messageText" rows="1" maxlength="4000" placeholder="Escribe un mensaje…" oninput="handleTyping(${c.id})" onblur="stopTyping(${c.id})" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage(${c.id})}"></textarea><button class="btn primary compact" onclick="sendMessage(${c.id})">Enviar</button></div>`;
+    <div class="message-compose"><label class="attach-btn">＋<input id="messageFile" type="file" accept="image/*,video/*" onchange="previewMessageFile(this)" hidden></label><textarea id="messageText" rows="1" maxlength="4000" placeholder="Escribe un mensaje…" oninput="handleTyping(${c.id})" onblur="stopTyping(${c.id})" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage(${c.id})}"></textarea><button id="messageSendBtn" class="btn primary compact" onclick="sendMessage(${c.id})">Enviar</button></div>`;
 }
 
 function messageHtml(m) {
@@ -1065,14 +1167,16 @@ window.stopTyping = (conversationId) => {
 };
 
 window.sendMessage = async (conversationId) => {
-  const input=$('#messageText'); const text=input?.value.trim()||''; const file=$('#messageFile')?.files?.[0];
-  if(!text&&!file) return;
+  const input=$('#messageText'); const btn=$('#messageSendBtn'); const text=input?.value.trim()||''; const file=$('#messageFile')?.files?.[0];
+  if((!text&&!file) || state.messageSending) return;
   try {
+    state.messageSending=true; if(btn){btn.disabled=true;btn.textContent='…';} if(input) input.disabled=true;
     let media_id=null;
     if(file){ const fd=new FormData(); fd.append('file',file); const up=await api('/api/upload',{method:'POST',body:fd}); media_id=up.media_id; }
     await api(`/api/conversations/${conversationId}/messages`,{method:'POST',body:JSON.stringify({text,media_id,reply_to_id:state.replyTo?.id||null})});
     stopTyping(conversationId); state.replyTo=null; if(input) input.value=''; clearMessageFile(); await renderMessages();
   } catch(e){ toast(e.message,'error'); }
+  finally { state.messageSending=false; if(btn?.isConnected){btn.disabled=false;btn.textContent='Enviar';} if(input?.isConnected) input.disabled=false; }
 };
 
 async function refreshActiveConversation(){
@@ -1338,5 +1442,14 @@ async function init() {
     logout();
   }
 }
+
+window.addEventListener('offline', () => showNetworkState(false));
+window.addEventListener('online', () => showNetworkState(true));
+window.addEventListener('keydown', (event) => {
+  if (event.key !== 'Escape') return;
+  if (state.storyViewer) return closeStoryViewer();
+  if ($('#modal-root')?.children.length) closeModal();
+});
+if (!navigator.onLine) setTimeout(() => showNetworkState(false), 200);
 
 init();
