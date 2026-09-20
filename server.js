@@ -4,7 +4,6 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const nodemailer = require('nodemailer');
 const { rateLimit } = require('express-rate-limit');
 const multer = require('multer');
 const http = require('http');
@@ -44,16 +43,21 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(publicDir));
 
 
-const emailConfigured = () => Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.EMAIL_FROM);
-const smtpTransport = emailConfigured() ? nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT || 465),
-  secure: String(process.env.SMTP_SECURE ?? (String(process.env.SMTP_PORT || '465') === '465')).toLowerCase() === 'true',
-  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT || 8000),
-  greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT || 8000),
-  socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT || 15000)
-}) : null;
+const EMAIL_PROVIDER = 'resend';
+const emailConfigured = () => Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
+
+function emailError(message, code='EMAIL_SEND_FAILED', details=null) {
+  const err = new Error(message);
+  err.code = code;
+  if (details) err.details = details;
+  return err;
+}
+
+function emailShell({ title, body, buttonText, buttonUrl, footer }) {
+  const safeTitle = String(title || '').replace(/[<>&]/g, '');
+  const button = buttonUrl ? `<p style="margin:28px 0"><a href="${buttonUrl}" style="display:inline-block;padding:13px 22px;border-radius:12px;background:linear-gradient(135deg,#ff2aa1,#7c3cff);color:#fff;text-decoration:none;font-weight:700">${String(buttonText || 'Abrir Instant Admirers').replace(/[<>&]/g,'')}</a></p>` : '';
+  return `<!doctype html><html><body style="margin:0;background:#0b0b12;color:#f7f7fb;font-family:Arial,sans-serif"><div style="max-width:620px;margin:0 auto;padding:32px 18px"><div style="font-size:24px;font-weight:800;margin-bottom:24px">Instant <span style="color:#ff2aa1">Admirers</span></div><div style="background:#151621;border:1px solid #2b2d3c;border-radius:18px;padding:28px"><h1 style="font-size:24px;margin:0 0 16px">${safeTitle}</h1><div style="font-size:16px;line-height:1.6;color:#d7d8e3">${body || ''}</div>${button}${footer ? `<p style="font-size:13px;color:#9295a8;margin-top:24px">${footer}</p>` : ''}</div><p style="font-size:12px;color:#777b8c;margin-top:18px">Este correo ha sido enviado por Instant Admirers.</p></div></body></html>`;
+}
 
 function limiter({ windowMs, max, message }) {
   return rateLimit({
@@ -102,9 +106,39 @@ async function consumeAccountToken(raw, type, client=pool) {
   return rows[0];
 }
 async function sendEmail({to,subject,text,html}) {
-  if (!smtpTransport) return false;
-  await smtpTransport.sendMail({ from: process.env.EMAIL_FROM, to, subject, text, html });
-  return true;
+  if (!emailConfigured()) return false;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), Number(process.env.RESEND_TIMEOUT_MS || 12000));
+  try {
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        from: process.env.EMAIL_FROM,
+        to: [String(to)],
+        subject: String(subject),
+        text: text || undefined,
+        html: html || undefined
+      }),
+      signal: controller.signal
+    });
+    let payload = null;
+    try { payload = await response.json(); } catch (_) {}
+    if (!response.ok) {
+      const detail = payload?.message || payload?.error || `HTTP ${response.status}`;
+      throw emailError(`Resend rechazó el envío: ${detail}`, 'EMAIL_SEND_FAILED', payload);
+    }
+    return true;
+  } catch (err) {
+    if (err?.name === 'AbortError') throw emailError('Resend tardó demasiado en responder.', 'EMAIL_TIMEOUT');
+    if (err?.code === 'EMAIL_SEND_FAILED') throw err;
+    throw emailError(`No se pudo conectar con Resend: ${err.message}`, 'EMAIL_SEND_FAILED');
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 async function sendVerificationEmail(user) {
   const token = await createAccountToken(user.id, 'verify_email', { minutes: 24*60 });
@@ -113,14 +147,14 @@ async function sendVerificationEmail(user) {
     to:user.email,
     subject:'Confirma tu email · Instant Admirers',
     text:`Hola ${user.name || user.username}. Confirma tu email en: ${url}\\n\\nEl enlace caduca en 24 horas.`,
-    html:`<h2>Confirma tu email</h2><p>Hola ${String(user.name || user.username).replace(/[<>&]/g,'')},</p><p>Confirma tu dirección para proteger tu cuenta de Instant Admirers.</p><p><a href="${url}">Confirmar email</a></p><p>El enlace caduca en 24 horas.</p>`
+    html:emailShell({ title:'Confirma tu email', body:`<p>Hola ${String(user.name || user.username).replace(/[<>&]/g,'')},</p><p>Confirma tu dirección para proteger tu cuenta de Instant Admirers.</p>`, buttonText:'Confirmar email', buttonUrl:url, footer:'El enlace caduca en 24 horas.' })
   });
   if (!sent && process.env.NODE_ENV !== 'production') console.log('VERIFY EMAIL:', url);
   return sent;
 }
 
 if (REQUIRE_EMAIL_VERIFICATION && !emailConfigured()) {
-  throw new Error('REQUIRE_EMAIL_VERIFICATION=true requiere configurar SMTP_HOST, SMTP_USER, SMTP_PASS y EMAIL_FROM.');
+  throw new Error('REQUIRE_EMAIL_VERIFICATION=true requiere configurar RESEND_API_KEY y EMAIL_FROM.');
 }
 
 const upload = multer({
@@ -490,7 +524,7 @@ function peopleRecommendationReason(row = {}) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.2.1', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), verification_required: REQUIRE_EMAIL_VERIFICATION }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events'] });
+  res.json({ ok: true, version: '1.2.2', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email'] });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
@@ -585,9 +619,9 @@ app.post('/api/auth/forgot-password', asyncRoute(async (req,res) => {
   if (user) {
     const token=await createAccountToken(user.id,'reset_password',{minutes:30});
     const url=`${APP_URL}/?action=reset-password&token=${encodeURIComponent(token)}`;
-    const sent=await sendEmail({to:user.email,subject:'Restablece tu contraseña · Instant Admirers',text:`Restablece tu contraseña en: ${url}\n\nEl enlace caduca en 30 minutos.`,html:`<h2>Restablecer contraseña</h2><p>Hemos recibido una solicitud para cambiar tu contraseña.</p><p><a href="${url}">Crear una nueva contraseña</a></p><p>El enlace caduca en 30 minutos. Si no fuiste tú, ignora este mensaje.</p>`}).catch(err=>{console.error('reset email:',err.message);return false;});
+    const sent=await sendEmail({to:user.email,subject:'Restablece tu contraseña · Instant Admirers',text:`Restablece tu contraseña en: ${url}\n\nEl enlace caduca en 30 minutos.`,html:emailShell({ title:'Restablecer contraseña', body:'<p>Hemos recibido una solicitud para cambiar la contraseña de tu cuenta.</p>', buttonText:'Crear nueva contraseña', buttonUrl:url, footer:'El enlace caduca en 30 minutos. Si no fuiste tú, puedes ignorar este mensaje.' })}).catch(err=>{console.error('reset email:',err.message);return false;});
     await securityEvent(req,'password_reset_requested',user.id,{sent});
-    if (!sent) return res.status(502).json({ error:'No hemos podido enviar el correo. Revisa la configuración SMTP e inténtalo de nuevo.', code:'EMAIL_SEND_FAILED' });
+    if (!sent) return res.status(502).json({ error:'No hemos podido enviar el correo mediante Resend. Inténtalo de nuevo en unos minutos.', code:'EMAIL_SEND_FAILED' });
   }
   res.json({ok:true,message:'Si existe una cuenta con ese email, recibirás las instrucciones para restablecer la contraseña.'});
 }));
@@ -1689,7 +1723,7 @@ app.post('/api/account/email', auth, recoveryLimiter, asyncRoute(async (req,res)
   if(exists.rowCount) return res.status(409).json({error:'Ese email ya está en uso'});
   const token=await createAccountToken(user.id,'change_email',{minutes:60,newEmail});
   const url=`${APP_URL}/?action=change-email&token=${encodeURIComponent(token)}`;
-  const sent=await sendEmail({to:newEmail,subject:'Confirma tu nuevo email · Instant Admirers',text:`Confirma el nuevo email de tu cuenta en: ${url}\\n\\nEl enlace caduca en 60 minutos.`,html:`<h2>Confirma tu nuevo email</h2><p>Para terminar el cambio de email de tu cuenta, abre este enlace:</p><p><a href="${url}">Confirmar nuevo email</a></p><p>El enlace caduca en 60 minutos.</p>`});
+  const sent=await sendEmail({to:newEmail,subject:'Confirma tu nuevo email · Instant Admirers',text:`Confirma el nuevo email de tu cuenta en: ${url}\\n\\nEl enlace caduca en 60 minutos.`,html:emailShell({ title:'Confirma tu nuevo email', body:'<p>Para terminar el cambio de email de tu cuenta, confirma esta dirección.</p>', buttonText:'Confirmar nuevo email', buttonUrl:url, footer:'El enlace caduca en 60 minutos.' })});
   await securityEvent(req,'email_change_requested',user.id,{sent});
   res.json({ok:true});
 }));

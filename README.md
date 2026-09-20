@@ -1,25 +1,26 @@
-# Instant Admirers V1.2.1
+# Instant Admirers V1.2.2 — Resend API
 
-Versión centrada en seguridad y ciclo de vida de cuentas, construida sobre V1.1.5.
+Esta versión sustituye el correo SMTP por la API HTTPS de **Resend**, pensada para funcionar también con el plan Free de Render.
 
-## Novedades
-
+## Funciones de correo
 - Verificación de email.
-- Recuperación segura de contraseña.
-- Cambio de email con confirmación.
-- Tokens de un solo uso con hash y caducidad.
-- Rate limiting para reducir fuerza bruta, spam y abuso.
-- Registro de eventos de seguridad para administración.
-- Mantiene toda la red social, identidad, legal, privacidad y UX anterior.
+- Recuperación de contraseña.
+- Confirmación de cambio de email.
+- Plantillas visuales de Instant Admirers.
+- Timeout de 12 segundos para llamadas a Resend.
+- Registro de eventos de seguridad existente.
 
-## Salud
+## Variables necesarias en Render
 
-`GET /api/health` devuelve la versión, estado de PostgreSQL y si el correo saliente está configurado.
+```text
+APP_URL=https://instantadmirers.com
+RESEND_API_KEY=re_xxxxxxxxxxxxxxxxx
+EMAIL_FROM=Instant Admirers <no-reply@vrmatch.es>
+REQUIRE_EMAIL_VERIFICATION=false
+```
 
-## Despliegue
+`vrmatch.es` debe permanecer verificado en Resend. No subas `RESEND_API_KEY` a GitHub.
 
-Consulta `ACTUALIZAR-A-V1.2.md`.
+Cuando hayas comprobado que recuperación y verificación funcionan, puedes cambiar `REQUIRE_EMAIL_VERIFICATION=true`.
 
-
-## V1.2.1
-Corrige el flujo de recuperación para fallar rápido y mostrar mensajes claros cuando SMTP no está configurado o no responde.
+La base PostgreSQL y los usuarios existentes se conservan.

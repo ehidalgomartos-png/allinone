@@ -262,8 +262,8 @@ window.requestPasswordReset = async () => {
     const d=await api('/api/auth/forgot-password',{method:'POST',timeout:20000,body:JSON.stringify({email})});
     closeModal(); toast(d.message || 'Revisa tu correo');
   }catch(e){
-    if(e?.code==='EMAIL_NOT_CONFIGURED') toast('La recuperación por correo aún no está configurada. Configura SMTP en Render.', 'error');
-    else if(e?.code==='EMAIL_SEND_FAILED') toast('No se pudo enviar el correo. Revisa SMTP en Render.', 'error');
+    if(e?.code==='EMAIL_NOT_CONFIGURED') toast('La recuperación por correo aún no está configurada. Configura Resend en Render.', 'error');
+    else if(e?.code==='EMAIL_SEND_FAILED') toast('No se pudo enviar el correo. Revisa Resend en Render.', 'error');
     else toast(e.message,'error');
   }
   finally{if(btn){btn.disabled=false;btn.textContent='Enviar enlace';}}
