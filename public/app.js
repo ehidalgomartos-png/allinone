@@ -815,21 +815,64 @@ window.openStories = async (username) => {
   } catch (e) { toast(e.message,'error'); }
 };
 
-async function showStory() {
+function stopStoryProgress() {
   clearTimeout(showStory.timer);
+  if (showStory.raf) cancelAnimationFrame(showStory.raf);
+  showStory.raf = null;
+}
+
+function setStoryProgress(percent) {
+  const fill = document.querySelector('.story-progress span.active i');
+  if (fill) fill.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+}
+
+function runImageStoryProgress(duration = 6000) {
+  const started = performance.now();
+  const tick = (now) => {
+    if (!state.storyViewer) return;
+    const pct = ((now - started) / duration) * 100;
+    setStoryProgress(pct);
+    if (pct >= 100) return nextStory(1);
+    showStory.raf = requestAnimationFrame(tick);
+  };
+  showStory.raf = requestAnimationFrame(tick);
+}
+
+function runVideoStoryProgress(video) {
+  const tick = () => {
+    if (!state.storyViewer || !video?.isConnected) return;
+    const duration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : 0;
+    setStoryProgress(duration ? (video.currentTime / duration) * 100 : 0);
+    showStory.raf = requestAnimationFrame(tick);
+  };
+  showStory.raf = requestAnimationFrame(tick);
+}
+
+async function showStory() {
+  stopStoryProgress();
   const viewer = state.storyViewer; if (!viewer) return;
   const s = viewer.items[viewer.index]; if (!s) return closeStoryViewer();
   if (!s.own) api(`/api/stories/${s.id}/view`, { method:'POST' }).catch(()=>{});
   const media = s.media_type === 'video'
-    ? `<video id="storyMedia" class="story-media" src="${escapeAttr(s.media_url)}" autoplay playsinline controls onended="nextStory(1)"></video>`
+    ? `<video id="storyMedia" class="story-media" src="${escapeAttr(s.media_url)}" autoplay playsinline controls></video>`
     : `<img class="story-media" src="${escapeAttr(s.media_url)}" alt="Story">`;
   $('#modal-root').innerHTML = `<div class="story-backdrop"><div class="story-viewer">
-    <div class="story-progress">${viewer.items.map((_,i)=>`<span class="${i <= viewer.index ? 'done' : ''}"></span>`).join('')}</div>
+    <div class="story-progress">${viewer.items.map((_,i)=>`<span class="${i < viewer.index ? 'done' : i === viewer.index ? 'active' : ''}"><i></i></span>`).join('')}</div>
     <div class="story-head"><button class="person-link" onclick="closeStoryViewer();openProfile('${escapeAttr(s.username)}')">${avatar(s,'small')}<span><b>${escapeHtml(s.name)}</b><small>@${escapeHtml(s.username)} · ${timeAgo(s.created_at)}</small></span></button><button class="story-close" onclick="closeStoryViewer()">×</button></div>
     <div class="story-stage">${media}${s.text ? `<div class="story-caption">${formatText(s.text)}</div>` : ''}<button class="story-prev" onclick="nextStory(-1)">‹</button><button class="story-next" onclick="nextStory(1)">›</button></div>
     ${s.own ? `<div class="story-owner-tools"><button onclick="showStoryViewers(${s.id})">👁 ${s.views_count || 0} visualizaciones</button><button class="danger-text" onclick="deleteStory(${s.id})">Eliminar</button></div>` : ''}
   </div></div>`;
-  if (s.media_type === 'image') showStory.timer = setTimeout(() => nextStory(1), 6000);
+
+  if (s.media_type === 'video') {
+    const video = $('#storyMedia');
+    if (video) {
+      video.addEventListener('loadedmetadata', () => setStoryProgress(0), { once:true });
+      video.addEventListener('ended', () => { setStoryProgress(100); nextStory(1); }, { once:true });
+      runVideoStoryProgress(video);
+    }
+  } else {
+    runImageStoryProgress(6000);
+  }
 }
 
 window.nextStory = (delta) => {
@@ -840,7 +883,7 @@ window.nextStory = (delta) => {
   state.storyViewer.index = next; showStory();
 };
 
-window.closeStoryViewer = () => { clearTimeout(showStory.timer); state.storyViewer = null; closeModal(); if (state.view === 'feed') renderFeed().catch(()=>{}); };
+window.closeStoryViewer = () => { stopStoryProgress(); state.storyViewer = null; closeModal(); if (state.view === 'feed') renderFeed().catch(()=>{}); };
 
 window.deleteStory = async (id) => {
   if (!confirm('¿Eliminar esta Story?')) return;

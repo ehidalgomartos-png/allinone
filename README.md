@@ -1,4 +1,4 @@
-# OmniSocial V1.0
+# OmniSocial V1.0.1
 
 Primera versión completa de la comunidad propia OmniSocial.
 
@@ -34,7 +34,7 @@ Después reinicia/redeploy el servicio y vuelve a iniciar sesión. Aparecerá **
 /api/health
 ```
 
-Debe devolver `version: "1.0.0"`.
+Debe devolver `version: "1.0.1"`.
 
 ## Desarrollo local
 
@@ -53,3 +53,10 @@ Abre `http://localhost:3000`.
 ## Nota sobre multimedia
 
 En esta versión MVP las imágenes y vídeos siguen guardándose en PostgreSQL. Antes de crecer a un volumen importante conviene mover multimedia a almacenamiento de objetos (S3/Cloudinary/R2 o similar).
+
+
+## V1.0.1 — progreso de Stories
+- La barra superior de cada Story avanza visualmente.
+- Las fotos duran 6 segundos y pasan automáticamente a la siguiente.
+- En vídeo, la barra se sincroniza con la duración/reproducción real.
+- Las Stories anteriores quedan marcadas como completadas.
