@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS comments (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Tablas de V0.3 conservadas para no perder nada de instalaciones anteriores.
 CREATE TABLE IF NOT EXISTS social_accounts (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -78,19 +79,11 @@ CREATE TABLE IF NOT EXISTS cross_posts (
   UNIQUE (post_id, provider)
 );
 
-CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_posts_user_id ON posts(user_id);
-CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
-CREATE INDEX IF NOT EXISTS idx_follows_follower_id ON follows(follower_id);
-CREATE INDEX IF NOT EXISTS idx_cross_posts_post_id ON cross_posts(post_id);
-
--- V0.3: datos OAuth reales de Meta. ALTER permite actualizar una base V0.2 sin borrar datos.
 ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS external_id TEXT NOT NULL DEFAULT '';
 ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS external_name TEXT NOT NULL DEFAULT '';
 ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS access_token_enc TEXT NOT NULL DEFAULT '';
 ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS provider_data JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS last_error TEXT NOT NULL DEFAULT '';
-
 ALTER TABLE cross_posts ADD COLUMN IF NOT EXISTS external_url TEXT NOT NULL DEFAULT '';
 ALTER TABLE cross_posts ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
 
@@ -111,5 +104,38 @@ CREATE TABLE IF NOT EXISTS meta_pages (
   UNIQUE (user_id, page_id)
 );
 
+-- V0.4: red social propia.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS website TEXT NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS location TEXT NOT NULL DEFAULT '';
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS visibility VARCHAR(20) NOT NULL DEFAULT 'public';
+ALTER TABLE posts ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS bookmarks (
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  post_id BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, post_id)
+);
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  actor_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+  type VARCHAR(30) NOT NULL CHECK (type IN ('follow','like','comment')),
+  post_id BIGINT REFERENCES posts(id) ON DELETE CASCADE,
+  text TEXT NOT NULL DEFAULT '',
+  read_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_user_id ON posts(user_id);
+CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
+CREATE INDEX IF NOT EXISTS idx_follows_follower_id ON follows(follower_id);
+CREATE INDEX IF NOT EXISTS idx_follows_followed_id ON follows(followed_id);
+CREATE INDEX IF NOT EXISTS idx_likes_post_id ON likes(post_id);
+CREATE INDEX IF NOT EXISTS idx_bookmarks_user_id ON bookmarks(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, read_at, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cross_posts_post_id ON cross_posts(post_id);
 CREATE INDEX IF NOT EXISTS idx_meta_pages_user_id ON meta_pages(user_id);
 CREATE INDEX IF NOT EXISTS idx_cross_posts_status ON cross_posts(status, updated_at);

@@ -1,15 +1,22 @@
-# Deploy nuevo de OmniSocial V0.3 en Render
+# Despliegue en Render — OmniSocial V0.4
 
-Si ya tienes V0.2 funcionando, usa `ACTUALIZAR-A-V0.3.md` y no crees otra base.
+Si ya tienes OmniSocial V0.3 funcionando en Render, **no crees otro servicio ni otra base de datos**. Sube esta versión al mismo repositorio de GitHub y deja que Render despliegue el nuevo commit.
 
-Para un despliegue desde cero:
+## Comprobación
 
-1. Sube todos los archivos a la raíz de un repositorio GitHub.
-2. En Render crea un Blueprint desde ese repositorio.
-3. `render.yaml` crea el servicio web y PostgreSQL.
-4. Completa en Render los valores marcados como `sync: false`: `META_APP_ID` y `META_APP_SECRET`; `META_LOGIN_CONFIG_ID` es opcional.
-5. Configura en Meta como OAuth callback: `https://TU-SERVICIO.onrender.com/api/meta/oauth/callback`.
-6. Comprueba `/api/health`.
-7. Entra en `Mis redes` -> `Conectar Meta`.
+Después del despliegue abre:
 
-El Blueprint genera automáticamente `JWT_SECRET` y `TOKEN_ENCRYPTION_KEY` y toma `PUBLIC_BASE_URL` del `RENDER_EXTERNAL_URL` asignado por Render.
+`https://TU-APP.onrender.com/api/health`
+
+Debe aparecer:
+
+```json
+{
+  "ok": true,
+  "version": "0.4.0",
+  "database": "postgresql",
+  "mode": "own-community"
+}
+```
+
+La migración de base de datos se ejecuta al arrancar y conserva cuentas y publicaciones existentes.

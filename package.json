@@ -1,16 +1,14 @@
 {
-  "name": "omnisocial-mvp",
-  "version": "0.3.0",
-  "description": "OmniSocial V0.3 - comunidad + PostgreSQL + conexión Meta OAuth + publicación real en Facebook Pages e Instagram profesional",
+  "name": "omnisocial-community",
+  "version": "0.4.0",
+  "description": "OmniSocial V0.4 - red social propia con PostgreSQL",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "check": "node --check server.js && node --check src/db.js && node --check src/crypto.js && node --check src/meta.js && node --check public/app.js"
+    "check": "node --check server.js && node --check src/db.js && node --check public/app.js"
   },
-  "engines": {
-    "node": ">=20"
-  },
+  "engines": { "node": ">=20" },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",

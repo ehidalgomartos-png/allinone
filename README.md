@@ -1,57 +1,37 @@
-# OmniSocial V0.3
+# OmniSocial V0.4 — Comunidad propia
 
-OmniSocial V0.3 mantiene el núcleo de la V0.2 y añade conexión OAuth real con Meta para Facebook Pages e Instagram profesional.
+Esta versión deja en pausa las integraciones con redes externas y centra el proyecto en construir una red social propia.
 
-## Qué funciona
+## Funciones incluidas
 
-- Registro/login y perfiles.
-- Feed, descubrir personas, seguir, likes y comentarios.
-- PostgreSQL persistente en Render.
-- Fotos y vídeos almacenados en PostgreSQL para este MVP.
-- Conexión real de Meta mediante OAuth.
-- Selección de Página de Facebook si el usuario administra varias.
-- Detección de Instagram Business/Creator vinculado a la Página.
-- Publicación desde OmniSocial hacia Facebook Pages.
-- Publicación de imagen y Reel hacia Instagram profesional.
-- Cola de distribución con estados Pendiente / Publicando / Publicado / Error.
-- Reintento manual de publicaciones fallidas.
-- Tokens cifrados con AES-256-GCM mediante TOKEN_ENCRYPTION_KEY.
+- Registro e inicio de sesión.
+- PostgreSQL persistente.
+- Feed de cuentas seguidas.
+- Descubrir contenido público.
+- Publicaciones de texto, foto y vídeo.
+- Visibilidad pública o solo seguidores.
+- Likes y comentarios.
+- Guardar publicaciones.
+- Eliminar publicaciones y comentarios propios.
+- Perfiles públicos dentro de la comunidad.
+- Seguir / dejar de seguir.
+- Contadores de publicaciones, seguidores y seguidos.
+- Edición de perfil: nombre, bio, ubicación, web y avatar.
+- Búsqueda de personas y publicaciones.
+- Hashtags y tendencias.
+- Notificaciones de nuevos seguidores, likes y comentarios.
+- Diseño responsive móvil / tablet / ordenador.
 
-## Limitaciones actuales
+## Actualización desde V0.3
 
-- Facebook publica en Páginas, no en perfiles personales.
-- El flujo de Instagram usado en V0.3 requiere una cuenta profesional (Business o Creator) vinculada a la Página de Facebook seleccionada.
-- TikTok, YouTube y X siguen reservados para siguientes versiones.
-- El límite de subida del MVP es 10 MB.
-- Para usar Meta con personas ajenas a los roles/testers de la app hay que completar la revisión de Meta y obtener los permisos necesarios.
+No borres la base de datos. Sustituye los archivos del repositorio por los de esta versión y haz commit. `src/schema.sql` aplica las nuevas tablas/columnas con `IF NOT EXISTS`, conservando los usuarios y posts existentes.
 
-## Variables necesarias
+Render hará el deploy automáticamente. Comprueba después:
 
-```env
-DATABASE_URL=...
-JWT_SECRET=...
-TOKEN_ENCRYPTION_KEY=...
-META_APP_ID=...
-META_APP_SECRET=...
-META_LOGIN_CONFIG_ID=...   # opcional, si Facebook Login for Business usa configuración
-META_GRAPH_VERSION=v26.0
-PUBLIC_BASE_URL=https://tu-servicio.onrender.com
-```
+`/api/health`
 
-Render proporciona `RENDER_EXTERNAL_URL`; el Blueprint lo expone como `PUBLIC_BASE_URL`.
+Debe responder con `version: "0.4.0"` y `mode: "own-community"`.
 
-## Desarrollo local
+## Nota sobre multimedia
 
-```bash
-npm install
-copy .env.example .env
-npm start
-```
-
-Abre http://localhost:3000
-
-## Actualización desde V0.2
-
-No borres PostgreSQL. `src/schema.sql` utiliza `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, por lo que la base V0.2 se actualiza al iniciar V0.3.
-
-Lee `ACTUALIZAR-A-V0.3.md` para el despliegue sobre tu servicio existente.
+Para este MVP las imágenes y vídeos siguen guardándose en PostgreSQL. Es válido para pruebas y una comunidad inicial pequeña. Antes de crecer de forma seria conviene migrar multimedia a Cloudinary, S3 o equivalente.
