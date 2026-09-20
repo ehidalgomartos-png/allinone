@@ -1,7 +1,7 @@
 {
   "name": "omnisocial-community",
-  "version": "0.4.0",
-  "description": "OmniSocial V0.4 - red social propia con PostgreSQL",
+  "version": "0.4.1",
+  "description": "OmniSocial V0.4.1 - responsive login corregido",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

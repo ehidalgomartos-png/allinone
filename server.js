@@ -133,7 +133,7 @@ async function addNotification(client, { userId, actorId, type, postId = null, t
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '0.4.0', database: 'postgresql', mode: 'own-community' });
+  res.json({ ok: true, version: '0.4.1', database: 'postgresql', mode: 'own-community' });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
@@ -454,7 +454,7 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   await initDb();
-  app.listen(PORT, '0.0.0.0', () => console.log(`OmniSocial V0.4 en http://localhost:${PORT}`));
+  app.listen(PORT, '0.0.0.0', () => console.log(`OmniSocial V0.4.1 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {
