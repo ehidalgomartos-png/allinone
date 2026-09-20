@@ -4,11 +4,16 @@ const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const multer = require('multer');
+const http = require('http');
+const { Server } = require('socket.io');
 require('dotenv').config();
 
 const { pool, initDb, withTransaction } = require('./src/db');
 
 const app = express();
+const httpServer = http.createServer(app);
+const io = new Server(httpServer, { cors: { origin: true, credentials: true } });
+const onlineUsers = new Map();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const publicDir = path.join(__dirname, 'public');
@@ -68,6 +73,67 @@ function tokenFor(user) {
   return jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '30d' });
 }
 
+
+function isOnline(userId) {
+  return (onlineUsers.get(String(userId)) || 0) > 0;
+}
+
+async function presenceTargets(userId) {
+  const { rows } = await pool.query(`
+    SELECT CASE WHEN user1_id = $1 THEN user2_id ELSE user1_id END AS id
+      FROM friendships WHERE user1_id = $1 OR user2_id = $1
+    UNION
+    SELECT CASE WHEN user1_id = $1 THEN user2_id ELSE user1_id END AS id
+      FROM conversations WHERE user1_id = $1 OR user2_id = $1
+  `, [userId]);
+  return rows.map(r => String(r.id));
+}
+
+async function broadcastPresence(userId, online) {
+  const targets = await presenceTargets(userId).catch(() => []);
+  for (const id of targets) io.to(`user:${id}`).emit('presence', { userId: Number(userId), online, lastSeenAt: online ? null : new Date().toISOString() });
+}
+
+io.use((socket, next) => {
+  try {
+    const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+    if (!token) return next(new Error('No autenticado'));
+    socket.user = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch {
+    next(new Error('Sesión inválida'));
+  }
+});
+
+io.on('connection', async (socket) => {
+  const userId = String(socket.user.id);
+  socket.join(`user:${userId}`);
+  const previous = onlineUsers.get(userId) || 0;
+  onlineUsers.set(userId, previous + 1);
+  if (previous === 0) await broadcastPresence(userId, true);
+
+  socket.on('typing', async (payload = {}) => {
+    try {
+      const conversationId = Number(payload.conversationId);
+      if (!Number.isInteger(conversationId)) return;
+      const { rows } = await pool.query(`SELECT user1_id,user2_id FROM conversations WHERE id=$1 AND (user1_id=$2 OR user2_id=$2)`, [conversationId, socket.user.id]);
+      if (!rows[0]) return;
+      const otherId = Number(rows[0].user1_id) === Number(socket.user.id) ? rows[0].user2_id : rows[0].user1_id;
+      io.to(`user:${otherId}`).emit('typing', { conversationId, userId: Number(socket.user.id), typing: Boolean(payload.typing) });
+    } catch {}
+  });
+
+  socket.on('disconnect', async () => {
+    const count = Math.max(0, (onlineUsers.get(userId) || 1) - 1);
+    if (count) onlineUsers.set(userId, count);
+    else {
+      onlineUsers.delete(userId);
+      await pool.query('UPDATE users SET last_seen_at = NOW() WHERE id = $1', [userId]).catch(() => {});
+      await broadcastPresence(userId, false);
+    }
+  });
+});
+
 function normalizePost(row) {
   return {
     ...row,
@@ -124,16 +190,19 @@ async function postQuery(userId, { mode = 'following', profileId = null, search 
 }
 
 async function addNotification(client, { userId, actorId, type, postId = null, text = '' }) {
-  if (String(userId) === String(actorId)) return;
-  await client.query(`
+  if (String(userId) === String(actorId)) return null;
+  const { rows } = await client.query(`
     INSERT INTO notifications (user_id, actor_id, type, post_id, text)
     VALUES ($1, $2, $3, $4, $5)
+    RETURNING id, created_at
   `, [userId, actorId, type, postId, String(text || '').slice(0, 500)]);
+  io.to(`user:${userId}`).emit('notification:new', { id: rows[0]?.id, type, actorId: Number(actorId), postId: postId ? Number(postId) : null, text });
+  return rows[0] || null;
 }
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '0.5.1', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages'] });
+  res.json({ ok: true, version: '0.6.0', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing'] });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
@@ -178,6 +247,8 @@ app.get('/api/me', auth, asyncRoute(async (req, res) => {
       (SELECT COUNT(*)::int FROM follows WHERE followed_id = u.id) AS followers_count,
       (SELECT COUNT(*)::int FROM follows WHERE follower_id = u.id) AS following_count,
       (SELECT COUNT(*)::int FROM posts WHERE user_id = u.id) AS posts_count,
+      (SELECT COUNT(*)::int FROM friendships WHERE user1_id = u.id OR user2_id = u.id) AS friends_count,
+      (SELECT COUNT(*)::int FROM friend_requests WHERE to_user_id = u.id AND status = 'pending') AS friend_requests_count,
       (SELECT COUNT(*)::int FROM notifications WHERE user_id = u.id AND read_at IS NULL) AS unread_notifications,
       (SELECT COUNT(*)::int
          FROM messages m
@@ -190,7 +261,7 @@ app.get('/api/me', auth, asyncRoute(async (req, res) => {
     FROM users u WHERE u.id = $1
   `, [req.user.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
-  res.json({ ...safeUser(rows[0]), followers_count: rows[0].followers_count, following_count: rows[0].following_count, posts_count: rows[0].posts_count, unread_notifications: rows[0].unread_notifications, unread_messages: rows[0].unread_messages });
+  res.json({ ...safeUser(rows[0]), followers_count: rows[0].followers_count, following_count: rows[0].following_count, posts_count: rows[0].posts_count, friends_count: rows[0].friends_count, friend_requests_count: rows[0].friend_requests_count, unread_notifications: rows[0].unread_notifications, unread_messages: rows[0].unread_messages, online: true, last_seen_at: rows[0].last_seen_at });
 }));
 
 app.patch('/api/me', auth, asyncRoute(async (req, res) => {
@@ -362,14 +433,20 @@ app.get('/api/users', auth, asyncRoute(async (req, res) => {
   const q = String(req.query.q || '').trim().slice(0, 100);
   const pattern = `%${q}%`;
   const { rows } = await pool.query(`
-    SELECT u.id, u.username, u.name, u.bio, u.avatar, u.location, u.created_at,
+    SELECT u.id, u.username, u.name, u.bio, u.avatar, u.location, u.created_at, u.last_seen_at,
       EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followed_id = u.id) AS following,
-      (SELECT COUNT(*)::int FROM follows WHERE followed_id = u.id) AS followers_count
+      (SELECT COUNT(*)::int FROM follows WHERE followed_id = u.id) AS followers_count,
+      CASE
+        WHEN EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user1_id=$1 AND fr.user2_id=u.id) OR (fr.user1_id=u.id AND fr.user2_id=$1)) THEN 'friends'
+        WHEN EXISTS(SELECT 1 FROM friend_requests fq WHERE fq.from_user_id=$1 AND fq.to_user_id=u.id AND fq.status='pending') THEN 'sent'
+        WHEN EXISTS(SELECT 1 FROM friend_requests fq WHERE fq.from_user_id=u.id AND fq.to_user_id=$1 AND fq.status='pending') THEN 'received'
+        ELSE 'none'
+      END AS friendship_status
     FROM users u
     WHERE u.id <> $1 AND ($2 = '%%' OR u.username ILIKE $2 OR u.name ILIKE $2 OR u.bio ILIKE $2)
     ORDER BY followers_count DESC, u.created_at DESC LIMIT 50
   `, [req.user.id, pattern]);
-  res.json(rows);
+  res.json(rows.map(r => ({ ...r, online: isOnline(r.id) })));
 }));
 
 app.get('/api/users/:username', auth, asyncRoute(async (req, res) => {
@@ -378,13 +455,22 @@ app.get('/api/users/:username', auth, asyncRoute(async (req, res) => {
       (SELECT COUNT(*)::int FROM follows WHERE followed_id = u.id) AS followers_count,
       (SELECT COUNT(*)::int FROM follows WHERE follower_id = u.id) AS following_count,
       (SELECT COUNT(*)::int FROM posts WHERE user_id = u.id) AS posts_count,
+      (SELECT COUNT(*)::int FROM friendships WHERE user1_id = u.id OR user2_id = u.id) AS friends_count,
       EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followed_id = u.id) AS following,
+      CASE
+        WHEN u.id=$1 THEN 'self'
+        WHEN EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user1_id=$1 AND fr.user2_id=u.id) OR (fr.user1_id=u.id AND fr.user2_id=$1)) THEN 'friends'
+        WHEN EXISTS(SELECT 1 FROM friend_requests fq WHERE fq.from_user_id=$1 AND fq.to_user_id=u.id AND fq.status='pending') THEN 'sent'
+        WHEN EXISTS(SELECT 1 FROM friend_requests fq WHERE fq.from_user_id=u.id AND fq.to_user_id=$1 AND fq.status='pending') THEN 'received'
+        ELSE 'none'
+      END AS friendship_status,
+      (SELECT fq.id FROM friend_requests fq WHERE fq.status='pending' AND ((fq.from_user_id=$1 AND fq.to_user_id=u.id) OR (fq.from_user_id=u.id AND fq.to_user_id=$1)) ORDER BY fq.created_at DESC LIMIT 1) AS friend_request_id,
       (u.id = $1) AS own
     FROM users u WHERE LOWER(u.username) = LOWER($2) LIMIT 1
   `, [req.user.id, req.params.username]);
   if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
   const row = rows[0];
-  res.json({ ...safeUser(row), followers_count: row.followers_count, following_count: row.following_count, posts_count: row.posts_count, following: row.following, own: row.own });
+  res.json({ ...safeUser(row), followers_count: row.followers_count, following_count: row.following_count, posts_count: row.posts_count, friends_count: row.friends_count, following: row.following, friendship_status: row.friendship_status, friend_request_id: row.friend_request_id, own: row.own, online: isOnline(row.id), last_seen_at: row.last_seen_at });
 }));
 
 app.get('/api/users/:username/posts', auth, asyncRoute(async (req, res) => {
@@ -408,18 +494,109 @@ app.post('/api/users/:id/follow', auth, asyncRoute(async (req, res) => {
   res.json(result);
 }));
 
+
+
+// --- V0.6: Amigos y solicitudes -----------------------------------------
+function friendshipPair(a, b) {
+  const x = Number(a), y = Number(b);
+  return x < y ? [x, y] : [y, x];
+}
+
+app.get('/api/friends', auth, asyncRoute(async (req, res) => {
+  const { rows } = await pool.query(`
+    SELECT u.id,u.username,u.name,u.avatar,u.bio,u.last_seen_at,fr.created_at
+      FROM friendships fr
+      JOIN users u ON u.id = CASE WHEN fr.user1_id=$1 THEN fr.user2_id ELSE fr.user1_id END
+     WHERE fr.user1_id=$1 OR fr.user2_id=$1
+     ORDER BY u.name ASC
+  `, [req.user.id]);
+  res.json(rows.map(r => ({ ...r, online: isOnline(r.id) })));
+}));
+
+app.get('/api/friends/requests', auth, asyncRoute(async (req, res) => {
+  const incoming = await pool.query(`
+    SELECT fq.id,fq.created_at,u.id AS user_id,u.username,u.name,u.avatar,u.bio,u.last_seen_at
+      FROM friend_requests fq JOIN users u ON u.id=fq.from_user_id
+     WHERE fq.to_user_id=$1 AND fq.status='pending' ORDER BY fq.created_at DESC
+  `,[req.user.id]);
+  const outgoing = await pool.query(`
+    SELECT fq.id,fq.created_at,u.id AS user_id,u.username,u.name,u.avatar,u.bio,u.last_seen_at
+      FROM friend_requests fq JOIN users u ON u.id=fq.to_user_id
+     WHERE fq.from_user_id=$1 AND fq.status='pending' ORDER BY fq.created_at DESC
+  `,[req.user.id]);
+  res.json({
+    incoming: incoming.rows.map(r=>({ ...r, online:isOnline(r.user_id) })),
+    outgoing: outgoing.rows.map(r=>({ ...r, online:isOnline(r.user_id) }))
+  });
+}));
+
+app.post('/api/friends/request/:userId', auth, asyncRoute(async (req,res)=>{
+  const otherId=Number(req.params.userId), myId=Number(req.user.id);
+  if(!Number.isInteger(otherId)||otherId===myId) return res.status(400).json({error:'Usuario inválido'});
+  const exists=await pool.query('SELECT 1 FROM users WHERE id=$1',[otherId]);
+  if(!exists.rowCount) return res.status(404).json({error:'Usuario no encontrado'});
+  const [a,b]=friendshipPair(myId,otherId);
+  const friendship=await pool.query('SELECT 1 FROM friendships WHERE user1_id=$1 AND user2_id=$2',[a,b]);
+  if(friendship.rowCount) return res.json({status:'friends'});
+  const incoming=await pool.query(`SELECT id FROM friend_requests WHERE from_user_id=$1 AND to_user_id=$2 AND status='pending' LIMIT 1`,[otherId,myId]);
+  if(incoming.rowCount) return res.json({status:'received',request_id:incoming.rows[0].id});
+  const outgoing=await pool.query(`SELECT id FROM friend_requests WHERE from_user_id=$1 AND to_user_id=$2 AND status='pending' LIMIT 1`,[myId,otherId]);
+  if(outgoing.rowCount){
+    await pool.query(`UPDATE friend_requests SET status='declined',updated_at=NOW() WHERE id=$1`,[outgoing.rows[0].id]);
+    return res.json({status:'none'});
+  }
+  const result=await withTransaction(async client=>{
+    const {rows}=await client.query(`INSERT INTO friend_requests(from_user_id,to_user_id) VALUES($1,$2) RETURNING id`,[myId,otherId]);
+    await addNotification(client,{userId:otherId,actorId:myId,type:'friend_request'});
+    return rows[0];
+  });
+  res.json({status:'sent',request_id:result.id});
+}));
+
+app.post('/api/friends/requests/:id/accept', auth, asyncRoute(async (req,res)=>{
+  const result=await withTransaction(async client=>{
+    const {rows}=await client.query(`SELECT * FROM friend_requests WHERE id=$1 AND to_user_id=$2 AND status='pending' FOR UPDATE`,[req.params.id,req.user.id]);
+    if(!rows[0]){const e=new Error('Solicitud no encontrada');e.status=404;throw e;}
+    const request=rows[0], [a,b]=friendshipPair(request.from_user_id,request.to_user_id);
+    await client.query(`INSERT INTO friendships(user1_id,user2_id) VALUES($1,$2) ON CONFLICT DO NOTHING`,[a,b]);
+    await client.query(`UPDATE friend_requests SET status='accepted',updated_at=NOW() WHERE id=$1`,[request.id]);
+    await addNotification(client,{userId:request.from_user_id,actorId:req.user.id,type:'friend_accept'});
+    return request;
+  });
+  res.json({ok:true,status:'friends',user_id:result.from_user_id});
+}));
+
+app.post('/api/friends/requests/:id/decline', auth, asyncRoute(async (req,res)=>{
+  const {rows}=await pool.query(`UPDATE friend_requests SET status='declined',updated_at=NOW() WHERE id=$1 AND (to_user_id=$2 OR from_user_id=$2) AND status='pending' RETURNING id`,[req.params.id,req.user.id]);
+  if(!rows[0]) return res.status(404).json({error:'Solicitud no encontrada'});
+  res.json({ok:true});
+}));
+
+app.delete('/api/friends/:userId', auth, asyncRoute(async (req,res)=>{
+  const [a,b]=friendshipPair(req.user.id,req.params.userId);
+  const {rows}=await pool.query(`DELETE FROM friendships WHERE user1_id=$1 AND user2_id=$2 RETURNING user1_id`,[a,b]);
+  if(!rows[0]) return res.status(404).json({error:'Amistad no encontrada'});
+  res.json({ok:true});
+}));
+
 app.get('/api/search', auth, asyncRoute(async (req, res) => {
   const q = String(req.query.q || '').trim().slice(0, 100);
   if (!q) return res.json({ users: [], posts: [] });
   const pattern = `%${q}%`;
   const users = await pool.query(`
-    SELECT u.id, u.username, u.name, u.bio, u.avatar,
-      EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followed_id = u.id) AS following
+    SELECT u.id, u.username, u.name, u.bio, u.avatar, u.last_seen_at,
+      EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followed_id = u.id) AS following,
+      CASE
+        WHEN EXISTS(SELECT 1 FROM friendships fr WHERE (fr.user1_id=$1 AND fr.user2_id=u.id) OR (fr.user1_id=u.id AND fr.user2_id=$1)) THEN 'friends'
+        WHEN EXISTS(SELECT 1 FROM friend_requests fq WHERE fq.from_user_id=$1 AND fq.to_user_id=u.id AND fq.status='pending') THEN 'sent'
+        WHEN EXISTS(SELECT 1 FROM friend_requests fq WHERE fq.from_user_id=u.id AND fq.to_user_id=$1 AND fq.status='pending') THEN 'received'
+        ELSE 'none'
+      END AS friendship_status
     FROM users u WHERE u.id <> $1 AND (u.username ILIKE $2 OR u.name ILIKE $2 OR u.bio ILIKE $2)
     ORDER BY u.name LIMIT 20
   `, [req.user.id, pattern]);
   const posts = await postQuery(req.user.id, { mode: 'all', search: q, limit: 30 });
-  res.json({ users: users.rows, posts });
+  res.json({ users: users.rows.map(r => ({ ...r, online: isOnline(r.id) })), posts });
 }));
 
 app.get('/api/trending', auth, asyncRoute(async (_req, res) => {
@@ -546,11 +723,26 @@ app.get('/api/reels', auth, asyncRoute(async (req, res) => {
   res.json(rows.map(normalizePost));
 }));
 
-// --- V0.5: Mensajes privados ----------------------------------------------
+// --- V0.6: Mensajes privados en tiempo real -------------------------------
 async function requireConversationMember(conversationId, userId) {
   const { rows } = await pool.query(`SELECT * FROM conversations WHERE id = $1 AND (user1_id = $2 OR user2_id = $2)`, [conversationId, userId]);
   if (!rows[0]) { const err = new Error('Conversación no encontrada'); err.status = 404; throw err; }
   return rows[0];
+}
+
+function conversationOtherId(conversation, userId) {
+  return Number(conversation.user1_id) === Number(userId) ? Number(conversation.user2_id) : Number(conversation.user1_id);
+}
+
+async function canUserViewPost(postId, viewerId) {
+  const { rows } = await pool.query(`
+    SELECT p.id FROM posts p
+     WHERE p.id=$1 AND (
+       p.visibility='public' OR p.user_id=$2 OR
+       (p.visibility='followers' AND EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=$2 AND f.followed_id=p.user_id))
+     ) LIMIT 1
+  `,[postId,viewerId]);
+  return Boolean(rows[0]);
 }
 
 app.post('/api/conversations/direct/:userId', auth, asyncRoute(async (req, res) => {
@@ -572,8 +764,9 @@ app.post('/api/conversations/direct/:userId', auth, asyncRoute(async (req, res) 
 app.get('/api/conversations', auth, asyncRoute(async (req, res) => {
   const { rows } = await pool.query(`
     SELECT c.id, c.created_at, c.updated_at,
-           u.id AS other_id, u.username, u.name, u.avatar,
+           u.id AS other_id, u.username, u.name, u.avatar, u.last_seen_at,
            lm.id AS last_message_id, lm.text AS last_message, lm.media_type AS last_media_type,
+           lm.shared_post_id AS last_shared_post_id,
            lm.sender_id AS last_sender_id, lm.created_at AS last_message_at,
            (SELECT COUNT(*)::int FROM messages um
              WHERE um.conversation_id = c.id AND um.sender_id <> $1
@@ -582,7 +775,7 @@ app.get('/api/conversations', auth, asyncRoute(async (req, res) => {
       JOIN users u ON u.id = CASE WHEN c.user1_id = $1 THEN c.user2_id ELSE c.user1_id END
       LEFT JOIN conversation_reads cr ON cr.conversation_id = c.id AND cr.user_id = $1
       LEFT JOIN LATERAL (
-        SELECT m.id, m.text, m.media_type, m.sender_id, m.created_at
+        SELECT m.id, m.text, m.media_type, m.shared_post_id, m.sender_id, m.created_at
           FROM messages m WHERE m.conversation_id = c.id
          ORDER BY m.created_at DESC, m.id DESC LIMIT 1
       ) lm ON TRUE
@@ -590,7 +783,7 @@ app.get('/api/conversations', auth, asyncRoute(async (req, res) => {
      ORDER BY COALESCE(lm.created_at, c.updated_at) DESC
      LIMIT 100
   `, [req.user.id]);
-  res.json(rows.map(r => ({ ...r, unread_count: Number(r.unread_count || 0) })));
+  res.json(rows.map(r => ({ ...r, unread_count: Number(r.unread_count || 0), online: isOnline(r.other_id) })));
 }));
 
 app.get('/api/conversations/:id/messages', auth, asyncRoute(async (req, res) => {
@@ -601,34 +794,74 @@ app.get('/api/conversations/:id/messages', auth, asyncRoute(async (req, res) => 
   `, [req.params.id, req.user.id]);
   const { rows } = await pool.query(`
     SELECT * FROM (
-      SELECT m.id, m.conversation_id, m.sender_id, m.text, m.media_id, m.media_type, m.created_at,
-             u.username, u.name, u.avatar, (m.sender_id = $2) AS own
-        FROM messages m JOIN users u ON u.id = m.sender_id
+      SELECT m.id, m.conversation_id, m.sender_id, m.text, m.media_id, m.media_type, m.reply_to_id, m.shared_post_id, m.created_at,
+             u.username, u.name, u.avatar, (m.sender_id = $2) AS own,
+             rm.text AS reply_text, rm.media_type AS reply_media_type, ru.name AS reply_name, ru.username AS reply_username,
+             CASE WHEN sp.id IS NOT NULL AND (
+               sp.visibility='public' OR sp.user_id=$2 OR
+               (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id))
+             ) THEN sp.id END AS shared_visible_id,
+             CASE WHEN sp.id IS NOT NULL AND (
+               sp.visibility='public' OR sp.user_id=$2 OR
+               (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id))
+             ) THEN sp.text ELSE NULL END AS shared_text,
+             CASE WHEN sp.id IS NOT NULL AND (
+               sp.visibility='public' OR sp.user_id=$2 OR
+               (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id))
+             ) THEN sp.media_id ELSE NULL END AS shared_media_id,
+             CASE WHEN sp.id IS NOT NULL AND (
+               sp.visibility='public' OR sp.user_id=$2 OR
+               (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id))
+             ) THEN sp.media_type ELSE NULL END AS shared_media_type,
+             spu.username AS shared_username, spu.name AS shared_name, spu.avatar AS shared_avatar
+        FROM messages m
+        JOIN users u ON u.id = m.sender_id
+        LEFT JOIN messages rm ON rm.id=m.reply_to_id AND rm.conversation_id=m.conversation_id
+        LEFT JOIN users ru ON ru.id=rm.sender_id
+        LEFT JOIN posts sp ON sp.id=m.shared_post_id
+        LEFT JOIN users spu ON spu.id=sp.user_id
        WHERE m.conversation_id = $1
-       ORDER BY m.created_at DESC, m.id DESC LIMIT 120
+       ORDER BY m.created_at DESC, m.id DESC LIMIT 150
     ) x ORDER BY created_at ASC, id ASC
   `, [req.params.id, req.user.id]);
-  res.json(rows.map(r => ({ ...r, media_url: r.media_id ? `/media/${r.media_id}` : '' })));
+  res.json(rows.map(r => ({
+    id:r.id, conversation_id:r.conversation_id, sender_id:r.sender_id, text:r.text, media_id:r.media_id, media_type:r.media_type,
+    media_url:r.media_id ? `/media/${r.media_id}` : '', created_at:r.created_at, username:r.username, name:r.name, avatar:r.avatar, own:Boolean(r.own),
+    reply: r.reply_to_id ? { id:r.reply_to_id, name:r.reply_name, username:r.reply_username, text:r.reply_text || '', media_type:r.reply_media_type || 'none' } : null,
+    shared_post: r.shared_visible_id ? { id:r.shared_visible_id, text:r.shared_text || '', media_type:r.shared_media_type || 'none', media_url:r.shared_media_id ? `/media/${r.shared_media_id}` : '', username:r.shared_username, name:r.shared_name, avatar:r.shared_avatar } : (r.shared_post_id ? { unavailable:true } : null)
+  })));
 }));
 
 app.post('/api/conversations/:id/messages', auth, asyncRoute(async (req, res) => {
-  await requireConversationMember(req.params.id, req.user.id);
+  const conversation = await requireConversationMember(req.params.id, req.user.id);
+  const otherId = conversationOtherId(conversation, req.user.id);
   const text = String(req.body.text || '').trim().slice(0, 4000);
   const mediaId = req.body.media_id ? String(req.body.media_id) : null;
+  const replyToId = req.body.reply_to_id ? Number(req.body.reply_to_id) : null;
+  const sharedPostId = req.body.shared_post_id ? Number(req.body.shared_post_id) : null;
   let mediaType = 'none';
   if (mediaId) {
     const media = await pool.query('SELECT id,mime_type FROM media WHERE id = $1 AND user_id = $2', [mediaId, req.user.id]);
     if (!media.rowCount) return res.status(400).json({ error: 'Archivo multimedia inválido' });
     mediaType = media.rows[0].mime_type.startsWith('video/') ? 'video' : 'image';
   }
-  if (!text && !mediaId) return res.status(400).json({ error: 'El mensaje está vacío' });
+  if (replyToId) {
+    const reply = await pool.query('SELECT 1 FROM messages WHERE id=$1 AND conversation_id=$2',[replyToId,req.params.id]);
+    if(!reply.rowCount) return res.status(400).json({error:'Respuesta inválida'});
+  }
+  if (sharedPostId) {
+    const [senderCanView, receiverCanView] = await Promise.all([canUserViewPost(sharedPostId, req.user.id), canUserViewPost(sharedPostId, otherId)]);
+    if (!senderCanView || !receiverCanView) return res.status(400).json({ error:'Esta publicación no puede compartirse con esa persona por su privacidad' });
+  }
+  if (!text && !mediaId && !sharedPostId) return res.status(400).json({ error: 'El mensaje está vacío' });
   const { rows } = await pool.query(`
-    INSERT INTO messages (conversation_id,sender_id,text,media_id,media_type)
-    VALUES ($1,$2,$3,$4,$5) RETURNING id,created_at
-  `, [req.params.id, req.user.id, text, mediaId, mediaType]);
+    INSERT INTO messages (conversation_id,sender_id,text,media_id,media_type,reply_to_id,shared_post_id)
+    VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,created_at
+  `, [req.params.id, req.user.id, text, mediaId, mediaType, replyToId, sharedPostId]);
   await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [req.params.id]);
   await pool.query(`INSERT INTO conversation_reads (conversation_id,user_id,last_read_at) VALUES ($1,$2,NOW())
                     ON CONFLICT (conversation_id,user_id) DO UPDATE SET last_read_at = NOW()`, [req.params.id, req.user.id]);
+  io.to(`user:${otherId}`).emit('message:new', { conversationId:Number(req.params.id), messageId:Number(rows[0].id), senderId:Number(req.user.id), text:text.slice(0,160), hasMedia:Boolean(mediaId), sharedPostId:sharedPostId || null });
   res.json(rows[0]);
 }));
 
@@ -643,7 +876,7 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   await initDb();
-  app.listen(PORT, '0.0.0.0', () => console.log(`OmniSocial V0.5 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`OmniSocial V0.6 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {

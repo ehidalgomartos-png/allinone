@@ -1,44 +1,58 @@
-# OmniSocial V0.5 — Stories, Reels y Mensajes
+# OmniSocial V0.6 — Amigos y chat en tiempo real
 
-Versión centrada en convertir OmniSocial en una red social propia más completa.
+Esta versión continúa desde V0.5.1 y mantiene intactos usuarios, publicaciones, Stories, Reels, likes, comentarios, guardados y conversaciones.
 
-## Novedades
+## Novedades V0.6
 
-- Stories de foto o vídeo con caducidad automática a las 24 horas.
-- Stories públicas o solo para seguidores.
-- Visualizaciones de tus propias Stories.
-- Pestaña Reels con vídeos verticales de publicaciones existentes.
-- Reproducción automática de Reels al entrar en pantalla.
-- Mensajes privados 1 a 1.
-- Envío de texto, fotografías y vídeos por mensaje.
-- Contador de mensajes sin leer.
-- Botón "Mensaje" en perfiles de otros usuarios.
-- Diseño responsive para ordenador, tablet y móvil.
-- Se conservan usuarios, posts, likes, comentarios, seguidores, guardados y notificaciones de V0.4.1.
+- Solicitudes de amistad: enviar, cancelar, aceptar, rechazar y eliminar amistad.
+- Página de Amigos accesible desde el perfil y Actividad.
+- Estado `En línea` y última conexión.
+- Mensajería en tiempo real con Socket.IO.
+- Indicador `Escribiendo…`.
+- Responder a un mensaje concreto.
+- Compartir publicaciones por mensaje privado.
+- Contador de mensajes y actividad actualizado en tiempo real.
+- Avisos del navegador mientras OmniSocial está abierto (con permiso del usuario).
+- La privacidad de los posts se respeta también al compartirlos por privado.
 
-## Arquitectura
+## Sigue incluyendo
 
-- Node.js + Express
-- PostgreSQL
-- Frontend HTML/CSS/JavaScript sin framework
-- JWT para sesiones
-- Multer para subidas
+- Registro / login con JWT.
+- PostgreSQL en Render.
+- Feed, Descubrir, búsqueda, perfiles y seguidores.
+- Fotos y vídeos.
+- Stories de 24 h.
+- Reels.
+- Likes, comentarios, guardados y notificaciones.
+- Interfaz responsive móvil / tablet / ordenador.
 
-## Arranque
+## Despliegue
 
-```bash
-npm install
-npm start
+Si ya tienes V0.5.1 funcionando en Render, NO borres la base de datos ni crees otro servicio.
+
+1. Descomprime el ZIP.
+2. Sube el contenido a la raíz del mismo repositorio de GitHub.
+3. Haz commit.
+4. Render desplegará automáticamente.
+5. Comprueba `/api/health`.
+
+Respuesta esperada:
+
+```json
+{
+  "ok": true,
+  "version": "0.6.0",
+  "database": "postgresql",
+  "mode": "own-community"
+}
 ```
 
-Render utiliza `render.yaml` y la misma base `omnisocial-db`.
+Las migraciones se ejecutan automáticamente desde `src/schema.sql` al arrancar.
 
-## Comprobación
+## Nota sobre presencia en tiempo real
 
-`GET /api/health`
+La presencia `En línea` se mantiene en memoria en la instancia web. Es adecuada para este MVP y una única instancia de Render. Cuando OmniSocial escale a varias instancias, convendrá mover presencia y eventos a Redis.
 
-Debe devolver `version: "0.5.0"` y las funciones `stories`, `reels` y `messages`.
+## Multimedia
 
-## Nota sobre multimedia
-
-En este MVP, fotos y vídeos siguen almacenándose en PostgreSQL para que no se pierdan en reinicios de Render. El límite por archivo es 25 MB. Antes de crecer en usuarios conviene migrar multimedia a almacenamiento de objetos (por ejemplo S3/Cloudinary/R2) y dejar PostgreSQL para metadatos.
+Esta versión conserva el almacenamiento de multimedia en PostgreSQL para simplificar el MVP. Antes de crecer en usuarios y vídeo, es recomendable migrar los archivos a un almacenamiento de objetos (S3, Cloudinary o equivalente).

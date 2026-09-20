@@ -192,3 +192,42 @@ CREATE INDEX IF NOT EXISTS idx_story_views_user ON story_views(user_id, viewed_a
 CREATE INDEX IF NOT EXISTS idx_conversations_user1 ON conversations(user1_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_conversations_user2 ON conversations(user2_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, created_at DESC, id DESC);
+
+
+-- V0.6: amistades, presencia y chat enriquecido.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS friend_requests (
+  id BIGSERIAL PRIMARY KEY,
+  from_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  to_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','accepted','declined')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (from_user_id <> to_user_id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_friend_requests_pending_pair
+  ON friend_requests (LEAST(from_user_id,to_user_id), GREATEST(from_user_id,to_user_id))
+  WHERE status = 'pending';
+
+CREATE TABLE IF NOT EXISTS friendships (
+  user1_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  user2_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user1_id,user2_id),
+  CHECK (user1_id < user2_id)
+);
+
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to_id BIGINT REFERENCES messages(id) ON DELETE SET NULL;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS shared_post_id BIGINT REFERENCES posts(id) ON DELETE SET NULL;
+
+ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
+  CHECK (type IN ('follow','like','comment','friend_request','friend_accept','message'));
+
+CREATE INDEX IF NOT EXISTS idx_friend_requests_to_status ON friend_requests(to_user_id,status,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_friend_requests_from_status ON friend_requests(from_user_id,status,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_friendships_user1 ON friendships(user1_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_friendships_user2 ON friendships(user2_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_reply ON messages(reply_to_id);
+CREATE INDEX IF NOT EXISTS idx_messages_shared_post ON messages(shared_post_id);

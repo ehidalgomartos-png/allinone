@@ -1,30 +1,15 @@
-# Render — OmniSocial V0.5
+# Render — OmniSocial V0.6
 
-La V0.5 está preparada para actualizar el servicio existente.
-
-## Configuración del Web Service
+La configuración de Render es la misma que ya utilizabas.
 
 - Runtime: Node
-- Build Command: `npm install`
-- Start Command: `npm start`
-- Health Check: `/api/health`
+- Build command: `npm install`
+- Start command: `npm start`
+- Base de datos: PostgreSQL existente `omnisocial-db`
+- Variables: `DATABASE_URL`, `JWT_SECRET`, `NODE_ENV`
 
-Variables necesarias:
+V0.6 añade Socket.IO. No necesita variables de entorno nuevas.
 
-- `DATABASE_URL` — ya enlazada a `omnisocial-db`
-- `JWT_SECRET` — ya creada en Render
-- `NODE_ENV=production`
+Render admite la conexión HTTP/WebSocket desde el mismo Web Service, por lo que no hay que crear otro servicio.
 
-No hace falta crear otro Blueprint ni otra base de datos.
-
-## Si falla el despliegue
-
-Revisa primero que GitHub contenga:
-
-- `src/db.js`
-- `src/schema.sql`
-- `public/app.js`
-- `public/styles.css`
-- `server.js`
-
-Luego abre los Logs del último deploy y localiza la primera línea que empiece por `Error:`.
+Tras desplegar, prueba `/api/health` y después dos sesiones simultáneas para comprobar mensajería y presencia.

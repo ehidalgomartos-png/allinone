@@ -7,7 +7,10 @@ const state = {
   busy: false,
   activeConversation: null,
   storyViewer: null,
-  messagePoll: null
+  messagePoll: null,
+  socket: null,
+  replyTo: null,
+  typingTimer: null
 };
 
 const $ = (s, root = document) => root.querySelector(s);
@@ -47,6 +50,16 @@ function timeAgo(date) {
   const h = Math.floor(min / 60); if (h < 24) return `${h} h`;
   const d = Math.floor(h / 24); if (d < 7) return `${d} d`;
   return new Intl.DateTimeFormat('es-ES', { day:'2-digit', month:'short' }).format(new Date(date));
+}
+
+
+function presenceText(u = {}) {
+  if (u.online) return 'En línea';
+  return u.last_seen_at ? `Última vez ${timeAgo(u.last_seen_at)}` : 'Desconectado';
+}
+
+function presenceHtml(u = {}) {
+  return `<span class="presence ${u.online ? 'online' : ''}" data-presence-user="${Number(u.id || u.other_id || 0)}"><i></i>${escapeHtml(presenceText(u))}</span>`;
 }
 
 function formatText(text = '') {
@@ -134,7 +147,7 @@ function navButton(view, icon, label) {
   if (view === 'notifications') count = Number(state.me?.unread_notifications || 0);
   if (view === 'messages') count = Number(state.me?.unread_messages || 0);
   const badge = count > 0 ? `<span class="nav-badge">${Math.min(99, count)}</span>` : '';
-  return `<button class="nav-item ${active}" onclick="go('${view}')"><span class="nav-icon">${icon}</span><span>${label}</span>${badge}</button>`;
+  return `<button class="nav-item ${active}" data-nav-view="${view}" onclick="go('${view}')"><span class="nav-icon">${icon}</span><span>${label}</span>${badge}</button>`;
 }
 
 function layout() {
@@ -143,7 +156,7 @@ function layout() {
       <button class="brand-button brand" onclick="go('feed')">OmniSocial</button>
       <div class="top-actions">
         <button class="top-icon" onclick="go('search')" aria-label="Buscar">⌕</button>
-        <button class="top-icon badge-wrap" onclick="go('notifications')" aria-label="Actividad">♡${Number(state.me?.unread_notifications || 0) ? `<span class="nav-badge">${Math.min(99,state.me.unread_notifications)}</span>` : ''}</button>
+        <button id="topActivityButton" class="top-icon badge-wrap" onclick="go('notifications')" aria-label="Actividad">♡${Number(state.me?.unread_notifications || 0) ? `<span class="nav-badge">${Math.min(99,state.me.unread_notifications)}</span>` : ''}</button>
         <button class="top-avatar" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me, 'small')}</button>
       </div>
     </header>
@@ -180,6 +193,7 @@ function layout() {
 
 window.logout = () => {
   if (state.messagePoll) { clearInterval(state.messagePoll); state.messagePoll = null; }
+  if (state.socket) { state.socket.disconnect(); state.socket = null; }
   localStorage.removeItem('token'); state.token = ''; state.me = null; state.view = 'feed'; authScreen();
 };
 
@@ -187,7 +201,7 @@ window.go = async (view) => {
   if (state.messagePoll) { clearInterval(state.messagePoll); state.messagePoll = null; }
   state.view = view;
   if (view !== 'profile') state.profile = null;
-  if (view !== 'messages') state.activeConversation = null;
+  if (view !== 'messages') { state.activeConversation = null; state.replyTo = null; }
   layout();
   await renderView();
 };
@@ -209,6 +223,7 @@ async function renderView() {
     if (state.view === 'messages') return renderMessages();
     if (state.view === 'notifications') return renderNotifications();
     if (state.view === 'bookmarks') return renderBookmarks();
+    if (state.view === 'friends') return renderFriends();
     if (state.view === 'profile') return renderProfile(state.profile || state.me.username);
   } catch (e) {
     main.innerHTML = `<div class="card empty"><h3>No se pudo cargar</h3><p>${escapeHtml(e.message)}</p><button class="btn" onclick="renderView()">Reintentar</button></div>`;
@@ -291,6 +306,7 @@ function postHtml(p) {
     <div class="post-actions">
       <button class="action ${p.liked ? 'liked' : ''}" onclick="likePost(${p.id})"><span>${p.liked ? '♥' : '♡'}</span><b>${p.likes_count}</b></button>
       <button class="action" onclick="openComments(${p.id})"><span>◌</span><b>${p.comments_count}</b></button>
+      <button class="action" onclick="sharePost(${p.id})" title="Compartir por mensaje"><span>↗</span></button>
       <button class="action push ${p.saved ? 'saved' : ''}" onclick="savePost(${p.id})"><span>${p.saved ? '▰' : '▱'}</span></button>
     </div>
   </article>`;
@@ -385,14 +401,24 @@ async function renderProfile(username) {
   ]);
   const website = u.website ? `<a class="profile-link" href="${escapeAttr(normalizeUrl(u.website))}" target="_blank" rel="noopener">↗ ${escapeHtml(u.website)}</a>` : '';
   $('#main').innerHTML = `<section class="card profile-card">
-    <div class="profile-top">${avatar(u, 'xl')}<div class="profile-cta">${u.own ? `<button class="btn ghost compact" onclick="editProfile()">Editar perfil</button>` : `<button class="btn ghost compact" onclick="startMessage(${u.id})">Mensaje</button><button class="btn ${u.following ? 'ghost' : 'primary'} compact" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.following ? 'Siguiendo' : 'Seguir'}</button>`}</div></div>
+    <div class="profile-top">${avatar(u, 'xl')}<div class="profile-cta">${u.own ? `<button class="btn ghost compact" onclick="go('friends')">Amigos</button><button class="btn ghost compact" onclick="editProfile()">Editar perfil</button>` : `<button class="btn ghost compact" onclick="startMessage(${u.id})">Mensaje</button>${friendButton(u)}<button class="btn ${u.following ? 'ghost' : 'primary'} compact" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.following ? 'Siguiendo' : 'Seguir'}</button>`}</div></div>
     <h2>${escapeHtml(u.name)}</h2><div class="handle">@${escapeHtml(u.username)}</div>
+    <div class="profile-presence">${presenceHtml(u)}</div>
     ${u.bio ? `<p class="profile-bio">${formatText(u.bio)}</p>` : ''}
     <div class="profile-meta">${u.location ? `<span>⌖ ${escapeHtml(u.location)}</span>` : ''}${website}</div>
-    <div class="profile-stats"><span><b>${u.posts_count}</b> publicaciones</span><span><b>${u.followers_count}</b> seguidores</span><span><b>${u.following_count}</b> siguiendo</span></div>
+    <div class="profile-stats"><span><b>${u.posts_count}</b> publicaciones</span><span><b>${u.followers_count}</b> seguidores</span><span><b>${u.following_count}</b> siguiendo</span>${u.own ? `<button onclick="go('friends')"><b>${u.friends_count || 0}</b> amigos</button>` : `<span><b>${u.friends_count || 0}</b> amigos</span>`}</div>
   </section>
   <div class="profile-section-title">Publicaciones</div>
   <div class="post-list">${posts.length ? posts.map(postHtml).join('') : `<div class="card empty"><h3>Sin publicaciones todavía</h3></div>`}</div>`;
+}
+
+
+function friendButton(u) {
+  if (!u || u.own) return '';
+  if (u.friendship_status === 'friends') return `<button class="btn ghost compact friendship-btn" onclick="removeFriend(${u.id},'${escapeAttr(u.username)}')">✓ Amigos</button>`;
+  if (u.friendship_status === 'sent') return `<button class="btn ghost compact friendship-btn" onclick="sendFriendRequest(${u.id},'${escapeAttr(u.username)}')">Solicitud enviada</button>`;
+  if (u.friendship_status === 'received') return `<button class="btn primary compact friendship-btn" onclick="acceptFriendRequest(${Number(u.friend_request_id)},'${escapeAttr(u.username)}')">Aceptar amistad</button>`;
+  return `<button class="btn ghost compact friendship-btn" onclick="sendFriendRequest(${u.id},'${escapeAttr(u.username)}')">＋ Amigo</button>`;
 }
 
 function normalizeUrl(url) { return /^https?:\/\//i.test(url) ? url : `https://${url}`; }
@@ -401,6 +427,57 @@ window.toggleFollow = async (id, username = '') => {
   try { await api(`/api/users/${id}/follow`, { method:'POST' }); await refreshMe(false); if (state.view === 'profile' && username) await renderProfile(username); else await renderView(); }
   catch (e) { toast(e.message, 'error'); }
 };
+
+
+window.sendFriendRequest = async (userId, username = '') => {
+  try {
+    const d = await api(`/api/friends/request/${userId}`, { method:'POST' });
+    toast(d.status === 'sent' ? 'Solicitud enviada' : d.status === 'none' ? 'Solicitud cancelada' : d.status === 'friends' ? 'Ya sois amigos' : 'Tienes una solicitud pendiente de esa persona');
+    await refreshMe(false);
+    if (state.view === 'profile' && username) await renderProfile(username); else await renderView();
+  } catch (e) { toast(e.message,'error'); }
+};
+
+window.acceptFriendRequest = async (requestId, username = '') => {
+  try {
+    await api(`/api/friends/requests/${requestId}/accept`, { method:'POST' });
+    toast('Ahora sois amigos');
+    await refreshMe(false);
+    if (state.view === 'profile' && username) await renderProfile(username); else await renderFriends();
+  } catch (e) { toast(e.message,'error'); }
+};
+
+window.declineFriendRequest = async (requestId) => {
+  try { await api(`/api/friends/requests/${requestId}/decline`, { method:'POST' }); toast('Solicitud eliminada'); await refreshMe(false); await renderFriends(); }
+  catch (e) { toast(e.message,'error'); }
+};
+
+window.removeFriend = async (userId, username = '') => {
+  if (!confirm('¿Eliminar esta amistad?')) return;
+  try { await api(`/api/friends/${userId}`, { method:'DELETE' }); toast('Amistad eliminada'); await refreshMe(false); if(state.view==='profile'&&username) await renderProfile(username); else await renderFriends(); }
+  catch (e) { toast(e.message,'error'); }
+};
+
+async function renderFriends() {
+  const [friends, requests] = await Promise.all([api('/api/friends'), api('/api/friends/requests')]);
+  const incoming = requests.incoming || [], outgoing = requests.outgoing || [];
+  $('#main').innerHTML = `${pageHeader('Amigos','Solicitudes y personas con las que has conectado')}
+    ${incoming.length ? `<section class="card friends-section"><div class="section-row"><h3>Solicitudes</h3><span>${incoming.length}</span></div>${incoming.map(friendRequestRow).join('')}</section>` : ''}
+    ${outgoing.length ? `<section class="card friends-section"><div class="section-row"><h3>Enviadas</h3></div>${outgoing.map(outgoingFriendRow).join('')}</section>` : ''}
+    <section class="card friends-section"><div class="section-row"><h3>Tus amigos</h3><span>${friends.length}</span></div>${friends.length ? friends.map(friendRow).join('') : `<div class="empty compact-empty"><p>Aún no has añadido amigos.</p><button class="btn primary compact" onclick="go('discover')">Descubrir personas</button></div>`}</section>`;
+}
+
+function friendRequestRow(r) {
+  return `<div class="friend-row"><button class="person-link" onclick="openProfile('${escapeAttr(r.username)}')">${avatar(r,'small')}<span><b>${escapeHtml(r.name)}</b><small>@${escapeHtml(r.username)}</small>${presenceHtml({id:r.user_id,online:r.online,last_seen_at:r.last_seen_at})}</span></button><div class="friend-actions"><button class="btn primary compact" onclick="acceptFriendRequest(${r.id},'${escapeAttr(r.username)}')">Aceptar</button><button class="btn ghost compact" onclick="declineFriendRequest(${r.id})">Ahora no</button></div></div>`;
+}
+
+function outgoingFriendRow(r) {
+  return `<div class="friend-row"><button class="person-link" onclick="openProfile('${escapeAttr(r.username)}')">${avatar(r,'small')}<span><b>${escapeHtml(r.name)}</b><small>@${escapeHtml(r.username)}</small></span></button><button class="btn ghost compact" onclick="declineFriendRequest(${r.id})">Cancelar</button></div>`;
+}
+
+function friendRow(u) {
+  return `<div class="friend-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small>${presenceHtml(u)}</span></button><div class="friend-actions"><button class="btn ghost compact" onclick="startMessage(${u.id})">Mensaje</button><button class="icon-btn danger-hover" onclick="removeFriend(${u.id})" title="Eliminar amistad">•••</button></div></div>`;
+}
 
 window.editProfile = () => {
   const u = state.me;
@@ -427,15 +504,23 @@ window.saveProfile = async () => {
 
 async function renderNotifications() {
   const rows = await api('/api/notifications');
-  $('#main').innerHTML = `${pageHeader('Actividad','Lo que está pasando alrededor de tu perfil')}<div class="card notification-list">${rows.length ? rows.map(notificationHtml).join('') : `<div class="empty"><div class="empty-icon">♡</div><h3>Aún no hay actividad</h3><p>Cuando alguien te siga, dé like o comente, aparecerá aquí.</p></div>`}</div>`;
+  const browserButton = ('Notification' in window && Notification.permission !== 'granted') ? `<button class="btn ghost compact browser-alert-btn" onclick="requestBrowserNotifications()">Activar avisos del navegador</button>` : '';
+  $('#main').innerHTML = `${pageHeader('Actividad','Lo que está pasando alrededor de tu perfil')}<div class="activity-tools">${browserButton}<button class="btn ghost compact" onclick="go('friends')">Amigos y solicitudes</button></div><div class="card notification-list">${rows.length ? rows.map(notificationHtml).join('') : `<div class="empty"><div class="empty-icon">♡</div><h3>Aún no hay actividad</h3><p>Cuando alguien interactúe contigo, aparecerá aquí.</p></div>`}</div>`;
   await api('/api/notifications/read', { method:'POST' });
   state.me.unread_notifications = 0;
   setTimeout(() => { if (state.view === 'notifications') layoutNavOnly(); }, 100);
 }
 
 function notificationHtml(n) {
-  const action = n.type === 'follow' ? 'ha empezado a seguirte' : n.type === 'like' ? 'ha indicado que le gusta tu publicación' : 'ha comentado tu publicación';
-  return `<button class="notification ${n.read_at ? '' : 'unread'}" onclick="${n.type === 'follow' ? `openProfile('${escapeAttr(n.username)}')` : `openComments(${Number(n.post_id)})`}">${avatar(n,'small')}<span><b>${escapeHtml(n.name || n.username || 'Alguien')}</b> ${action}${n.type === 'comment' && n.text ? `<em>“${escapeHtml(n.text).slice(0,100)}”</em>` : ''}<small>${timeAgo(n.created_at)}</small></span></button>`;
+  let action = 'ha interactuado contigo';
+  let click = `openProfile('${escapeAttr(n.username || '')}')`;
+  if (n.type === 'follow') action = 'ha empezado a seguirte';
+  else if (n.type === 'like') { action = 'ha indicado que le gusta tu publicación'; click = `openComments(${Number(n.post_id)})`; }
+  else if (n.type === 'comment') { action = 'ha comentado tu publicación'; click = `openComments(${Number(n.post_id)})`; }
+  else if (n.type === 'friend_request') { action = 'quiere añadirte como amigo'; click = `go('friends')`; }
+  else if (n.type === 'friend_accept') { action = 'ha aceptado tu solicitud de amistad'; }
+  else if (n.type === 'message') { action = 'te ha enviado un mensaje'; click = `go('messages')`; }
+  return `<button class="notification ${n.read_at ? '' : 'unread'}" onclick="${click}">${avatar(n,'small')}<span><b>${escapeHtml(n.name || n.username || 'Alguien')}</b> ${action}${n.type === 'comment' && n.text ? `<em>“${escapeHtml(n.text).slice(0,100)}”</em>` : ''}<small>${timeAgo(n.created_at)}</small></span></button>`;
 }
 
 function layoutNavOnly() {
@@ -573,7 +658,7 @@ function reelHtml(p) {
     <video class="reel-video" src="${escapeAttr(p.media_url)}" loop muted playsinline preload="metadata" onclick="toggleReelSound(this)"></video>
     <div class="reel-gradient"></div>
     <div class="reel-info"><button class="reel-user" onclick="openProfile('${escapeAttr(p.username)}')">${avatar(p,'small')}<span><b>${escapeHtml(p.name)}</b><small>@${escapeHtml(p.username)}</small></span></button>${p.text ? `<div class="reel-text">${formatText(p.text)}</div>` : ''}<div class="reel-hint">Toca el vídeo para activar/desactivar sonido</div></div>
-    <div class="reel-actions"><button class="reel-action ${p.liked?'liked':''}" onclick="likePost(${p.id})"><span>${p.liked?'♥':'♡'}</span><b>${p.likes_count}</b></button><button class="reel-action" onclick="openComments(${p.id})"><span>◌</span><b>${p.comments_count}</b></button><button class="reel-action ${p.saved?'saved':''}" onclick="savePost(${p.id})"><span>${p.saved?'▰':'▱'}</span></button></div>
+    <div class="reel-actions"><button class="reel-action ${p.liked?'liked':''}" onclick="likePost(${p.id})"><span>${p.liked?'♥':'♡'}</span><b>${p.likes_count}</b></button><button class="reel-action" onclick="openComments(${p.id})"><span>◌</span><b>${p.comments_count}</b></button><button class="reel-action" onclick="sharePost(${p.id})"><span>↗</span></button><button class="reel-action ${p.saved?'saved':''}" onclick="savePost(${p.id})"><span>${p.saved?'▰':'▱'}</span></button></div>
   </article>`;
 }
 
@@ -589,7 +674,25 @@ function setupReels() {
 
 window.toggleReelSound = (video) => { video.muted = !video.muted; if (video.paused) video.play().catch(()=>{}); };
 
-// --- V0.5: Mensajes privados ----------------------------------------------
+// --- V0.6: Mensajes, respuestas y compartir ------------------------------
+window.sharePost = async (postId) => {
+  try {
+    const users = await api('/api/users');
+    const ordered = [...users].sort((a,b) => (a.friendship_status === 'friends' ? -1 : 0) - (b.friendship_status === 'friends' ? -1 : 0));
+    modal(`<div class="modal-head"><h3>Compartir por mensaje</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+      <div class="share-note">Elige a quién quieres enviar esta publicación.</div>
+      <div class="new-message-list">${ordered.length ? ordered.map(u=>`<button class="person-link new-message-user" onclick="sharePostTo(${postId},${u.id})">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}${u.friendship_status==='friends'?' · amigo':''}</small></span><i>›</i></button>`).join('') : '<div class="empty compact-empty">No hay otros usuarios todavía.</div>'}</div>`);
+  } catch(e) { toast(e.message,'error'); }
+};
+
+window.sharePostTo = async (postId, userId) => {
+  try {
+    const c = await api(`/api/conversations/direct/${userId}`, { method:'POST' });
+    await api(`/api/conversations/${c.id}/messages`, { method:'POST', body:JSON.stringify({ shared_post_id:postId }) });
+    closeModal(); toast('Publicación enviada por privado');
+  } catch(e) { toast(e.message,'error'); }
+};
+
 async function renderMessages() {
   const conversations = await api('/api/conversations');
   const isMobile = matchMedia('(max-width:860px)').matches;
@@ -597,7 +700,7 @@ async function renderMessages() {
   const active = conversations.find(c => Number(c.id) === Number(state.activeConversation));
   let messages = [];
   if (active) messages = await api(`/api/conversations/${active.id}/messages`);
-  $('#main').innerHTML = `${pageHeader('Mensajes','Conversaciones privadas dentro de OmniSocial')}
+  $('#main').innerHTML = `${pageHeader('Mensajes','Conversaciones privadas en tiempo real')}
     <section class="card chat-shell ${active ? 'has-active' : ''}">
       <div class="conversation-pane">
         <div class="chat-pane-head"><b>Conversaciones</b><button class="btn primary compact" onclick="newMessage()">Nuevo</button></div>
@@ -608,40 +711,61 @@ async function renderMessages() {
   if (active) {
     requestAnimationFrame(() => { const stream=$('#messageStream'); if(stream) stream.scrollTop=stream.scrollHeight; });
     state.me.unread_messages = Math.max(0, Number(state.me.unread_messages || 0) - Number(active.unread_count || 0));
+    updateNavBadges();
     if (state.messagePoll) clearInterval(state.messagePoll);
-    state.messagePoll = setInterval(refreshActiveConversation, 5000);
+    state.messagePoll = setInterval(refreshActiveConversation, 15000);
   }
 }
 
 function conversationRow(c) {
-  const preview = c.last_message ? c.last_message : c.last_media_type === 'image' ? '📷 Foto' : c.last_media_type === 'video' ? '🎬 Vídeo' : 'Nueva conversación';
-  return `<button class="conversation-row ${Number(c.id)===Number(state.activeConversation)?'active':''}" onclick="openConversation(${c.id})">${avatar(c,'small')}<span class="conversation-copy"><b>${escapeHtml(c.name)}</b><small>${escapeHtml(preview).slice(0,65)}</small></span><span class="conversation-meta"><small>${c.last_message_at?timeAgo(c.last_message_at):''}</small>${Number(c.unread_count)>0?`<i>${Math.min(99,c.unread_count)}</i>`:''}</span></button>`;
+  const preview = c.last_message ? c.last_message : c.last_shared_post_id ? '↗ Publicación compartida' : c.last_media_type === 'image' ? '📷 Foto' : c.last_media_type === 'video' ? '🎬 Vídeo' : 'Nueva conversación';
+  return `<button class="conversation-row ${Number(c.id)===Number(state.activeConversation)?'active':''}" onclick="openConversation(${c.id})">${avatar(c,'small')}<span class="conversation-copy"><b>${escapeHtml(c.name)}${c.online?'<i class="online-dot" title="En línea"></i>':''}</b><small>${escapeHtml(preview).slice(0,65)}</small></span><span class="conversation-meta"><small>${c.last_message_at?timeAgo(c.last_message_at):''}</small>${Number(c.unread_count)>0?`<i>${Math.min(99,c.unread_count)}</i>`:''}</span></button>`;
 }
 
 function chatPanelHtml(c, messages, isMobile) {
-  return `<div class="chat-header">${isMobile?`<button class="icon-btn chat-back" onclick="closeConversation()">‹</button>`:''}<button class="person-link" onclick="openProfile('${escapeAttr(c.username)}')">${avatar(c,'small')}<span><b>${escapeHtml(c.name)}</b><small>@${escapeHtml(c.username)}</small></span></button><button class="icon-btn" onclick="renderMessages()" title="Actualizar">↻</button></div>
+  const reply = state.replyTo && Number(state.replyTo.conversationId)===Number(c.id) ? `<div class="reply-compose" id="replyCompose"><span><b>Respondiendo a ${escapeHtml(state.replyTo.name)}</b><small>${escapeHtml(state.replyTo.text || 'Multimedia').slice(0,90)}</small></span><button onclick="clearReply()">×</button></div>` : '';
+  return `<div class="chat-header">${isMobile?`<button class="icon-btn chat-back" onclick="closeConversation()">‹</button>`:''}<button class="person-link" onclick="openProfile('${escapeAttr(c.username)}')">${avatar(c,'small')}<span><b>${escapeHtml(c.name)}</b><small>@${escapeHtml(c.username)} · ${presenceHtml({id:c.other_id,online:c.online,last_seen_at:c.last_seen_at})}</small></span></button><button class="icon-btn" onclick="renderMessages()" title="Actualizar">↻</button></div>
     <div class="message-stream" id="messageStream">${messages.length ? messages.map(messageHtml).join('') : `<div class="chat-first"><b>Empieza la conversación con ${escapeHtml(c.name)}</b><span>Los mensajes son privados entre vosotros.</span></div>`}</div>
+    <div class="typing-indicator" id="typingIndicator"></div>
+    ${reply}
     <div id="messageMediaPreview"></div>
-    <div class="message-compose"><label class="attach-btn">＋<input id="messageFile" type="file" accept="image/*,video/*" onchange="previewMessageFile(this)" hidden></label><textarea id="messageText" rows="1" maxlength="4000" placeholder="Escribe un mensaje…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage(${c.id})}"></textarea><button class="btn primary compact" onclick="sendMessage(${c.id})">Enviar</button></div>`;
+    <div class="message-compose"><label class="attach-btn">＋<input id="messageFile" type="file" accept="image/*,video/*" onchange="previewMessageFile(this)" hidden></label><textarea id="messageText" rows="1" maxlength="4000" placeholder="Escribe un mensaje…" oninput="handleTyping(${c.id})" onblur="stopTyping(${c.id})" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage(${c.id})}"></textarea><button class="btn primary compact" onclick="sendMessage(${c.id})">Enviar</button></div>`;
 }
 
 function messageHtml(m) {
   const media = m.media_url ? (m.media_type === 'video' ? `<video class="message-media" src="${escapeAttr(m.media_url)}" controls></video>` : `<img class="message-media" src="${escapeAttr(m.media_url)}" alt="">`) : '';
-  return `<div class="message ${m.own?'mine':'theirs'}"><div class="message-bubble">${m.text?`<p>${formatText(m.text)}</p>`:''}${media}<small>${timeAgo(m.created_at)}</small></div></div>`;
+  const reply = m.reply ? `<div class="message-reply"><b>${escapeHtml(m.reply.name || m.reply.username || 'Mensaje')}</b><span>${escapeHtml(m.reply.text || (m.reply.media_type==='image'?'📷 Foto':m.reply.media_type==='video'?'🎬 Vídeo':'Mensaje')).slice(0,120)}</span></div>` : '';
+  let shared = '';
+  if (m.shared_post?.unavailable) shared = `<div class="shared-post unavailable">Esta publicación ya no está disponible para ti.</div>`;
+  else if (m.shared_post) {
+    const sp=m.shared_post;
+    const smedia=sp.media_url ? (sp.media_type==='video'?`<video src="${escapeAttr(sp.media_url)}" controls preload="metadata"></video>`:`<img src="${escapeAttr(sp.media_url)}" loading="lazy" alt="">`) : '';
+    shared = `<div class="shared-post"><div class="shared-author">${avatar(sp,'small')}<span><b>${escapeHtml(sp.name || sp.username)}</b><small>@${escapeHtml(sp.username || '')}</small></span></div>${sp.text?`<p>${formatText(sp.text)}</p>`:''}${smedia}</div>`;
+  }
+  const excerpt = encodeURIComponent((m.text || (m.media_type==='image'?'Foto':m.media_type==='video'?'Vídeo':m.shared_post?'Publicación':'Mensaje')).slice(0,100));
+  const sender = encodeURIComponent(m.name || m.username || 'Mensaje');
+  return `<div class="message ${m.own?'mine':'theirs'}"><button class="message-reply-btn" onclick="replyToMessage(${m.id},'${sender}','${excerpt}')" title="Responder">↩</button><div class="message-bubble">${reply}${m.text?`<p>${formatText(m.text)}</p>`:''}${media}${shared}<small>${timeAgo(m.created_at)}</small></div></div>`;
 }
 
-window.openConversation = async (id) => { state.activeConversation = Number(id); await renderMessages(); };
-window.closeConversation = async () => { state.activeConversation = null; if(state.messagePoll){clearInterval(state.messagePoll);state.messagePoll=null;} await renderMessages(); };
+window.replyToMessage = (id, encodedName, encodedText) => {
+  state.replyTo = { id:Number(id), conversationId:Number(state.activeConversation), name:decodeURIComponent(encodedName), text:decodeURIComponent(encodedText) };
+  const activeId=state.activeConversation; renderMessages().then(()=>$('#messageText')?.focus());
+};
+window.clearReply = () => { state.replyTo=null; $('#replyCompose')?.remove(); };
+
+window.openConversation = async (id) => { state.activeConversation = Number(id); state.replyTo=null; await renderMessages(); };
+window.closeConversation = async () => { stopTyping(state.activeConversation); state.activeConversation = null; state.replyTo=null; if(state.messagePoll){clearInterval(state.messagePoll);state.messagePoll=null;} await renderMessages(); };
 
 window.startMessage = async (userId) => {
-  try { const d = await api(`/api/conversations/direct/${userId}`, { method:'POST' }); state.view='messages'; state.activeConversation=Number(d.id); layout(); await renderMessages(); }
+  try { const d = await api(`/api/conversations/direct/${userId}`, { method:'POST' }); state.view='messages'; state.activeConversation=Number(d.id); state.replyTo=null; layout(); await renderMessages(); }
   catch(e){ toast(e.message,'error'); }
 };
 
 window.newMessage = async () => {
   try {
     const users = await api('/api/users');
-    modal(`<div class="modal-head"><h3>Nuevo mensaje</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="new-message-list">${users.length ? users.map(u=>`<button class="person-link new-message-user" onclick="closeModal();startMessage(${u.id})">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small></span><i>›</i></button>`).join('') : '<div class="empty compact-empty">No hay más usuarios todavía.</div>'}</div>`);
+    const ordered=[...users].sort((a,b)=>(a.friendship_status==='friends'?-1:0)-(b.friendship_status==='friends'?-1:0));
+    modal(`<div class="modal-head"><h3>Nuevo mensaje</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="new-message-list">${ordered.length ? ordered.map(u=>`<button class="person-link new-message-user" onclick="closeModal();startMessage(${u.id})">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}${u.online?' · en línea':''}</small></span><i>›</i></button>`).join('') : '<div class="empty compact-empty">No hay más usuarios todavía.</div>'}</div>`);
   } catch(e){ toast(e.message,'error'); }
 };
 
@@ -651,14 +775,25 @@ window.previewMessageFile = (input) => {
 };
 window.clearMessageFile = () => { if($('#messageFile')) $('#messageFile').value=''; if($('#messageMediaPreview')) $('#messageMediaPreview').innerHTML=''; };
 
+window.handleTyping = (conversationId) => {
+  if(!state.socket?.connected) return;
+  state.socket.emit('typing',{conversationId:Number(conversationId),typing:true});
+  clearTimeout(state.typingTimer);
+  state.typingTimer=setTimeout(()=>stopTyping(conversationId),1100);
+};
+window.stopTyping = (conversationId) => {
+  clearTimeout(state.typingTimer); state.typingTimer=null;
+  if(state.socket?.connected && conversationId) state.socket.emit('typing',{conversationId:Number(conversationId),typing:false});
+};
+
 window.sendMessage = async (conversationId) => {
   const input=$('#messageText'); const text=input?.value.trim()||''; const file=$('#messageFile')?.files?.[0];
   if(!text&&!file) return;
   try {
     let media_id=null;
     if(file){ const fd=new FormData(); fd.append('file',file); const up=await api('/api/upload',{method:'POST',body:fd}); media_id=up.media_id; }
-    await api(`/api/conversations/${conversationId}/messages`,{method:'POST',body:JSON.stringify({text,media_id})});
-    if(input) input.value=''; clearMessageFile(); await renderMessages();
+    await api(`/api/conversations/${conversationId}/messages`,{method:'POST',body:JSON.stringify({text,media_id,reply_to_id:state.replyTo?.id||null})});
+    stopTyping(conversationId); state.replyTo=null; if(input) input.value=''; clearMessageFile(); await renderMessages();
   } catch(e){ toast(e.message,'error'); }
 };
 
@@ -674,6 +809,64 @@ async function refreshActiveConversation(){
   }catch{}
 }
 
+
+function updateNavBadges() {
+  const values = { messages:Number(state.me?.unread_messages||0), notifications:Number(state.me?.unread_notifications||0) };
+  for (const [view,count] of Object.entries(values)) {
+    document.querySelectorAll(`[data-nav-view="${view}"]`).forEach(btn => {
+      let badge=btn.querySelector('.nav-badge');
+      if(count>0){ if(!badge){ badge=document.createElement('span'); badge.className='nav-badge'; btn.appendChild(badge); } badge.textContent=String(Math.min(99,count)); }
+      else badge?.remove();
+    });
+  }
+  const top=$('#topActivityButton');
+  if(top){ let badge=top.querySelector('.nav-badge'); const count=values.notifications; if(count>0){ if(!badge){badge=document.createElement('span');badge.className='nav-badge';top.appendChild(badge);} badge.textContent=String(Math.min(99,count)); } else badge?.remove(); }
+}
+
+function updatePresenceDom(userId, online, lastSeenAt = null) {
+  document.querySelectorAll(`[data-presence-user="${Number(userId)}"]`).forEach(el => {
+    el.classList.toggle('online', Boolean(online));
+    el.innerHTML = `<i></i>${online ? 'En línea' : (lastSeenAt ? `Última vez ${timeAgo(lastSeenAt)}` : 'Desconectado')}`;
+  });
+}
+
+function browserNotice(title, body) {
+  if (!('Notification' in window) || Notification.permission !== 'granted' || !document.hidden) return;
+  try { new Notification(title, { body }); } catch {}
+}
+
+window.requestBrowserNotifications = async () => {
+  if (!('Notification' in window)) return toast('Este navegador no permite avisos');
+  const result = await Notification.requestPermission();
+  toast(result === 'granted' ? 'Avisos activados' : 'No se activaron los avisos');
+  if(state.view==='notifications') renderNotifications().catch(()=>{});
+};
+
+function connectRealtime() {
+  if (!state.token || typeof io === 'undefined') return;
+  if (state.socket) state.socket.disconnect();
+  state.socket = io({ auth:{ token:state.token }, transports:['websocket','polling'] });
+  state.socket.on('presence', ({userId,online,lastSeenAt}) => updatePresenceDom(userId,online,lastSeenAt));
+  state.socket.on('typing', ({conversationId,typing}) => {
+    if(Number(conversationId)!==Number(state.activeConversation)) return;
+    const box=$('#typingIndicator'); if(box) box.textContent=typing?'Escribiendo…':'';
+  });
+  state.socket.on('message:new', async (event) => {
+    if(state.view==='messages' && Number(state.activeConversation)===Number(event.conversationId)) {
+      await refreshActiveConversation();
+      state.socket.emit('typing',{conversationId:Number(event.conversationId),typing:false});
+    } else {
+      state.me.unread_messages=Number(state.me.unread_messages||0)+1; updateNavBadges();
+      toast('Nuevo mensaje'); browserNotice('OmniSocial', event.text || (event.sharedPostId ? 'Te han compartido una publicación' : 'Tienes un nuevo mensaje'));
+    }
+  });
+  state.socket.on('notification:new', (event) => {
+    state.me.unread_notifications=Number(state.me.unread_notifications||0)+1; updateNavBadges();
+    const labels={follow:'Nuevo seguidor',like:'Nuevo me gusta',comment:'Nuevo comentario',friend_request:'Nueva solicitud de amistad',friend_accept:'Solicitud aceptada'};
+    browserNotice('OmniSocial', labels[event.type] || 'Tienes nueva actividad');
+  });
+}
+
 async function refreshMe(rebuild = true) {
   state.me = await api('/api/me');
   if (rebuild) layout();
@@ -684,6 +877,7 @@ async function init() {
   if (!state.token) return authScreen();
   try {
     state.me = await api('/api/me');
+    connectRealtime();
     layout();
     await renderView();
   } catch {

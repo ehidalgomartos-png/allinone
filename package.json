@@ -1,14 +1,16 @@
 {
   "name": "omnisocial-community",
-  "version": "0.5.1",
-  "description": "OmniSocial V0.5.1 - Inicio más limpio y compacto",
+  "version": "0.6.0",
+  "description": "OmniSocial V0.6 - Amigos y chat en tiempo real",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
     "check": "node --check server.js && node --check src/db.js && node --check public/app.js"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
@@ -16,6 +18,7 @@
     "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^2.0.2",
-    "pg": "^8.16.3"
+    "pg": "^8.16.3",
+    "socket.io": "^4.8.1"
   }
 }
