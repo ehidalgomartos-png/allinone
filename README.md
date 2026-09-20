@@ -1,4 +1,9 @@
-# OmniSocial V0.7 — Comunidad más completa
+
+## V0.7.1
+
+Añade eliminación de foto de perfil y portada desde **Editar perfil**, con restauración automática del avatar por iniciales y del fondo de portada predeterminado. No requiere migraciones de base de datos.
+
+# OmniSocial V0.7.1 — Comunidad más completa
 
 OmniSocial V0.7 continúa sobre la V0.6 estable y mantiene usuarios, publicaciones, Stories, Reels, mensajes, amistades, likes, comentarios, guardados y notificaciones.
 

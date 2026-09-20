@@ -77,6 +77,33 @@ function tokenFor(user) {
 }
 
 
+function mediaIdFromStoredUrl(value) {
+  const match = /^\/media\/(\d+)$/.exec(String(value || ''));
+  return match ? Number(match[1]) : null;
+}
+
+async function removeProfileMedia(userId, field) {
+  if (!['avatar', 'cover'].includes(field)) throw new Error('Campo de perfil no válido');
+  return withTransaction(async (client) => {
+    const { rows } = await client.query(`SELECT ${field} AS value FROM users WHERE id = $1 FOR UPDATE`, [userId]);
+    if (!rows[0]) throw new Error('Usuario no encontrado');
+    const current = rows[0].value || '';
+    const mediaId = mediaIdFromStoredUrl(current);
+    await client.query(`UPDATE users SET ${field} = '' WHERE id = $1`, [userId]);
+    if (mediaId) {
+      await client.query(`
+        DELETE FROM media m
+         WHERE m.id = $1 AND m.user_id = $2
+           AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.media_id = m.id)
+           AND NOT EXISTS (SELECT 1 FROM stories s WHERE s.media_id = m.id)
+           AND NOT EXISTS (SELECT 1 FROM messages msg WHERE msg.media_id = m.id)
+      `, [mediaId, userId]);
+    }
+    return { ok: true };
+  });
+}
+
+
 function isOnline(userId) {
   return (onlineUsers.get(String(userId)) || 0) > 0;
 }
@@ -253,7 +280,7 @@ async function addNotification(client, { userId, actorId, type, postId = null, t
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '0.7.0', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles'] });
+  res.json({ ok: true, version: '0.7.1', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles'] });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
@@ -332,6 +359,15 @@ app.patch('/api/me', auth, asyncRoute(async (req, res) => {
     WHERE id = $1 RETURNING *
   `, [req.user.id, name, bio, avatar, website, location, headline, interests, cover]);
   res.json(safeUser(rows[0]));
+}));
+
+
+app.delete('/api/me/avatar', auth, asyncRoute(async (req, res) => {
+  res.json(await removeProfileMedia(req.user.id, 'avatar'));
+}));
+
+app.delete('/api/me/cover', auth, asyncRoute(async (req, res) => {
+  res.json(await removeProfileMedia(req.user.id, 'cover'));
 }));
 
 app.post('/api/upload', auth, upload.single('file'), asyncRoute(async (req, res) => {

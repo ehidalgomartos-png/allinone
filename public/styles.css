@@ -64,3 +64,11 @@
 @media(max-width:860px){.repost-embed{margin-left:12px;margin-right:12px}.profile-cover{height:125px}.profile-main-v7{padding:0 14px 16px}.profile-card-v7 .profile-top{margin-top:-30px}.trend-strip{padding-left:12px;padding-right:12px}.trend-strip button{min-width:138px}.post-menu>button,.share-options>button{padding:12px}.composer-hint{font-size:10px}}
 @media(max-width:520px){.repost-embed{margin-left:0;margin-right:0;border-left:0;border-right:0;border-radius:0}.repost-label{padding-left:12px}.profile-card-v7{border-left:0;border-right:0;border-radius:0}.profile-cover{height:110px}.profile-main-v7{padding-left:12px;padding-right:12px}.profile-card-v7 .avatar.xl{width:78px;height:78px;min-width:78px}.interest-chips{gap:6px}.trend-strip{padding-left:10px;padding-right:10px}}
 .profile-cover{position:relative;overflow:hidden}.profile-cover>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.profile-cover.has-cover:after{position:absolute;inset:0}.edit-cover-preview{position:relative;overflow:hidden}.edit-cover-preview>img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.edit-cover-preview>label{position:relative;z-index:2}
+
+
+/* V0.7.1: controles para eliminar foto de perfil y portada */
+.btn.danger{background:rgba(255,87,112,.10);border-color:rgba(255,87,112,.30);color:#ff9aae}
+.btn.danger:hover{background:rgba(255,87,112,.16);border-color:rgba(255,87,112,.48)}
+.profile-photo-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.edit-cover-preview .cover-actions{position:relative;z-index:3;margin-left:auto;justify-content:flex-end}
+@media(max-width:560px){.profile-photo-actions{width:100%}.profile-photo-actions .btn,.profile-photo-actions label.btn{flex:1;justify-content:center;text-align:center}.edit-avatar-row{align-items:flex-start;flex-wrap:wrap}.edit-cover-preview{height:125px}.edit-cover-preview .cover-actions{width:auto;max-width:100%}}

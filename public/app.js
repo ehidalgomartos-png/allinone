@@ -537,8 +537,8 @@ window.editProfile = () => {
   const u = state.me;
   modal(`<div class="modal-head"><h3>Editar perfil</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
     <div class="edit-profile">
-      <div class="edit-cover-preview ${u.cover?'has-cover':''}">${u.cover?`<img src="${escapeAttr(u.cover)}" alt="">`:''}<label class="btn ghost compact">Cambiar portada<input type="file" id="coverFile" accept="image/*" hidden></label></div>
-      <div class="edit-avatar-row">${avatar(u, 'large')}<label class="btn ghost compact">Cambiar foto<input type="file" id="avatarFile" accept="image/*" hidden></label></div>
+      <div class="edit-cover-preview ${u.cover?'has-cover':''}">${u.cover?`<img src="${escapeAttr(u.cover)}" alt="">`:''}<div class="profile-photo-actions cover-actions"><label class="btn ghost compact">Cambiar portada<input type="file" id="coverFile" accept="image/*" hidden></label>${u.cover?`<button class="btn danger compact" type="button" onclick="removeProfileCover()">Eliminar portada</button>`:''}</div></div>
+      <div class="edit-avatar-row">${avatar(u, 'large')}<div class="profile-photo-actions"><label class="btn ghost compact">Cambiar foto<input type="file" id="avatarFile" accept="image/*" hidden></label>${u.avatar?`<button class="btn danger compact" type="button" onclick="removeProfileAvatar()">Eliminar foto</button>`:''}</div></div>
       <label>Nombre<input id="editName" value="${escapeAttr(u.name)}" maxlength="100"></label>
       <label>Frase de perfil<input id="editHeadline" value="${escapeAttr(u.headline || '')}" maxlength="140" placeholder="Diseñador, creador, viajero…"></label>
       <label>Biografía<textarea id="editBio" maxlength="500" rows="4">${escapeHtml(u.bio || '')}</textarea></label>
@@ -547,6 +547,29 @@ window.editProfile = () => {
       <label>Web<input id="editWebsite" value="${escapeAttr(u.website || '')}" maxlength="500" placeholder="tusitio.com"></label>
       <button class="btn primary" onclick="saveProfile()">Guardar cambios</button>
     </div>`);
+};
+
+
+window.removeProfileAvatar = async () => {
+  if (!state.me.avatar) return;
+  if (!confirm('¿Eliminar tu foto de perfil? Volverás a ver tus iniciales como avatar.')) return;
+  try {
+    await api('/api/me/avatar', { method:'DELETE' });
+    await refreshMe();
+    editProfile();
+    toast('Foto de perfil eliminada');
+  } catch (e) { toast(e.message, 'error'); }
+};
+
+window.removeProfileCover = async () => {
+  if (!state.me.cover) return;
+  if (!confirm('¿Eliminar tu portada? Volverás al fondo predeterminado.')) return;
+  try {
+    await api('/api/me/cover', { method:'DELETE' });
+    await refreshMe();
+    editProfile();
+    toast('Portada eliminada');
+  } catch (e) { toast(e.message, 'error'); }
 };
 
 window.saveProfile = async () => {
