@@ -133,7 +133,7 @@ async function addNotification(client, { userId, actorId, type, postId = null, t
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '0.5.0', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages'] });
+  res.json({ ok: true, version: '0.5.1', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages'] });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {

@@ -194,7 +194,7 @@ window.go = async (view) => {
 
 window.focusComposer = async () => {
   if (state.view !== 'feed') await go('feed');
-  setTimeout(() => $('#posttext')?.focus(), 60);
+  setTimeout(() => openComposerModal(), 50);
 };
 
 async function renderView() {
@@ -221,18 +221,30 @@ function pageHeader(title, subtitle = '') {
 }
 
 function composer() {
-  return `<section class="card composer" id="composer">
-    <div class="composer-row">${avatar(state.me)}<div class="composer-main">
-      <textarea id="posttext" rows="3" maxlength="5000" placeholder="¿Qué quieres compartir con la comunidad?"></textarea>
-      <div id="mediaPreview"></div>
-      <div class="composer-tools">
-        <label class="media-picker">▧ Foto / vídeo<input type="file" id="media" accept="image/*,video/*" onchange="previewMedia(this)"></label>
-        <select id="visibility" title="Visibilidad"><option value="public">🌍 Público</option><option value="followers">👥 Seguidores</option></select>
-        <button class="btn primary compact" id="publishBtn" onclick="createPost()">Publicar</button>
-      </div>
-    </div></div>
+  return `<section class="card composer-compact" id="composer">
+    ${avatar(state.me)}
+    <button class="composer-trigger" onclick="openComposerModal()">¿Qué quieres compartir?</button>
+    <button class="composer-media-shortcut" onclick="openComposerModal(true)" title="Añadir foto o vídeo" aria-label="Añadir foto o vídeo">▧</button>
   </section>`;
 }
+
+window.openComposerModal = (pickMedia = false) => {
+  modal(`<div class="modal-head composer-modal-head"><h3>Crear publicación</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <div class="composer-modal">
+      <div class="composer-author">${avatar(state.me)}<div><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></div></div>
+      <textarea id="posttext" rows="6" maxlength="5000" placeholder="¿Qué quieres compartir con la comunidad?"></textarea>
+      <div id="mediaPreview"></div>
+      <div class="composer-modal-tools">
+        <label class="media-picker modal-media-picker">▧ Foto / vídeo<input type="file" id="media" accept="image/*,video/*" onchange="previewMedia(this)"></label>
+        <select id="visibility" title="Visibilidad"><option value="public">🌍 Público</option><option value="followers">👥 Seguidores</option></select>
+      </div>
+      <button class="btn primary large composer-publish" id="publishBtn" onclick="createPost()">Publicar</button>
+    </div>`);
+  setTimeout(() => {
+    $('#posttext')?.focus();
+    if (pickMedia) $('#media')?.click();
+  }, 70);
+};
 
 window.previewMedia = (input) => {
   const file = input.files?.[0];
@@ -258,6 +270,7 @@ window.createPost = async () => {
     }
     await api('/api/posts', { method:'POST', body:JSON.stringify({ text: $('#posttext')?.value || '', media_id, media_type, visibility: $('#visibility')?.value || 'public' }) });
     toast('Publicado');
+    closeModal();
     await refreshMe(); await renderFeed();
   } catch (e) { toast(e.message, 'error'); }
   finally { state.busy = false; }
@@ -285,7 +298,7 @@ function postHtml(p) {
 
 async function renderFeed() {
   const [rows, stories] = await Promise.all([api('/api/feed'), api('/api/stories')]);
-  $('#main').innerHTML = `${pageHeader('Inicio','Publicaciones tuyas y de las personas que sigues')}${storyStrip(stories)}${composer()}<div class="post-list">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty"><div class="empty-icon">👋</div><h3>Tu feed está empezando</h3><p>Sigue a algunas personas desde Descubrir o publica algo tú.</p><button class="btn primary" onclick="go('discover')">Descubrir comunidad</button></div>`}</div>`;
+  $('#main').innerHTML = `<div class="feed-start">${storyStrip(stories)}${composer()}</div><div class="post-list">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty feed-empty"><h3>Tu feed está empezando</h3><p>Sigue personas desde Descubrir o crea tu primera publicación.</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button><button class="btn ghost compact" onclick="openComposerModal()">Publicar</button></div></div>`}</div>`;
 }
 
 async function renderDiscover() {
