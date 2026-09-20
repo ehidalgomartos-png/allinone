@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+<defs>
+ <radialGradient id="bg1" cx="20%" cy="0%" r="80%"><stop offset="0" stop-color="#3a174c"/><stop offset="1" stop-color="#090a0f"/></radialGradient>
+ <linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ff2d9a"/><stop offset="1" stop-color="#7c3cff"/></linearGradient>
+</defs>
+<rect width="1200" height="630" fill="url(#bg1)"/>
+<circle cx="1030" cy="95" r="230" fill="#7c3cff" opacity=".12"/><circle cx="120" cy="570" r="250" fill="#ff2d9a" opacity=".10"/>
+<rect x="100" y="132" width="116" height="116" rx="34" fill="url(#g)"/>
+<circle cx="139" cy="168" r="10" fill="#fff"/><circle cx="177" cy="168" r="10" fill="#fff"/>
+<path d="M133 190 C140 182 149 182 158 193 C167 182 176 182 183 190" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
+<path d="M132 193 C138 213 150 225 158 231 C166 225 178 213 184 193" fill="none" stroke="#fff" stroke-width="10" stroke-linecap="round"/>
+<text x="100" y="340" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="76" font-weight="850" letter-spacing="-2.2" fill="#ffffff">Instant <tspan fill="#ff2d9a">Admirers</tspan></text>
+<text x="100" y="418" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="34" font-weight="600" fill="#d9dbea">Conecta. Comparte. Descubre.</text>
+<text x="100" y="480" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="24" fill="#9da3b3">Tu comunidad para compartir lo que eres y descubrir a tu gente.</text>
+<text x="100" y="555" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="22" font-weight="700" fill="#c8cada">instantadmirers.com</text>
+</svg>

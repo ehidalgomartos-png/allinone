@@ -1,7 +1,7 @@
 {
-  "name": "omnisocial-community",
-  "version": "1.1.0",
-  "description": "OmniSocial V1.1 - Red social propia pulida para estabilidad, rendimiento y experiencia de uso",
+  "name": "instant-admirers-community",
+  "version": "1.1.1",
+  "description": "Instant Admirers V1.1.1 - Rebranding, favicon, PWA, SEO y dominio propio",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

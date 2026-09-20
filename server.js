@@ -391,12 +391,12 @@ function peopleRecommendationReason(row = {}) {
   if (Number(row.mutual_count || 0) > 0) return `${Number(row.mutual_count)} conexión${Number(row.mutual_count) === 1 ? '' : 'es'} en común`;
   if (Number(row.interaction_score || 0) > 0) return 'Has interactuado con su contenido';
   if (Number(row.followers_count || 0) > 0) return 'Activo en la comunidad';
-  return 'Nuevo en OmniSocial';
+  return 'Nuevo en Instant Admirers';
 }
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.1.0', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions'] });
+  res.json({ ok: true, version: '1.1.1', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata'] });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
@@ -1586,10 +1586,10 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   await initDb();
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`OmniSocial V1.1 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.1.1 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {
-  console.error('No se pudo iniciar OmniSocial:', err);
+  console.error('No se pudo iniciar Instant Admirers:', err);
   process.exit(1);
 });

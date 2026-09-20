@@ -75,7 +75,7 @@ async function api(url, opts = {}) {
   } catch (err) {
     if (err?.name === 'AbortError') throw new Error('La conexión está tardando demasiado. Inténtalo de nuevo.');
     if (!navigator.onLine) throw new Error('No tienes conexión a Internet.');
-    if (err instanceof TypeError) throw new Error('No se pudo conectar con OmniSocial. Inténtalo de nuevo.');
+    if (err instanceof TypeError) throw new Error('No se pudo conectar con Instant Admirers. Inténtalo de nuevo.');
     throw err;
   } finally {
     clearTimeout(timeout);
@@ -152,17 +152,21 @@ function modal(html) {
   $('#modal-root').innerHTML = `<div class="modal-backdrop" onclick="if(event.target===this)closeModal()"><div class="modal">${html}</div></div>`;
 }
 
+function brandLockup(size = '') {
+  return `<span class="brand-lockup ${size}"><img src="/assets/brand/instant-admirers-mark.svg" alt="" aria-hidden="true"><span>Instant <b>Admirers</b></span></span>`;
+}
+
 function authScreen() {
   $('#app').innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
-        <div class="brand big">OmniSocial</div>
-        <h1>Una comunidad para compartir lo que eres.</h1>
-        <p>Publica, descubre personas, sigue perfiles, comenta, guarda contenido y crea tu propia comunidad.</p>
+        <div class="brand-logo-wrap">${brandLockup('big')}</div>
+        <h1>Encuentra tu gente. Comparte tu mundo.</h1>
+        <p>Conecta con personas, comparte fotos y vídeos, descubre nuevas historias y crea una comunidad a tu manera.</p>
         <div class="hero-pills"><span>📸 Fotos</span><span>🎬 Vídeos</span><span>💬 Conversaciones</span><span>✨ Comunidad</span></div>
       </section>
       <section class="auth-card card">
-        <div class="brand mobile-brand">OmniSocial</div>
+        <div class="brand-logo-wrap mobile-brand">${brandLockup('card')}</div>
         <div class="tabs">
           <button id="loginTab" class="tab active" onclick="showAuth('login')">Entrar</button>
           <button id="registerTab" class="tab" onclick="showAuth('register')">Crear cuenta</button>
@@ -225,7 +229,7 @@ function navButton(view, icon, label) {
 function layout() {
   $('#app').innerHTML = `
     <header class="topbar">
-      <button class="brand-button brand" onclick="go('feed')">OmniSocial</button>
+      <button class="brand-button" onclick="go('feed')">${brandLockup('top')}</button>
       <div class="top-actions">
         <button class="top-icon" onclick="go('search')" aria-label="Buscar">⌕</button>
         <button id="topActivityButton" class="top-icon badge-wrap" onclick="go('notifications')" aria-label="Actividad">♡${Number(state.me?.unread_notifications || 0) ? `<span class="nav-badge">${Math.min(99,state.me.unread_notifications)}</span>` : ''}</button>
@@ -235,7 +239,7 @@ function layout() {
     <div class="shell">
       <aside class="left-col">
         <div class="left-sticky">
-          <button class="brand-button brand desktop-brand" onclick="go('feed')">OmniSocial</button>
+          <button class="brand-button desktop-brand" onclick="go('feed')">${brandLockup('side')}</button>
           <nav class="nav" id="desktopNav">
             ${navButton('feed','⌂','Inicio')}
             ${navButton('reels','▶','Reels')}
@@ -575,7 +579,7 @@ window.deleteComment = async (id, postId) => {
 
 async function renderSearch() {
   $('#main').innerHTML = `${pageHeader('Buscar','Encuentra personas, publicaciones y hashtags')}
-    <div class="card search-card"><div class="search-box"><span>⌕</span><input id="searchInput" value="${escapeAttr(state.search)}" placeholder="Buscar en OmniSocial" onkeydown="if(event.key==='Enter')runSearch()"><button class="btn primary compact" onclick="runSearch()">Buscar</button></div></div>
+    <div class="card search-card"><div class="search-box"><span>⌕</span><input id="searchInput" value="${escapeAttr(state.search)}" placeholder="Buscar en Instant Admirers" onkeydown="if(event.key==='Enter')runSearch()"><button class="btn primary compact" onclick="runSearch()">Buscar</button></div></div>
     <div id="searchResults">${state.search ? 'Buscando…' : `<div class="card empty"><div class="empty-icon">⌕</div><h3>Busca algo</h3><p>Prueba con un nombre, @usuario, palabra o #hashtag.</p></div>`}</div>`;
   if (state.search) await runSearch(false);
 }
@@ -1033,7 +1037,7 @@ window.toggleReelSound = (video) => { video.muted = !video.muted; if (video.paus
 window.sharePost = (postId) => {
   modal(`<div class="modal-head"><h3>Compartir</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
     <div class="share-options">
-      <button onclick="repostPost(${postId})"><span>↻</span><div><b>Republicar en OmniSocial</b><small>Añádelo a tu perfil y al feed de tus seguidores</small></div></button>
+      <button onclick="repostPost(${postId})"><span>↻</span><div><b>Republicar en Instant Admirers</b><small>Añádelo a tu perfil y al feed de tus seguidores</small></div></button>
       <button onclick="sharePostPrivate(${postId})"><span>✉</span><div><b>Enviar por mensaje</b><small>Compártelo en una conversación privada</small></div></button>
     </div>`);
 };
@@ -1051,7 +1055,7 @@ window.repostPost = (postId) => {
 window.confirmRepost = async (postId) => {
   try {
     await api(`/api/posts/${postId}/repost`, { method:'POST', body:JSON.stringify({ text:$('#repostText').value, visibility:$('#repostVisibility').value }) });
-    closeModal(); toast('Republicado en OmniSocial'); await refreshMe(false); await renderView();
+    closeModal(); toast('Republicado en Instant Admirers'); await refreshMe(false); await renderView();
   } catch(e) { toast(e.message,'error'); }
 };
 
@@ -1239,13 +1243,13 @@ function connectRealtime() {
       state.socket.emit('typing',{conversationId:Number(event.conversationId),typing:false});
     } else {
       state.me.unread_messages=Number(state.me.unread_messages||0)+1; updateNavBadges();
-      toast('Nuevo mensaje'); browserNotice('OmniSocial', event.text || (event.sharedPostId ? 'Te han compartido una publicación' : 'Tienes un nuevo mensaje'));
+      toast('Nuevo mensaje'); browserNotice('Instant Admirers', event.text || (event.sharedPostId ? 'Te han compartido una publicación' : 'Tienes un nuevo mensaje'));
     }
   });
   state.socket.on('notification:new', (event) => {
     state.me.unread_notifications=Number(state.me.unread_notifications||0)+1; updateNavBadges();
     const labels={follow:'Nuevo seguidor',follow_request:'Nueva solicitud de seguimiento',follow_accept:'Solicitud de seguimiento aceptada',like:'Nuevo me gusta',comment:'Nuevo comentario',friend_request:'Nueva solicitud de amistad',friend_accept:'Solicitud aceptada',mention:'Te han mencionado',repost:'Han republicado tu post'};
-    browserNotice('OmniSocial', labels[event.type] || 'Tienes nueva actividad');
+    browserNotice('Instant Admirers', labels[event.type] || 'Tienes nueva actividad');
   });
 }
 
@@ -1259,7 +1263,7 @@ async function refreshMe(rebuild = true) {
 // --- V1.0: onboarding, cuenta y administración -----------------------------
 window.openOnboarding = () => {
   const u = state.me || {};
-  modal(`<div class="modal-head"><h3>Bienvenido a OmniSocial</h3><button class="icon-btn" onclick="skipOnboarding()">×</button></div>
+  modal(`<div class="modal-head"><h3>Bienvenido a Instant Admirers</h3><button class="icon-btn" onclick="skipOnboarding()">×</button></div>
     <div class="onboarding">
       <div class="onboarding-intro">
         <span>✨</span>
@@ -1311,7 +1315,7 @@ window.openAccountSettings = () => {
       </section>
       ${state.me?.is_admin ? `<section class="settings-block"><div><b>Administración</b><small>Revisa denuncias y actividad de moderación.</small></div><button class="btn ghost compact" onclick="closeModal();go('admin')">Abrir panel</button></section>` : ''}
       <section class="settings-block danger-settings">
-        <div><b>Eliminar cuenta</b><small>Esta acción elimina tu perfil y tus datos asociados de OmniSocial.</small></div>
+        <div><b>Eliminar cuenta</b><small>Esta acción elimina tu perfil y tus datos asociados de Instant Admirers.</small></div>
         <button class="btn danger compact" onclick="openDeleteAccount()">Eliminar cuenta</button>
       </section>
     </div>`);
@@ -1368,7 +1372,7 @@ async function renderAdmin() {
     api('/api/admin/reports?status=all'),
     api('/api/admin/actions')
   ]);
-  $('#main').innerHTML=`${pageHeader('Administración','Moderación y estado general de OmniSocial')}
+  $('#main').innerHTML=`${pageHeader('Administración','Moderación y estado general de Instant Admirers')}
     <div class="admin-stats">
       <div class="card admin-stat"><b>${stats.users}</b><span>Usuarios</span><small>+${stats.new_users_7d} esta semana</small></div>
       <div class="card admin-stat"><b>${stats.posts}</b><span>Publicaciones</span><small>+${stats.new_posts_7d} esta semana</small></div>

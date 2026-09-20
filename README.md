@@ -1,32 +1,34 @@
-# OmniSocial V1.1 — Calidad y estabilidad
+# Instant Admirers V1.1.1 — Rebranding
 
-V1.1 parte de OmniSocial V1.0.1 y se centra en pulir la experiencia sin añadir migraciones destructivas ni alterar los datos existentes.
+Esta versión parte de OmniSocial V1.1 y cambia la identidad pública del proyecto a **Instant Admirers** sin tocar usuarios, publicaciones ni la base PostgreSQL.
 
-## Mejoras principales
+## Incluye
 
-- Esqueletos de carga para evitar pantallas vacías mientras llegan los datos.
-- Barra superior de actividad para indicar peticiones en curso.
-- Mejor comportamiento cuando Render gratuito está despertando o responde lento.
-- Aviso visible si el dispositivo pierde la conexión y cuando se recupera.
-- Detección de sesión caducada y retorno seguro al inicio de sesión.
-- Likes y guardados sin recargar todo el feed ni perder la posición de scroll.
-- Protección contra dobles envíos en login, registro, comentarios y mensajes.
-- Escape cierra modales y el visor de Stories.
-- Cabeceras básicas de seguridad y respuestas API sin caché privada.
-- Respeta `prefers-reduced-motion` para usuarios que reducen animaciones.
+- Marca **Instant Admirers**.
+- Tagline: **Conecta. Comparte. Descubre.**
+- Logo horizontal + isotipo.
+- Favicon `.ico`.
+- Apple Touch Icon.
+- Iconos 192/512 para PWA.
+- `manifest.webmanifest`.
+- Metadatos SEO y Open Graph.
+- Imagen social 1200×630.
+- `robots.txt` y `sitemap.xml`.
+- Guía para conectar `instantadmirers.com` con Render + DonDominio.
+- Borradores legales separados y no publicados hasta completar los datos del titular.
 
-## Base de datos
+## Importante
 
-V1.1 no necesita nuevas tablas. Se conserva la PostgreSQL actual.
+No renombres el Web Service ni la base de datos en Render. Pueden seguir llamándose internamente `omnisocial` y `omnisocial-db`. Así evitamos crear recursos nuevos o romper conexiones existentes.
 
-## Despliegue
+## Actualizar
 
-Sustituye los archivos del repositorio actual y haz commit. Render hará el deploy automáticamente. No borres la base de datos.
+1. Sube el contenido de esta carpeta al mismo repositorio GitHub `allinone`.
+2. Haz commit en `main`.
+3. Espera al Auto-Deploy de Render.
+4. Comprueba `/api/health` y confirma `"version":"1.1.1"`.
+5. Sigue `DOMINIO-INSTANTADMIRERS.md` para conectar el dominio.
 
-Comprueba después:
+## Legal
 
-```text
-https://omnisocial-rwn6.onrender.com/api/health
-```
-
-Debe mostrar `"version":"1.1.0"`.
+Los documentos de `legal-drafts/` son borradores de trabajo. Antes de hacerlos públicos completa `LEGAL-COMPLETAR.md` y revisa los textos con tus datos reales y, si procede, asesoramiento profesional.
