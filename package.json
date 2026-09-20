@@ -1,7 +1,7 @@
 {
   "name": "omnisocial-community",
-  "version": "0.7.1",
-  "description": "OmniSocial V0.7.1 - Borrado de foto de perfil y portada",
+  "version": "0.8.0",
+  "description": "OmniSocial V0.8 - Para ti, recomendaciones y descubrimiento personalizado",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

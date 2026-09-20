@@ -1,10 +1,6 @@
-# Render — OmniSocial V0.7
+# Render — OmniSocial V0.8
 
-La V0.7 usa el mismo Web Service y la misma PostgreSQL de las versiones anteriores.
-
-No requiere variables de entorno nuevas.
-
-Configuración esperada:
+La V0.8 utiliza el mismo servicio y la misma base PostgreSQL que V0.7.1.
 
 ```text
 Runtime: Node
@@ -13,12 +9,12 @@ Start Command: npm start
 Health Check: /api/health
 ```
 
-Variables necesarias existentes:
+Variables existentes:
 
 ```text
 NODE_ENV=production
 DATABASE_URL=<Render PostgreSQL>
-JWT_SECRET=<valor secreto>
+JWT_SECRET=<secreto existente>
 ```
 
-Después del deploy, `/api/health` debe indicar `0.7.0`.
+No añadas variables nuevas. Después del deploy, `/api/health` debe indicar `0.8.0`.

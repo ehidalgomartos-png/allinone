@@ -245,3 +245,7 @@ ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
   CHECK (type IN ('follow','like','comment','friend_request','friend_accept','message','mention','repost'));
 
 CREATE INDEX IF NOT EXISTS idx_posts_repost_of ON posts(repost_of_id);
+
+-- V0.8: índices auxiliares para recomendaciones personalizadas.
+CREATE INDEX IF NOT EXISTS idx_comments_user_created ON comments(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_visibility_created ON posts(visibility, created_at DESC);

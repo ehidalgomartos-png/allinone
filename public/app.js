@@ -2,6 +2,7 @@ const state = {
   token: localStorage.getItem('token') || '',
   me: null,
   view: 'feed',
+  feedMode: localStorage.getItem('feedMode') || 'following',
   profile: null,
   search: '',
   busy: false,
@@ -316,6 +317,7 @@ function postHtml(p) {
   const edited = p.edited_at ? ' · editado' : '';
   const encodedText = safeEncode(p.text || '');
   return `<article class="card post ${p.repost_of_id ? 'is-repost' : ''}" data-post="${p.id}">
+    ${p.recommendation_reason ? `<div class="recommendation-label">✦ ${escapeHtml(p.recommendation_reason)}</div>` : ''}
     ${p.repost_of_id ? `<div class="repost-label">↻ ${escapeHtml(p.name)} republicó una publicación</div>` : ''}
     <div class="post-head">
       <button class="person-link" onclick="openProfile('${escapeAttr(p.username)}')">${avatar(p)}<span><b>${escapeHtml(p.name)}</b><small>@${escapeHtml(p.username)} · ${timeAgo(p.created_at)}${edited}${privacy}</small></span></button>
@@ -358,15 +360,49 @@ window.savePostEdit = async (id) => {
   } catch(e) { toast(e.message,'error'); }
 };
 
+function feedTabs() {
+  return `<div class="feed-tabs" role="tablist" aria-label="Tipo de feed">
+    <button class="${state.feedMode === 'following' ? 'active' : ''}" onclick="setFeedMode('following')">Siguiendo</button>
+    <button class="${state.feedMode === 'for-you' ? 'active' : ''}" onclick="setFeedMode('for-you')">✦ Para ti</button>
+  </div>`;
+}
+
+window.setFeedMode = async (mode) => {
+  if (!['following','for-you'].includes(mode)) return;
+  state.feedMode = mode;
+  localStorage.setItem('feedMode', mode);
+  if (state.view !== 'feed') return go('feed');
+  await renderFeed();
+};
+
+function personalizeHint() {
+  if (state.feedMode !== 'for-you' || String(state.me?.interests || '').trim()) return '';
+  return `<div class="personalize-hint"><span>✦</span><div><b>Haz “Para ti” más tuyo</b><small>Añade tus intereses al perfil y las recomendaciones mejorarán.</small></div><button class="text-btn" onclick="editProfile()">Añadir</button></div>`;
+}
+
 async function renderFeed() {
-  const [rows, stories] = await Promise.all([api('/api/feed'), api('/api/stories')]);
-  $('#main').innerHTML = `<div class="feed-start">${storyStrip(stories)}${composer()}</div><div class="post-list">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty feed-empty"><h3>Tu feed está empezando</h3><p>Sigue personas desde Descubrir o crea tu primera publicación.</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button><button class="btn ghost compact" onclick="openComposerModal()">Publicar</button></div></div>`}</div>`;
+  const endpoint = state.feedMode === 'for-you' ? '/api/for-you' : '/api/feed';
+  const [rows, stories] = await Promise.all([api(endpoint), api('/api/stories')]);
+  const empty = state.feedMode === 'for-you'
+    ? `<div class="card empty feed-empty"><h3>Estamos preparando tu Para ti</h3><p>Interactúa con publicaciones, sigue perfiles o añade intereses para afinarlo.</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button><button class="btn ghost compact" onclick="editProfile()">Mis intereses</button></div></div>`
+    : `<div class="card empty feed-empty"><h3>Tu feed está empezando</h3><p>Sigue personas desde Descubrir o crea tu primera publicación.</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button><button class="btn ghost compact" onclick="openComposerModal()">Publicar</button></div></div>`;
+  $('#main').innerHTML = `<div class="feed-start">${storyStrip(stories)}${composer()}${feedTabs()}${personalizeHint()}</div><div class="post-list">${rows.length ? rows.map(postHtml).join('') : empty}</div>`;
+}
+
+function suggestionCard(u) {
+  return `<article class="suggestion-card">
+    <button class="suggestion-person" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'large')}<b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small></button>
+    ${u.headline ? `<p>${escapeHtml(u.headline).slice(0,90)}</p>` : ''}
+    <div class="suggestion-reason">✦ ${escapeHtml(u.recommendation_reason || 'Sugerido para ti')}</div>
+    <button class="btn primary compact" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Seguir</button>
+  </article>`;
 }
 
 async function renderDiscover() {
-  const [rows,trends] = await Promise.all([api('/api/discover'),api('/api/trending')]);
+  const [rows,trends,suggestions] = await Promise.all([api('/api/discover'),api('/api/trending'),api('/api/suggestions?limit=8')]);
   const trendStrip = trends.length ? `<div class="trend-strip">${trends.slice(0,8).map(t=>`<button onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} posts · ${t.authors} personas</small></button>`).join('')}</div>` : '';
-  $('#main').innerHTML = `${pageHeader('Descubrir','Contenido y temas con más conversación esta semana')}${trendStrip}<div class="post-list">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty"><h3>Aún no hay contenido público</h3></div>`}</div>`;
+  const people = suggestions.length ? `<section class="discover-people"><div class="section-heading"><div><h3>Personas para ti</h3><p>Perfiles recomendados según tu actividad e intereses.</p></div></div><div class="suggestion-scroll">${suggestions.map(suggestionCard).join('')}</div></section>` : '';
+  $('#main').innerHTML = `${pageHeader('Descubrir','Encuentra personas, temas y contenido nuevo')}${people}${trendStrip}<div class="section-heading post-discover-heading"><div><h3>Popular ahora</h3><p>Publicaciones públicas con más conversación reciente.</p></div></div><div class="post-list">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty"><h3>Aún no hay contenido público</h3></div>`}</div>`;
 }
 
 async function renderBookmarks() {
@@ -620,10 +656,9 @@ function layoutNavOnly() {
 async function loadRightbar() {
   const box = $('#rightbar'); if (!box) return;
   try {
-    const [people, tags] = await Promise.all([api('/api/users'), api('/api/trending')]);
-    const suggestions = people.slice(0, 4);
+    const [suggestions, tags] = await Promise.all([api('/api/suggestions?limit=4'), api('/api/trending')]);
     box.innerHTML = `<div class="card side-card"><div class="side-title">Tu perfil</div><button class="profile-summary" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me)}<span><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></span></button><div class="mini-stats"><span><b>${state.me.posts_count || 0}</b>posts</span><span><b>${state.me.followers_count || 0}</b>seguidores</span><span><b>${state.me.following_count || 0}</b>siguiendo</span></div></div>
-      <div class="card side-card"><div class="side-title">Personas que descubrir</div>${suggestions.length ? suggestions.map(u => `<div class="side-user"><button onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small></span></button><button class="text-btn" onclick="toggleFollow(${u.id})">${u.following ? 'Siguiendo' : 'Seguir'}</button></div>`).join('') : '<p class="muted">La comunidad acaba de empezar.</p>'}</div>
+      <div class="card side-card"><div class="side-title">Personas para ti</div>${suggestions.length ? suggestions.map(u => `<div class="side-user suggested-side-user"><button onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small><em>✦ ${escapeHtml(u.recommendation_reason || 'Sugerido')}</em></span></button><button class="text-btn" onclick="toggleFollow(${u.id})">Seguir</button></div>`).join('') : '<p class="muted">Sigue interactuando y aparecerán sugerencias.</p>'}</div>
       <div class="card side-card"><div class="side-title">Tendencias · 7 días</div>${tags.length ? tags.map(t => `<button class="trend" onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} posts · ${t.authors || 1} personas · ${t.engagement || 0} interacciones</small></button>`).join('') : '<p class="muted">Los hashtags aparecerán aquí cuando se usen.</p>'}</div>
       <button class="logout-link" onclick="logout()">Cerrar sesión</button>`;
   } catch {

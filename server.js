@@ -278,9 +278,26 @@ async function addNotification(client, { userId, actorId, type, postId = null, t
   return rows[0] || null;
 }
 
+function recommendationReason(row = {}) {
+  if (Number(row.interest_match || 0) > 0) return 'Coincide con tus intereses';
+  if (Number(row.affinity_score || 0) >= 8) return 'Basado en contenido con el que interactúas';
+  if (row.mutual_signal) return 'Personas que sigues conectan con este perfil';
+  if (row.following_author) return 'De alguien que sigues';
+  if ((Number(row.likes_count || 0) + Number(row.comments_count || 0)) >= 5) return 'Popular en la comunidad';
+  return 'Nuevo para ti';
+}
+
+function peopleRecommendationReason(row = {}) {
+  if (Number(row.shared_interest || 0) > 0) return 'Tenéis intereses en común';
+  if (Number(row.mutual_count || 0) > 0) return `${Number(row.mutual_count)} conexión${Number(row.mutual_count) === 1 ? '' : 'es'} en común`;
+  if (Number(row.interaction_score || 0) > 0) return 'Has interactuado con su contenido';
+  if (Number(row.followers_count || 0) > 0) return 'Activo en la comunidad';
+  return 'Nuevo en OmniSocial';
+}
+
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '0.7.1', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles'] });
+  res.json({ ok: true, version: '0.8.0', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery'] });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
@@ -451,6 +468,134 @@ app.post('/api/posts/:id/repost', auth, asyncRoute(async (req, res) => {
 
 app.get('/api/feed', auth, asyncRoute(async (req, res) => {
   res.json(await postQuery(req.user.id, { mode: 'following' }));
+}));
+
+app.get('/api/for-you', auth, asyncRoute(async (req, res) => {
+  const { rows } = await pool.query(`
+    WITH viewer AS (
+      SELECT LOWER(COALESCE(interests,'')) AS interests FROM users WHERE id = $1
+    ), affinity AS (
+      SELECT author_id, SUM(points)::numeric AS score
+      FROM (
+        SELECT p.user_id AS author_id, 4::numeric AS points
+          FROM likes x JOIN posts p ON p.id = x.post_id WHERE x.user_id = $1
+        UNION ALL
+        SELECT p.user_id, 5::numeric
+          FROM comments x JOIN posts p ON p.id = x.post_id WHERE x.user_id = $1
+        UNION ALL
+        SELECT p.user_id, 6::numeric
+          FROM bookmarks x JOIN posts p ON p.id = x.post_id WHERE x.user_id = $1
+        UNION ALL
+        SELECT followed_id, 3::numeric FROM follows WHERE follower_id = $1
+      ) signals
+      GROUP BY author_id
+    ), scored AS (
+      SELECT
+        p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
+        u.username, u.name, u.avatar,
+        COUNT(DISTINCT l.user_id)::int AS likes_count,
+        COUNT(DISTINCT c.id)::int AS comments_count,
+        EXISTS(SELECT 1 FROM likes lx WHERE lx.post_id = p.id AND lx.user_id = $1) AS liked,
+        EXISTS(SELECT 1 FROM bookmarks b WHERE b.post_id = p.id AND b.user_id = $1) AS saved,
+        (p.user_id = $1) AS own,
+        COALESCE(a.score,0)::numeric AS affinity_score,
+        CASE WHEN EXISTS (
+          SELECT 1
+            FROM regexp_split_to_table((SELECT interests FROM viewer), '\s*,\s*') AS term
+           WHERE LENGTH(TRIM(term)) >= 2
+             AND (
+               LOWER(COALESCE(p.text,'')) LIKE '%' || TRIM(term) || '%'
+               OR LOWER(COALESCE(u.interests,'')) LIKE '%' || TRIM(term) || '%'
+               OR LOWER(COALESCE(u.headline,'')) LIKE '%' || TRIM(term) || '%'
+             )
+        ) THEN 1 ELSE 0 END AS interest_match,
+        EXISTS (
+          SELECT 1
+            FROM follows mine
+            JOIN follows second_degree ON second_degree.follower_id = mine.followed_id
+           WHERE mine.follower_id = $1 AND second_degree.followed_id = p.user_id
+        ) AS mutual_signal,
+        EXISTS(SELECT 1 FROM follows mine WHERE mine.follower_id = $1 AND mine.followed_id = p.user_id) AS following_author,
+        EXTRACT(EPOCH FROM (NOW() - p.created_at)) / 3600.0 AS age_hours
+      FROM posts p
+      JOIN users u ON u.id = p.user_id
+      LEFT JOIN likes l ON l.post_id = p.id
+      LEFT JOIN comments c ON c.post_id = p.id
+      LEFT JOIN affinity a ON a.author_id = p.user_id
+      WHERE p.visibility = 'public' OR p.user_id = $1
+      GROUP BY p.id, u.id, a.score
+    )
+    SELECT *,
+      (
+        affinity_score * 2
+        + interest_match * 12
+        + CASE WHEN mutual_signal THEN 7 ELSE 0 END
+        + CASE WHEN following_author THEN 5 ELSE 0 END
+        + LEAST(18, likes_count * 1.5 + comments_count * 2.5)
+        + GREATEST(0, 18 - LEAST(age_hours,18))
+        - CASE WHEN own THEN 25 ELSE 0 END
+      ) AS recommendation_score
+    FROM scored
+    ORDER BY recommendation_score DESC, created_at DESC, id DESC
+    LIMIT 80
+  `, [req.user.id]);
+  const posts = rows.map(r => ({ ...normalizePost(r), recommendation_reason: recommendationReason(r) }));
+  res.json(await enrichReposts(req.user.id, posts));
+}));
+
+app.get('/api/suggestions', auth, asyncRoute(async (req, res) => {
+  const limit = Math.min(20, Math.max(1, Number(req.query.limit || 10)));
+  const { rows } = await pool.query(`
+    WITH viewer AS (
+      SELECT LOWER(COALESCE(interests,'')) AS interests FROM users WHERE id = $1
+    ), interactions AS (
+      SELECT author_id, SUM(points)::numeric AS score
+      FROM (
+        SELECT p.user_id AS author_id, 3::numeric AS points FROM likes x JOIN posts p ON p.id=x.post_id WHERE x.user_id=$1
+        UNION ALL
+        SELECT p.user_id, 4::numeric FROM comments x JOIN posts p ON p.id=x.post_id WHERE x.user_id=$1
+        UNION ALL
+        SELECT p.user_id, 5::numeric FROM bookmarks x JOIN posts p ON p.id=x.post_id WHERE x.user_id=$1
+      ) q GROUP BY author_id
+    )
+    SELECT u.id,u.username,u.name,u.bio,u.avatar,u.location,u.headline,u.interests,u.created_at,u.last_seen_at,
+      FALSE AS following,
+      (SELECT COUNT(*)::int FROM follows f WHERE f.followed_id=u.id) AS followers_count,
+      COALESCE(i.score,0)::numeric AS interaction_score,
+      (SELECT COUNT(*)::int
+         FROM follows mine
+         JOIN follows other ON other.follower_id=mine.followed_id AND other.followed_id=u.id
+        WHERE mine.follower_id=$1) AS mutual_count,
+      CASE WHEN EXISTS (
+        SELECT 1 FROM regexp_split_to_table((SELECT interests FROM viewer), '\s*,\s*') AS term
+         WHERE LENGTH(TRIM(term)) >= 2
+           AND (
+             LOWER(COALESCE(u.interests,'')) LIKE '%' || TRIM(term) || '%'
+             OR LOWER(COALESCE(u.headline,'')) LIKE '%' || TRIM(term) || '%'
+             OR LOWER(COALESCE(u.bio,'')) LIKE '%' || TRIM(term) || '%'
+           )
+      ) THEN 1 ELSE 0 END AS shared_interest
+    FROM users u
+    LEFT JOIN interactions i ON i.author_id=u.id
+    WHERE u.id <> $1
+      AND NOT EXISTS (SELECT 1 FROM follows f WHERE f.follower_id=$1 AND f.followed_id=u.id)
+    ORDER BY
+      (CASE WHEN EXISTS (
+        SELECT 1 FROM regexp_split_to_table((SELECT interests FROM viewer), '\s*,\s*') AS term
+         WHERE LENGTH(TRIM(term)) >= 2
+           AND (
+             LOWER(COALESCE(u.interests,'')) LIKE '%' || TRIM(term) || '%'
+             OR LOWER(COALESCE(u.headline,'')) LIKE '%' || TRIM(term) || '%'
+             OR LOWER(COALESCE(u.bio,'')) LIKE '%' || TRIM(term) || '%'
+           )
+      ) THEN 12 ELSE 0 END)
+      + COALESCE(i.score,0) * 2
+      + (SELECT COUNT(*)::int FROM follows mine JOIN follows other ON other.follower_id=mine.followed_id AND other.followed_id=u.id WHERE mine.follower_id=$1) * 5
+      + LEAST(8,(SELECT COUNT(*)::int FROM follows f WHERE f.followed_id=u.id)) DESC,
+      u.created_at DESC
+    LIMIT $2
+  `, [req.user.id, limit]);
+  res.json(rows.map(r => ({ ...r, online:isOnline(r.id), recommendation_reason:peopleRecommendationReason(r) })));
 }));
 
 app.get('/api/discover', auth, asyncRoute(async (req, res) => {
