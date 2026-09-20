@@ -1,38 +1,57 @@
-# OmniSocial V0.2
+# OmniSocial V0.3
 
-MVP de red social + agregador + distribución multired, preparado para GitHub y Render con PostgreSQL persistente.
+OmniSocial V0.3 mantiene el núcleo de la V0.2 y añade conexión OAuth real con Meta para Facebook Pages e Instagram profesional.
 
-## Qué cambia respecto a V0.1
+## Qué funciona
 
-- PostgreSQL sustituye a `data/db.json`.
-- Usuarios, posts, likes, comentarios, seguidores y cola multired son persistentes.
-- Fotos y vídeos del MVP se almacenan en PostgreSQL para que no desaparezcan al reiniciar Render.
-- `render.yaml` puede crear el Web Service y PostgreSQL automáticamente.
-- Endpoint de salud: `/api/health`.
-- Las conexiones Instagram/Facebook/TikTok/YouTube/X siguen simuladas: OAuth real será una fase posterior.
+- Registro/login y perfiles.
+- Feed, descubrir personas, seguir, likes y comentarios.
+- PostgreSQL persistente en Render.
+- Fotos y vídeos almacenados en PostgreSQL para este MVP.
+- Conexión real de Meta mediante OAuth.
+- Selección de Página de Facebook si el usuario administra varias.
+- Detección de Instagram Business/Creator vinculado a la Página.
+- Publicación desde OmniSocial hacia Facebook Pages.
+- Publicación de imagen y Reel hacia Instagram profesional.
+- Cola de distribución con estados Pendiente / Publicando / Publicado / Error.
+- Reintento manual de publicaciones fallidas.
+- Tokens cifrados con AES-256-GCM mediante TOKEN_ENCRYPTION_KEY.
 
-## Despliegue recomendado
+## Limitaciones actuales
 
-Lee `DEPLOY-RENDER.md`.
+- Facebook publica en Páginas, no en perfiles personales.
+- El flujo de Instagram usado en V0.3 requiere una cuenta profesional (Business o Creator) vinculada a la Página de Facebook seleccionada.
+- TikTok, YouTube y X siguen reservados para siguientes versiones.
+- El límite de subida del MVP es 10 MB.
+- Para usar Meta con personas ajenas a los roles/testers de la app hay que completar la revisión de Meta y obtener los permisos necesarios.
 
-## Ejecutar en local
+## Variables necesarias
 
-Necesitas Node.js 20+ y PostgreSQL.
+```env
+DATABASE_URL=...
+JWT_SECRET=...
+TOKEN_ENCRYPTION_KEY=...
+META_APP_ID=...
+META_APP_SECRET=...
+META_LOGIN_CONFIG_ID=...   # opcional, si Facebook Login for Business usa configuración
+META_GRAPH_VERSION=v26.0
+PUBLIC_BASE_URL=https://tu-servicio.onrender.com
+```
 
-1. Copia `.env.example` como `.env`.
-2. Cambia `DATABASE_URL` por la URL de tu PostgreSQL local o remoto.
-3. Cambia `JWT_SECRET`.
-4. Ejecuta:
+Render proporciona `RENDER_EXTERNAL_URL`; el Blueprint lo expone como `PUBLIC_BASE_URL`.
+
+## Desarrollo local
 
 ```bash
 npm install
+copy .env.example .env
 npm start
 ```
 
-Abre `http://localhost:3000`.
+Abre http://localhost:3000
 
-Las tablas se crean automáticamente al arrancar la aplicación.
+## Actualización desde V0.2
 
-## Límites del MVP
+No borres PostgreSQL. `src/schema.sql` utiliza `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, por lo que la base V0.2 se actualiza al iniciar V0.3.
 
-Los archivos se limitan a 10 MB y se almacenan en PostgreSQL. Esto es cómodo para pruebas y primera fase, pero no es la arquitectura final para una red social con mucho vídeo. Cuando avancemos, moveremos multimedia a almacenamiento de objetos (S3/Cloudinary/R2 o equivalente) y mantendremos en PostgreSQL solo metadatos y URLs.
+Lee `ACTUALIZAR-A-V0.3.md` para el despliegue sobre tu servicio existente.

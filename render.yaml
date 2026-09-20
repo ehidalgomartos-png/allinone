@@ -16,6 +16,21 @@ services:
           property: connectionString
       - key: JWT_SECRET
         generateValue: true
+      - key: TOKEN_ENCRYPTION_KEY
+        generateValue: true
+      - key: META_APP_ID
+        sync: false
+      - key: META_APP_SECRET
+        sync: false
+      - key: META_LOGIN_CONFIG_ID
+        sync: false
+      - key: META_GRAPH_VERSION
+        value: v26.0
+      - key: PUBLIC_BASE_URL
+        fromService:
+          type: web
+          name: omnisocial
+          envVarKey: RENDER_EXTERNAL_URL
 
 databases:
   - name: omnisocial-db

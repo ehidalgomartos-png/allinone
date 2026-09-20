@@ -83,3 +83,33 @@ CREATE INDEX IF NOT EXISTS idx_posts_user_id ON posts(user_id);
 CREATE INDEX IF NOT EXISTS idx_comments_post_id ON comments(post_id);
 CREATE INDEX IF NOT EXISTS idx_follows_follower_id ON follows(follower_id);
 CREATE INDEX IF NOT EXISTS idx_cross_posts_post_id ON cross_posts(post_id);
+
+-- V0.3: datos OAuth reales de Meta. ALTER permite actualizar una base V0.2 sin borrar datos.
+ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS external_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS external_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS access_token_enc TEXT NOT NULL DEFAULT '';
+ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS provider_data JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE social_accounts ADD COLUMN IF NOT EXISTS last_error TEXT NOT NULL DEFAULT '';
+
+ALTER TABLE cross_posts ADD COLUMN IF NOT EXISTS external_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE cross_posts ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS meta_pages (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  page_id TEXT NOT NULL,
+  page_name TEXT NOT NULL DEFAULT '',
+  page_access_token_enc TEXT NOT NULL,
+  tasks JSONB NOT NULL DEFAULT '[]'::jsonb,
+  instagram_id TEXT NOT NULL DEFAULT '',
+  instagram_username TEXT NOT NULL DEFAULT '',
+  instagram_name TEXT NOT NULL DEFAULT '',
+  instagram_avatar TEXT NOT NULL DEFAULT '',
+  selected BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (user_id, page_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_meta_pages_user_id ON meta_pages(user_id);
+CREATE INDEX IF NOT EXISTS idx_cross_posts_status ON cross_posts(status, updated_at);

@@ -1,12 +1,12 @@
 {
   "name": "omnisocial-mvp",
-  "version": "0.2.0",
-  "description": "OmniSocial V0.2 - red social + agregador + distribucion multired con PostgreSQL",
+  "version": "0.3.0",
+  "description": "OmniSocial V0.3 - comunidad + PostgreSQL + conexión Meta OAuth + publicación real en Facebook Pages e Instagram profesional",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "check": "node --check server.js && node --check src/db.js"
+    "check": "node --check server.js && node --check src/db.js && node --check src/crypto.js && node --check src/meta.js && node --check public/app.js"
   },
   "engines": {
     "node": ">=20"
