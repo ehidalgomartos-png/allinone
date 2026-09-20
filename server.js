@@ -3,6 +3,9 @@ const cors = require('cors');
 const path = require('path');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
+const { rateLimit } = require('express-rate-limit');
 const multer = require('multer');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -17,6 +20,8 @@ const onlineUsers = new Map();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const CURRENT_TERMS_VERSION = '2026-09-20';
+const APP_URL = String(process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || 'https://instantadmirers.com').replace(/\/$/, '');
+const REQUIRE_EMAIL_VERIFICATION = String(process.env.REQUIRE_EMAIL_VERIFICATION || 'false').toLowerCase() === 'true';
 const publicDir = path.join(__dirname, 'public');
 
 if (process.env.NODE_ENV === 'production' && JWT_SECRET === 'dev-secret-change-me') {
@@ -38,6 +43,83 @@ app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(publicDir));
 
+
+const emailConfigured = () => Boolean(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS && process.env.EMAIL_FROM);
+const smtpTransport = emailConfigured() ? nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT || 465),
+  secure: String(process.env.SMTP_SECURE ?? (String(process.env.SMTP_PORT || '465') === '465')).toLowerCase() === 'true',
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+}) : null;
+
+function limiter({ windowMs, max, message }) {
+  return rateLimit({
+    windowMs, max, standardHeaders: 'draft-7', legacyHeaders: false,
+    message: { error: message || 'Demasiadas solicitudes. Inténtalo de nuevo más tarde.' }
+  });
+}
+const loginLimiter = limiter({ windowMs: 15*60*1000, max: 12, message: 'Demasiados intentos de acceso. Espera unos minutos.' });
+const registerLimiter = limiter({ windowMs: 60*60*1000, max: 6, message: 'Se han creado demasiadas cuentas desde esta conexión. Inténtalo más tarde.' });
+const recoveryLimiter = limiter({ windowMs: 15*60*1000, max: 6, message: 'Demasiadas solicitudes de recuperación. Espera unos minutos.' });
+const writeLimiter = rateLimit({ windowMs: 60*1000, max: 140, standardHeaders: 'draft-7', legacyHeaders: false, skip: req => ['GET','HEAD','OPTIONS'].includes(req.method), message: { error:'Estás realizando acciones demasiado rápido. Espera un momento.' } });
+const reportLimiter = limiter({ windowMs: 60*60*1000, max: 12, message: 'Has enviado demasiadas denuncias en poco tiempo.' });
+app.use('/api', writeLimiter);
+app.use('/api/auth/login', loginLimiter);
+app.use('/api/auth/register', registerLimiter);
+app.use('/api/auth/forgot-password', recoveryLimiter);
+app.use('/api/auth/reset-password', recoveryLimiter);
+app.use('/api/auth/verify-email/request', recoveryLimiter);
+app.use('/api/reports', reportLimiter);
+
+function normalizeEmail(value='') { return String(value).trim().toLowerCase(); }
+function tokenDigest(raw='') { return crypto.createHash('sha256').update(String(raw)).digest('hex'); }
+function requestIpHash(req) {
+  const raw = String(req.ip || req.socket?.remoteAddress || '');
+  return crypto.createHmac('sha256', JWT_SECRET).update(raw).digest('hex');
+}
+async function securityEvent(req, eventType, userId=null, metadata={}) {
+  try {
+    await pool.query(`INSERT INTO security_events(user_id,event_type,ip_hash,user_agent,metadata) VALUES($1,$2,$3,$4,$5::jsonb)`, [
+      userId || null, String(eventType).slice(0,60), requestIpHash(req), String(req.get('user-agent') || '').slice(0,500), JSON.stringify(metadata || {})
+    ]);
+  } catch (err) { console.error('securityEvent:', err.message); }
+}
+async function createAccountToken(userId, type, { minutes=60, newEmail=null }={}) {
+  const raw = crypto.randomBytes(32).toString('hex');
+  const hash = tokenDigest(raw);
+  await pool.query(`UPDATE account_tokens SET used_at=NOW() WHERE user_id=$1 AND type=$2 AND used_at IS NULL`, [userId,type]);
+  await pool.query(`INSERT INTO account_tokens(user_id,type,token_hash,new_email,expires_at) VALUES($1,$2,$3,$4,NOW()+($5 || ' minutes')::interval)`, [userId,type,hash,newEmail, String(minutes)]);
+  return raw;
+}
+async function consumeAccountToken(raw, type, client=pool) {
+  const hash = tokenDigest(raw);
+  const { rows } = await client.query(`SELECT * FROM account_tokens WHERE token_hash=$1 AND type=$2 AND used_at IS NULL AND expires_at>NOW() LIMIT 1 FOR UPDATE`, [hash,type]);
+  if (!rows[0]) return null;
+  await client.query(`UPDATE account_tokens SET used_at=NOW() WHERE id=$1`, [rows[0].id]);
+  return rows[0];
+}
+async function sendEmail({to,subject,text,html}) {
+  if (!smtpTransport) return false;
+  await smtpTransport.sendMail({ from: process.env.EMAIL_FROM, to, subject, text, html });
+  return true;
+}
+async function sendVerificationEmail(user) {
+  const token = await createAccountToken(user.id, 'verify_email', { minutes: 24*60 });
+  const url = `${APP_URL}/?action=verify-email&token=${encodeURIComponent(token)}`;
+  const sent = await sendEmail({
+    to:user.email,
+    subject:'Confirma tu email · Instant Admirers',
+    text:`Hola ${user.name || user.username}. Confirma tu email en: ${url}\\n\\nEl enlace caduca en 24 horas.`,
+    html:`<h2>Confirma tu email</h2><p>Hola ${String(user.name || user.username).replace(/[<>&]/g,'')},</p><p>Confirma tu dirección para proteger tu cuenta de Instant Admirers.</p><p><a href="${url}">Confirmar email</a></p><p>El enlace caduca en 24 horas.</p>`
+  });
+  if (!sent && process.env.NODE_ENV !== 'production') console.log('VERIFY EMAIL:', url);
+  return sent;
+}
+
+if (REQUIRE_EMAIL_VERIFICATION && !emailConfigured()) {
+  throw new Error('REQUIRE_EMAIL_VERIFICATION=true requiere configurar SMTP_HOST, SMTP_USER, SMTP_PASS y EMAIL_FROM.');
+}
+
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 25 * 1024 * 1024 },
@@ -57,10 +139,13 @@ async function auth(req, res, next) {
   if (!token) return res.status(401).json({ error: 'No autenticado' });
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    const { rows } = await pool.query('SELECT id,username,email,role,account_status FROM users WHERE id=$1', [decoded.id]);
+    const { rows } = await pool.query('SELECT id,username,email,role,account_status,session_invalid_before FROM users WHERE id=$1', [decoded.id]);
     const dbUser = rows[0];
     if (!dbUser) return res.status(401).json({ error: 'La cuenta ya no existe' });
     if (dbUser.account_status === 'suspended') return res.status(403).json({ error: 'Esta cuenta está suspendida' });
+    if (dbUser.session_invalid_before && decoded.iat && decoded.iat * 1000 + 1000 < new Date(dbUser.session_invalid_before).getTime()) {
+      return res.status(401).json({ error:'Tu sesión ha sido invalidada. Vuelve a entrar.' });
+    }
     req.user = { ...decoded, ...dbUser };
     return next();
   } catch (err) {
@@ -111,6 +196,7 @@ function safeUser(row, includePrivate = false) {
     user.terms_version = row.terms_version || '';
     user.terms_accepted_at = row.terms_accepted_at || null;
     user.age_confirmed_at = row.age_confirmed_at || null;
+    user.email_verified_at = row.email_verified_at || null;
   }
   return user;
 }
@@ -217,8 +303,9 @@ io.use(async (socket, next) => {
     const token = socket.handshake.auth?.token || socket.handshake.query?.token;
     if (!token) return next(new Error('No autenticado'));
     const decoded = jwt.verify(token, JWT_SECRET);
-    const { rows } = await pool.query('SELECT id,username,email,role,account_status FROM users WHERE id=$1', [decoded.id]);
+    const { rows } = await pool.query('SELECT id,username,email,role,account_status,session_invalid_before FROM users WHERE id=$1', [decoded.id]);
     if (!rows[0] || rows[0].account_status === 'suspended') return next(new Error('Cuenta no disponible'));
+    if (rows[0].session_invalid_before && decoded.iat && decoded.iat * 1000 + 1000 < new Date(rows[0].session_invalid_before).getTime()) return next(new Error('Sesión invalidada'));
     socket.user = { ...decoded, ...rows[0] };
     next();
   } catch {
@@ -400,7 +487,7 @@ function peopleRecommendationReason(row = {}) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.1.5', database: 'postgresql', mode: 'own-community', features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh'] });
+  res.json({ ok: true, version: '1.2.0', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), verification_required: REQUIRE_EMAIL_VERIFICATION }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events'] });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
@@ -426,7 +513,10 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
       RETURNING *
     `, [normalizedUsername, normalizedName, normalizedEmail, passwordHash, CURRENT_TERMS_VERSION]);
     const user = rows[0];
-    res.json({ token: tokenFor(user), user: safeUser(user, true) });
+    const emailSent = await sendVerificationEmail(user).catch(err => { console.error('verification email:', err.message); return false; });
+    await securityEvent(req, 'account_registered', user.id, { email_sent:emailSent });
+    if (REQUIRE_EMAIL_VERIFICATION) return res.json({ verification_required:true, email_sent:emailSent });
+    res.json({ token: tokenFor(user), user: safeUser(user, true), email_sent:emailSent });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Usuario o email ya existe' });
     throw err;
@@ -437,9 +527,91 @@ app.post('/api/auth/login', asyncRoute(async (req, res) => {
   const value = String(req.body.emailOrUsername || '').trim().toLowerCase();
   const { rows } = await pool.query('SELECT * FROM users WHERE email = $1 OR username = $1 LIMIT 1', [value]);
   const user = rows[0];
-  if (!user || !(await bcrypt.compare(String(req.body.password || ''), user.password_hash))) return res.status(401).json({ error: 'Datos incorrectos' });
-  if (user.account_status === 'suspended') return res.status(403).json({ error: 'Esta cuenta está suspendida' });
+  if (!user || !(await bcrypt.compare(String(req.body.password || ''), user.password_hash))) {
+    await securityEvent(req, 'login_failed', user?.id || null, { identifier:user ? 'known' : 'unknown' });
+    return res.status(401).json({ error: 'Datos incorrectos' });
+  }
+  if (user.account_status === 'suspended') {
+    await securityEvent(req, 'login_suspended', user.id);
+    return res.status(403).json({ error: 'Esta cuenta está suspendida' });
+  }
+  if (REQUIRE_EMAIL_VERIFICATION && !user.email_verified_at) {
+    await securityEvent(req, 'login_unverified_email', user.id);
+    return res.status(403).json({ error:'Debes verificar tu email antes de entrar', code:'EMAIL_NOT_VERIFIED' });
+  }
+  await securityEvent(req, 'login_success', user.id);
   res.json({ token: tokenFor(user), user: safeUser(user, true) });
+}));
+
+app.post('/api/auth/verify-email/request', asyncRoute(async (req,res) => {
+  const email = normalizeEmail(req.body.email);
+  const { rows } = await pool.query('SELECT * FROM users WHERE email=$1 LIMIT 1',[email]);
+  const user = rows[0];
+  if (user && !user.email_verified_at) {
+    const sent = await sendVerificationEmail(user).catch(err => { console.error('verification email:',err.message); return false; });
+    await securityEvent(req,'email_verification_requested',user.id,{sent});
+  }
+  res.json({ ok:true, message:'Si existe una cuenta pendiente de verificar, enviaremos un correo con las instrucciones.' });
+}));
+
+app.post('/api/auth/verify-email/confirm', asyncRoute(async (req,res) => {
+  const raw = String(req.body.token || '');
+  if (!raw) return res.status(400).json({error:'Enlace de verificación no válido'});
+  const result = await withTransaction(async client => {
+    const record = await consumeAccountToken(raw,'verify_email',client);
+    if (!record) return null;
+    const {rows}=await client.query('UPDATE users SET email_verified_at=COALESCE(email_verified_at,NOW()) WHERE id=$1 RETURNING *',[record.user_id]);
+    return rows[0];
+  });
+  if (!result) return res.status(400).json({error:'El enlace ha caducado o ya fue utilizado'});
+  await securityEvent(req,'email_verified',result.id);
+  res.json({ok:true});
+}));
+
+app.post('/api/auth/forgot-password', asyncRoute(async (req,res) => {
+  const email = normalizeEmail(req.body.email);
+  const {rows}=await pool.query('SELECT * FROM users WHERE email=$1 LIMIT 1',[email]);
+  const user=rows[0];
+  if (user) {
+    const token=await createAccountToken(user.id,'reset_password',{minutes:30});
+    const url=`${APP_URL}/?action=reset-password&token=${encodeURIComponent(token)}`;
+    const sent=await sendEmail({to:user.email,subject:'Restablece tu contraseña · Instant Admirers',text:`Restablece tu contraseña en: ${url}\n\nEl enlace caduca en 30 minutos.`,html:`<h2>Restablecer contraseña</h2><p>Hemos recibido una solicitud para cambiar tu contraseña.</p><p><a href="${url}">Crear una nueva contraseña</a></p><p>El enlace caduca en 30 minutos. Si no fuiste tú, ignora este mensaje.</p>`}).catch(err=>{console.error('reset email:',err.message);return false;});
+    if (!sent && process.env.NODE_ENV !== 'production') console.log('RESET PASSWORD:',url);
+    await securityEvent(req,'password_reset_requested',user.id,{sent});
+  }
+  res.json({ok:true,message:'Si existe una cuenta con ese email, recibirás las instrucciones para restablecer la contraseña.'});
+}));
+
+app.post('/api/auth/reset-password', asyncRoute(async (req,res) => {
+  const raw=String(req.body.token || '');
+  const password=String(req.body.password || '');
+  if(password.length<8) return res.status(400).json({error:'La contraseña debe tener al menos 8 caracteres'});
+  const result=await withTransaction(async client=>{
+    const record=await consumeAccountToken(raw,'reset_password',client);
+    if(!record) return null;
+    const hash=await bcrypt.hash(password,10);
+    await client.query('UPDATE users SET password_hash=$2,session_invalid_before=NOW() WHERE id=$1',[record.user_id,hash]);
+    await client.query(`UPDATE account_tokens SET used_at=NOW() WHERE user_id=$1 AND type='reset_password' AND used_at IS NULL`,[record.user_id]);
+    return record.user_id;
+  });
+  if(!result) return res.status(400).json({error:'El enlace ha caducado o ya fue utilizado'});
+  await securityEvent(req,'password_reset_completed',result);
+  res.json({ok:true});
+}));
+
+app.post('/api/auth/change-email/confirm', asyncRoute(async (req,res) => {
+  const raw=String(req.body.token || '');
+  const result=await withTransaction(async client=>{
+    const record=await consumeAccountToken(raw,'change_email',client);
+    if(!record?.new_email) return null;
+    const exists=await client.query('SELECT 1 FROM users WHERE email=$1 AND id<>$2',[record.new_email,record.user_id]);
+    if(exists.rowCount) { const e=new Error('Ese email ya pertenece a otra cuenta'); e.status=409; throw e; }
+    const {rows}=await client.query('UPDATE users SET email=$2,email_verified_at=NOW() WHERE id=$1 RETURNING *',[record.user_id,record.new_email]);
+    return rows[0];
+  });
+  if(!result) return res.status(400).json({error:'El enlace ha caducado o ya fue utilizado'});
+  await securityEvent(req,'email_changed',result.id);
+  res.json({ok:true});
 }));
 
 app.get('/api/me', auth, asyncRoute(async (req, res) => {
@@ -1483,6 +1655,35 @@ app.post('/api/account/accept-terms', auth, asyncRoute(async (req, res) => {
   res.json({ ok:true, terms_version:CURRENT_TERMS_VERSION });
 }));
 
+app.post('/api/account/email/verification', auth, recoveryLimiter, asyncRoute(async (req,res) => {
+  const {rows}=await pool.query('SELECT * FROM users WHERE id=$1',[req.user.id]);
+  const user=rows[0];
+  if(!user) return res.status(404).json({error:'Usuario no encontrado'});
+  if(user.email_verified_at) return res.json({ok:true,already_verified:true});
+  if(!emailConfigured()) return res.status(503).json({error:'El correo saliente todavía no está configurado'});
+  const sent=await sendVerificationEmail(user);
+  await securityEvent(req,'email_verification_requested',user.id,{sent});
+  res.json({ok:true});
+}));
+
+app.post('/api/account/email', auth, recoveryLimiter, asyncRoute(async (req,res) => {
+  if(!emailConfigured()) return res.status(503).json({error:'El correo saliente todavía no está configurado'});
+  const currentPassword=String(req.body.current_password || '');
+  const newEmail=normalizeEmail(req.body.new_email);
+  if(!newEmail.includes('@') || newEmail.length>255) return res.status(400).json({error:'Email inválido'});
+  const {rows}=await pool.query('SELECT * FROM users WHERE id=$1',[req.user.id]);
+  const user=rows[0];
+  if(!user || !(await bcrypt.compare(currentPassword,user.password_hash))) return res.status(400).json({error:'La contraseña actual no es correcta'});
+  if(newEmail===user.email) return res.status(400).json({error:'Ese ya es tu email actual'});
+  const exists=await pool.query('SELECT 1 FROM users WHERE email=$1 AND id<>$2',[newEmail,user.id]);
+  if(exists.rowCount) return res.status(409).json({error:'Ese email ya está en uso'});
+  const token=await createAccountToken(user.id,'change_email',{minutes:60,newEmail});
+  const url=`${APP_URL}/?action=change-email&token=${encodeURIComponent(token)}`;
+  const sent=await sendEmail({to:newEmail,subject:'Confirma tu nuevo email · Instant Admirers',text:`Confirma el nuevo email de tu cuenta en: ${url}\\n\\nEl enlace caduca en 60 minutos.`,html:`<h2>Confirma tu nuevo email</h2><p>Para terminar el cambio de email de tu cuenta, abre este enlace:</p><p><a href="${url}">Confirmar nuevo email</a></p><p>El enlace caduca en 60 minutos.</p>`});
+  await securityEvent(req,'email_change_requested',user.id,{sent});
+  res.json({ok:true});
+}));
+
 app.post('/api/account/password', auth, asyncRoute(async (req, res) => {
   const currentPassword = String(req.body.current_password || '');
   const newPassword = String(req.body.new_password || '');
@@ -1490,7 +1691,8 @@ app.post('/api/account/password', auth, asyncRoute(async (req, res) => {
   const { rows } = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.user.id]);
   if (!rows[0] || !(await bcrypt.compare(currentPassword, rows[0].password_hash))) return res.status(400).json({ error:'La contraseña actual no es correcta' });
   const hash = await bcrypt.hash(newPassword, 10);
-  await pool.query('UPDATE users SET password_hash=$2 WHERE id=$1', [req.user.id, hash]);
+  await pool.query('UPDATE users SET password_hash=$2,session_invalid_before=NOW() WHERE id=$1', [req.user.id, hash]);
+  await securityEvent(req,'password_changed',req.user.id);
   res.json({ ok:true });
 }));
 
@@ -1500,6 +1702,7 @@ app.delete('/api/account', auth, asyncRoute(async (req, res) => {
   if (confirmation !== 'ELIMINAR') return res.status(400).json({ error:'Escribe ELIMINAR para confirmar' });
   const { rows } = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.user.id]);
   if (!rows[0] || !(await bcrypt.compare(password, rows[0].password_hash))) return res.status(400).json({ error:'La contraseña no es correcta' });
+  await securityEvent(req,'account_deleted',req.user.id);
   await pool.query('DELETE FROM users WHERE id=$1', [req.user.id]);
   res.json({ ok:true });
 }));
@@ -1595,6 +1798,15 @@ app.get('/api/admin/actions', auth, adminOnly, asyncRoute(async (_req, res) => {
   res.json(rows);
 }));
 
+app.get('/api/admin/security-events', auth, adminOnly, asyncRoute(async (_req,res) => {
+  const {rows}=await pool.query(`
+    SELECT se.id,se.event_type,se.metadata,se.created_at,u.username
+    FROM security_events se LEFT JOIN users u ON u.id=se.user_id
+    ORDER BY se.created_at DESC LIMIT 100
+  `);
+  res.json(rows);
+}));
+
 app.get('*', (_req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 
 app.use((err, _req, res, _next) => {
@@ -1606,7 +1818,7 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   await initDb();
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.1.5 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.2.0 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {

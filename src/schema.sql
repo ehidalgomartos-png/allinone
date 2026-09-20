@@ -345,3 +345,34 @@ CREATE INDEX IF NOT EXISTS idx_moderation_actions_created ON moderation_actions(
 ALTER TABLE users ADD COLUMN IF NOT EXISTS age_confirmed_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_accepted_at TIMESTAMPTZ;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS terms_version VARCHAR(40) NOT NULL DEFAULT '';
+
+
+-- V1.2: verificación de email, recuperación de cuenta y auditoría de seguridad.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS session_invalid_before TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS account_tokens (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type VARCHAR(30) NOT NULL CHECK (type IN ('verify_email','reset_password','change_email')),
+  token_hash VARCHAR(64) NOT NULL UNIQUE,
+  new_email VARCHAR(255),
+  expires_at TIMESTAMPTZ NOT NULL,
+  used_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS security_events (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  event_type VARCHAR(60) NOT NULL,
+  ip_hash VARCHAR(64) NOT NULL DEFAULT '',
+  user_agent VARCHAR(500) NOT NULL DEFAULT '',
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_account_tokens_lookup ON account_tokens(type, token_hash, expires_at) WHERE used_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_account_tokens_user ON account_tokens(user_id, type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_security_events_created ON security_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_id, created_at DESC);

@@ -69,7 +69,10 @@ async function api(url, opts = {}) {
           state.sessionExpiring = false;
         }, 50);
       }
-      throw new Error(data.error || 'Ha ocurrido un error');
+      const apiError = new Error(data.error || 'Ha ocurrido un error');
+      apiError.code = data.code || '';
+      apiError.status = r.status;
+      throw apiError;
     }
     return data;
   } catch (err) {
@@ -187,6 +190,7 @@ function authScreen() {
       </section>
     </div>`;
   showAuth('login');
+  const authNotice=sessionStorage.getItem('authNotice'); if(authNotice){sessionStorage.removeItem('authNotice');setTimeout(()=>toast(authNotice),80);}
 }
 
 window.showAuth = (mode) => {
@@ -197,6 +201,7 @@ window.showAuth = (mode) => {
       <label>Email o usuario</label><input id="loginid" autocomplete="username" placeholder="tuusuario">
       <label>Contraseña</label><input id="loginpass" type="password" autocomplete="current-password" placeholder="••••••••" onkeydown="if(event.key==='Enter')login()">
       <button id="loginSubmit" class="btn primary large" onclick="login()">Entrar</button>
+      <button class="auth-text-link" onclick="openForgotPassword()">¿Has olvidado tu contraseña?</button>
     </div>` : `
     <div class="auth-form">
       <label>Nombre</label><input id="regname" placeholder="Tu nombre">
@@ -215,7 +220,10 @@ window.login = async () => {
     if (btn) { btn.disabled = true; btn.textContent = 'Entrando…'; }
     const d = await api('/api/auth/login', { method:'POST', body: JSON.stringify({ emailOrUsername: $('#loginid').value, password: $('#loginpass').value }) });
     state.token = d.token; localStorage.setItem('token', d.token); await init();
-  } catch (e) { toast(e.message, 'error'); }
+  } catch (e) {
+    if (e.code === 'EMAIL_NOT_VERIFIED') openVerifyEmailPrompt($('#loginid')?.value || '');
+    else toast(e.message, 'error');
+  }
   finally { if (btn?.isConnected) { btn.disabled = false; btn.textContent = 'Entrar'; } }
 };
 
@@ -226,10 +234,94 @@ window.register = async () => {
   try {
     if (btn) { btn.disabled = true; btn.textContent = 'Creando cuenta…'; }
     const d = await api('/api/auth/register', { method:'POST', body: JSON.stringify({ name: $('#regname').value, username: $('#reguser').value, email: $('#regemail').value, password: $('#regpass').value, age_confirmed:true, terms_accepted:true, terms_version:'2026-09-20' }) });
+    if (d.verification_required) {
+      modal(`<div class="modal-head"><h3>Confirma tu email</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="account-form"><div class="security-callout"><b>Cuenta creada</b><p>Te hemos enviado un enlace de verificación. Ábrelo antes de iniciar sesión.</p></div><button class="btn primary" onclick="closeModal();showAuth('login')">Volver a entrar</button></div>`);
+      return;
+    }
     state.token = d.token; localStorage.setItem('token', d.token); await init();
   } catch (e) { toast(e.message, 'error'); }
   finally { if (btn?.isConnected) { btn.disabled = false; btn.textContent = 'Crear mi cuenta'; } }
 };
+
+
+window.openForgotPassword = () => {
+  modal(`<div class="modal-head"><h3>Recuperar contraseña</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <div class="account-form">
+      <p class="muted">Escribe el email de tu cuenta. Si existe, recibirás un enlace que caduca en 30 minutos.</p>
+      <label>Email<input id="forgotEmail" type="email" autocomplete="email" placeholder="tu@email.com"></label>
+      <button id="forgotSubmit" class="btn primary" onclick="requestPasswordReset()">Enviar enlace</button>
+    </div>`);
+};
+
+window.requestPasswordReset = async () => {
+  const btn=$('#forgotSubmit'); if(btn?.disabled) return;
+  try{
+    if(btn){btn.disabled=true;btn.textContent='Enviando…';}
+    const d=await api('/api/auth/forgot-password',{method:'POST',body:JSON.stringify({email:$('#forgotEmail')?.value || ''})});
+    closeModal(); toast(d.message || 'Revisa tu correo');
+  }catch(e){toast(e.message,'error');}
+  finally{if(btn?.isConnected){btn.disabled=false;btn.textContent='Enviar enlace';}}
+};
+
+window.openVerifyEmailPrompt = (email='') => {
+  modal(`<div class="modal-head"><h3>Verifica tu email</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <div class="account-form"><p class="muted">Necesitas confirmar tu dirección antes de entrar.</p>
+      <label>Email<input id="verifyEmailInput" type="email" autocomplete="email" value="${escapeAttr(email)}"></label>
+      <button id="verifyEmailSubmit" class="btn primary" onclick="requestVerificationEmail()">Reenviar verificación</button>
+    </div>`);
+};
+
+window.requestVerificationEmail = async () => {
+  const btn=$('#verifyEmailSubmit'); if(btn?.disabled) return;
+  try{
+    if(btn){btn.disabled=true;btn.textContent='Enviando…';}
+    const d=await api('/api/auth/verify-email/request',{method:'POST',body:JSON.stringify({email:$('#verifyEmailInput')?.value || ''})});
+    closeModal(); toast(d.message || 'Revisa tu correo');
+  }catch(e){toast(e.message,'error');}
+  finally{if(btn?.isConnected){btn.disabled=false;btn.textContent='Reenviar verificación';}}
+};
+
+function renderPasswordResetLink(token) {
+  authScreen();
+  modal(`<div class="modal-head"><h3>Nueva contraseña</h3></div><div class="account-form">
+    <p class="muted">Crea una contraseña nueva de al menos 8 caracteres.</p>
+    <label>Nueva contraseña<input id="resetPassword1" type="password" autocomplete="new-password"></label>
+    <label>Repite la contraseña<input id="resetPassword2" type="password" autocomplete="new-password"></label>
+    <button id="resetPasswordSubmit" class="btn primary" onclick="completePasswordReset('${escapeAttr(token)}')">Guardar nueva contraseña</button>
+  </div>`);
+}
+
+window.completePasswordReset = async (token) => {
+  const a=$('#resetPassword1')?.value || '', b=$('#resetPassword2')?.value || '';
+  if(a.length<8) return toast('La contraseña debe tener al menos 8 caracteres','error');
+  if(a!==b) return toast('Las contraseñas no coinciden','error');
+  const btn=$('#resetPasswordSubmit');
+  try{
+    if(btn){btn.disabled=true;btn.textContent='Guardando…';}
+    await api('/api/auth/reset-password',{method:'POST',body:JSON.stringify({token,password:a})});
+    state.token='';localStorage.removeItem('token');history.replaceState({},'',location.pathname); closeModal(); showAuth('login'); toast('Contraseña actualizada. Ya puedes entrar.');
+  }catch(e){toast(e.message,'error');}
+  finally{if(btn?.isConnected){btn.disabled=false;btn.textContent='Guardar nueva contraseña';}}
+};
+
+async function handleAuthLink() {
+  const params=new URLSearchParams(location.search);
+  const action=params.get('action'), token=params.get('token');
+  if(!action || !token) return false;
+  if(action==='reset-password') { renderPasswordResetLink(token); return true; }
+  const endpoint=action==='verify-email'?'/api/auth/verify-email/confirm':action==='change-email'?'/api/auth/change-email/confirm':'';
+  if(!endpoint) return false;
+  authScreen();
+  try{
+    await api(endpoint,{method:'POST',body:JSON.stringify({token})});
+    history.replaceState({},'',location.pathname);
+    sessionStorage.setItem('authNotice', action==='verify-email'?'Email verificado correctamente.':'Email actualizado correctamente.');
+    location.replace('/');
+  }catch(e){
+    history.replaceState({},'',location.pathname); toast(e.message,'error');
+  }
+  return true;
+}
 
 function navButton(view, icon, label) {
   const active = state.view === view ? 'active' : '';
@@ -1361,6 +1453,10 @@ window.openAccountSettings = () => {
   modal(`<div class="modal-head"><h3>Ajustes de cuenta</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
     <div class="account-settings">
       <section class="settings-block">
+        <div><b>Email</b><small>${escapeHtml(state.me?.email || '')} · ${state.me?.email_verified_at?'<span class="verified-email">Verificado</span>':'<span class="pending-email">Sin verificar</span>'}</small></div>
+        <div class="settings-actions">${state.me?.email_verified_at?'':'<button class="btn ghost compact" onclick="sendMyVerification()">Verificar</button>'}<button class="btn ghost compact" onclick="openEmailChange()">Cambiar email</button></div>
+      </section>
+      <section class="settings-block">
         <div><b>Contraseña</b><small>Cambia tu contraseña usando la actual.</small></div>
         <button class="btn ghost compact" onclick="openPasswordChange()">Cambiar contraseña</button>
       </section>
@@ -1384,6 +1480,31 @@ window.openAccountSettings = () => {
     </div>`);
 };
 
+
+window.sendMyVerification = async () => {
+  try{await api('/api/account/email/verification',{method:'POST',body:'{}'});toast('Te hemos enviado un correo de verificación');}
+  catch(e){toast(e.message,'error');}
+};
+
+window.openEmailChange = () => {
+  modal(`<div class="modal-head"><h3>Cambiar email</h3><button class="icon-btn" onclick="openAccountSettings()">×</button></div>
+    <div class="account-form"><p class="muted">Enviaremos un enlace al nuevo email. El cambio solo se aplica cuando lo confirmes.</p>
+      <label>Nuevo email<input id="newAccountEmail" type="email" autocomplete="email"></label>
+      <label>Contraseña actual<input id="emailCurrentPassword" type="password" autocomplete="current-password"></label>
+      <button id="changeEmailSubmit" class="btn primary" onclick="requestEmailChange()">Confirmar nuevo email</button>
+    </div>`);
+};
+
+window.requestEmailChange = async () => {
+  const btn=$('#changeEmailSubmit'); if(btn?.disabled)return;
+  try{
+    if(btn){btn.disabled=true;btn.textContent='Enviando…';}
+    await api('/api/account/email',{method:'POST',body:JSON.stringify({new_email:$('#newAccountEmail')?.value || '',current_password:$('#emailCurrentPassword')?.value || ''})});
+    closeModal(); toast('Revisa el nuevo email para confirmar el cambio');
+  }catch(e){toast(e.message,'error');}
+  finally{if(btn?.isConnected){btn.disabled=false;btn.textContent='Confirmar nuevo email';}}
+};
+
 window.openPasswordChange = () => {
   modal(`<div class="modal-head"><h3>Cambiar contraseña</h3><button class="icon-btn" onclick="openAccountSettings()">×</button></div>
     <div class="account-form">
@@ -1399,7 +1520,7 @@ window.changePassword = async () => {
   if(a!==b) return toast('Las nuevas contraseñas no coinciden','error');
   try {
     await api('/api/account/password',{method:'POST',body:JSON.stringify({current_password:$('#currentPassword').value,new_password:a})});
-    closeModal(); toast('Contraseña actualizada');
+    closeModal(); toast('Contraseña actualizada. Vuelve a entrar.'); setTimeout(()=>logout(),700);
   } catch(e){ toast(e.message,'error'); }
 };
 
@@ -1430,10 +1551,11 @@ async function renderAdmin() {
     $('#main').innerHTML=`<div class="card empty"><h3>Acceso no disponible</h3><p>Este panel está reservado a administración.</p></div>`;
     return;
   }
-  const [stats,reports,actions]=await Promise.all([
+  const [stats,reports,actions,security]=await Promise.all([
     api('/api/admin/stats'),
     api('/api/admin/reports?status=all'),
-    api('/api/admin/actions')
+    api('/api/admin/actions'),
+    api('/api/admin/security-events')
   ]);
   $('#main').innerHTML=`${pageHeader('Administración','Moderación y estado general de Instant Admirers')}
     <div class="admin-stats">
@@ -1449,6 +1571,10 @@ async function renderAdmin() {
     <section class="card admin-section">
       <div class="section-row"><h3>Últimas acciones</h3><span>${actions.length}</span></div>
       <div class="admin-action-list">${actions.length?actions.map(a=>`<div class="admin-action"><b>${escapeHtml(a.action)}</b><span>${a.target_username?'@'+escapeHtml(a.target_username):''}${a.report_id?` · denuncia #${a.report_id}`:''}</span><small>${a.admin_username?'@'+escapeHtml(a.admin_username)+' · ':''}${timeAgo(a.created_at)}</small></div>`).join(''):'<p class="muted">Todavía no hay acciones de moderación.</p>'}</div>
+    </section>
+    <section class="card admin-section">
+      <div class="section-row"><h3>Seguridad</h3><span>${security.length}</span></div>
+      <div class="admin-action-list">${security.length?security.slice(0,40).map(e=>`<div class="admin-action"><b>${escapeHtml(e.event_type)}</b><span>${e.username?'@'+escapeHtml(e.username):'sin usuario asociado'}</span><small>${timeAgo(e.created_at)}</small></div>`).join(''):'<p class="muted">Todavía no hay eventos de seguridad.</p>'}</div>
     </section>`;
 }
 
@@ -1498,6 +1624,7 @@ window.adminToggleUser = async (userId,status,reportId) => {
 };
 
 async function init() {
+  if (await handleAuthLink()) return;
   if (!state.token) return authScreen();
   try {
     state.me = await api('/api/me');

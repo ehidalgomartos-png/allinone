@@ -1,21 +1,21 @@
-# Instant Admirers V1.1.5 — Identidad visual
+# Instant Admirers V1.2
 
-Actualización visual sobre V1.1.4. No cambia PostgreSQL ni elimina ninguna función.
+Versión centrada en seguridad y ciclo de vida de cuentas, construida sobre V1.1.5.
 
-## Mejoras de esta versión
+## Novedades
 
-- Navegación de escritorio con estado activo más claro y coherente con la marca.
-- Dock móvil renovado: el icono de la sección activa usa el degradado fucsia/violeta.
-- Cabecera móvil más limpia y consistente.
-- Perfil renovado: portada, avatar, estadísticas y jerarquía tipográfica más compactas.
-- Estadísticas del perfil agrupadas en un único bloque de cuatro columnas.
-- Tarjetas, botones y bordes usan un lenguaje visual más uniforme.
-- Feed, Stories y selector “Siguiendo / Para ti” integrados mejor con la identidad Instant Admirers.
-- Tarjetas de Descubrir y tendencias con estados hover más discretos.
-- Estados vacíos más cuidados y con iconografía visual.
-- Modales y formularios con superficies y focos más consistentes.
-- Escritorio, tablet y móvil conservan la misma identidad.
+- Verificación de email.
+- Recuperación segura de contraseña.
+- Cambio de email con confirmación.
+- Tokens de un solo uso con hash y caducidad.
+- Rate limiting para reducir fuerza bruta, spam y abuso.
+- Registro de eventos de seguridad para administración.
+- Mantiene toda la red social, identidad, legal, privacidad y UX anterior.
 
-## Datos
+## Salud
 
-No requiere migraciones. Usuarios, publicaciones, Stories, Reels, mensajes, privacidad, amigos, administración y contenido multimedia permanecen intactos.
+`GET /api/health` devuelve la versión, estado de PostgreSQL y si el correo saliente está configurado.
+
+## Despliegue
+
+Consulta `ACTUALIZAR-A-V1.2.md`.

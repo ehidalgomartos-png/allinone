@@ -384,3 +384,13 @@ body{
   .empty-icon{width:44px;height:44px;border-radius:14px;font-size:19px}
   .suggestion-card:hover,.btn.primary:hover{transform:none}
 }
+
+/* V1.2 · Seguridad y cuentas */
+.auth-text-link{border:0;background:transparent;color:var(--muted);font:inherit;cursor:pointer;padding:.55rem .25rem;text-align:center;width:100%}
+.auth-text-link:hover{color:var(--text)}
+.settings-actions{display:flex;gap:.5rem;flex-wrap:wrap;justify-content:flex-end}
+.verified-email{color:#7cf7b1;font-weight:700}
+.pending-email{color:#ffcf70;font-weight:700}
+.security-callout{padding:1rem;border:1px solid rgba(183,92,255,.22);background:rgba(183,92,255,.08);border-radius:16px}
+.security-callout p{margin:.35rem 0 0;color:var(--muted)}
+@media(max-width:640px){.settings-actions{width:100%;justify-content:flex-start}.settings-actions .btn{flex:1}}
