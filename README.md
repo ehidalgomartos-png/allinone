@@ -1,4 +1,4 @@
-# Instant Admirers V1.2
+# Instant Admirers V1.2.1
 
 Versión centrada en seguridad y ciclo de vida de cuentas, construida sobre V1.1.5.
 
@@ -19,3 +19,7 @@ Versión centrada en seguridad y ciclo de vida de cuentas, construida sobre V1.1
 ## Despliegue
 
 Consulta `ACTUALIZAR-A-V1.2.md`.
+
+
+## V1.2.1
+Corrige el flujo de recuperación para fallar rápido y mostrar mensajes claros cuando SMTP no está configurado o no responde.

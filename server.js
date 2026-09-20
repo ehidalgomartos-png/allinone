@@ -49,7 +49,10 @@ const smtpTransport = emailConfigured() ? nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 465),
   secure: String(process.env.SMTP_SECURE ?? (String(process.env.SMTP_PORT || '465') === '465')).toLowerCase() === 'true',
-  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  connectionTimeout: Number(process.env.SMTP_CONNECTION_TIMEOUT || 8000),
+  greetingTimeout: Number(process.env.SMTP_GREETING_TIMEOUT || 8000),
+  socketTimeout: Number(process.env.SMTP_SOCKET_TIMEOUT || 15000)
 }) : null;
 
 function limiter({ windowMs, max, message }) {
@@ -487,7 +490,7 @@ function peopleRecommendationReason(row = {}) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.2.0', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), verification_required: REQUIRE_EMAIL_VERIFICATION }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events'] });
+  res.json({ ok: true, version: '1.2.1', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), verification_required: REQUIRE_EMAIL_VERIFICATION }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events'] });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
@@ -544,6 +547,7 @@ app.post('/api/auth/login', asyncRoute(async (req, res) => {
 }));
 
 app.post('/api/auth/verify-email/request', asyncRoute(async (req,res) => {
+  if (!emailConfigured()) return res.status(503).json({ error:'El envío de correo todavía no está configurado.', code:'EMAIL_NOT_CONFIGURED' });
   const email = normalizeEmail(req.body.email);
   const { rows } = await pool.query('SELECT * FROM users WHERE email=$1 LIMIT 1',[email]);
   const user = rows[0];
@@ -569,6 +573,12 @@ app.post('/api/auth/verify-email/confirm', asyncRoute(async (req,res) => {
 }));
 
 app.post('/api/auth/forgot-password', asyncRoute(async (req,res) => {
+  if (!emailConfigured()) {
+    return res.status(503).json({
+      error:'La recuperación por email todavía no está disponible porque falta configurar el correo saliente.',
+      code:'EMAIL_NOT_CONFIGURED'
+    });
+  }
   const email = normalizeEmail(req.body.email);
   const {rows}=await pool.query('SELECT * FROM users WHERE email=$1 LIMIT 1',[email]);
   const user=rows[0];
@@ -576,8 +586,8 @@ app.post('/api/auth/forgot-password', asyncRoute(async (req,res) => {
     const token=await createAccountToken(user.id,'reset_password',{minutes:30});
     const url=`${APP_URL}/?action=reset-password&token=${encodeURIComponent(token)}`;
     const sent=await sendEmail({to:user.email,subject:'Restablece tu contraseña · Instant Admirers',text:`Restablece tu contraseña en: ${url}\n\nEl enlace caduca en 30 minutos.`,html:`<h2>Restablecer contraseña</h2><p>Hemos recibido una solicitud para cambiar tu contraseña.</p><p><a href="${url}">Crear una nueva contraseña</a></p><p>El enlace caduca en 30 minutos. Si no fuiste tú, ignora este mensaje.</p>`}).catch(err=>{console.error('reset email:',err.message);return false;});
-    if (!sent && process.env.NODE_ENV !== 'production') console.log('RESET PASSWORD:',url);
     await securityEvent(req,'password_reset_requested',user.id,{sent});
+    if (!sent) return res.status(502).json({ error:'No hemos podido enviar el correo. Revisa la configuración SMTP e inténtalo de nuevo.', code:'EMAIL_SEND_FAILED' });
   }
   res.json({ok:true,message:'Si existe una cuenta con ese email, recibirás las instrucciones para restablecer la contraseña.'});
 }));

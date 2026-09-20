@@ -257,10 +257,16 @@ window.requestPasswordReset = async () => {
   const btn=$('#forgotSubmit'); if(btn?.disabled) return;
   try{
     if(btn){btn.disabled=true;btn.textContent='Enviando…';}
-    const d=await api('/api/auth/forgot-password',{method:'POST',body:JSON.stringify({email:$('#forgotEmail')?.value || ''})});
+    const email=($('#forgotEmail')?.value || '').trim();
+    if(!email){ throw new Error('Escribe el email de tu cuenta.'); }
+    const d=await api('/api/auth/forgot-password',{method:'POST',timeout:20000,body:JSON.stringify({email})});
     closeModal(); toast(d.message || 'Revisa tu correo');
-  }catch(e){toast(e.message,'error');}
-  finally{if(btn?.isConnected){btn.disabled=false;btn.textContent='Enviar enlace';}}
+  }catch(e){
+    if(e?.code==='EMAIL_NOT_CONFIGURED') toast('La recuperación por correo aún no está configurada. Configura SMTP en Render.', 'error');
+    else if(e?.code==='EMAIL_SEND_FAILED') toast('No se pudo enviar el correo. Revisa SMTP en Render.', 'error');
+    else toast(e.message,'error');
+  }
+  finally{if(btn){btn.disabled=false;btn.textContent='Enviar enlace';}}
 };
 
 window.openVerifyEmailPrompt = (email='') => {
