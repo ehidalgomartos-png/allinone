@@ -35,6 +35,28 @@ function setHomeBrowserUrl({ replace = false } = {}) {
   history[replace ? 'replaceState' : 'pushState']({ view: 'feed' }, '', '/');
 }
 
+function rememberPendingProfile(username = '') {
+  const clean = String(username || '').trim().replace(/^@/, '');
+  if (!/^[a-zA-Z0-9_.]{3,30}$/.test(clean) || RESERVED_PROFILE_SLUGS.has(clean.toLowerCase())) return '';
+  localStorage.setItem('pendingProfileUsername', clean);
+  sessionStorage.setItem('pendingProfileUsername', clean);
+  return clean;
+}
+
+function pendingProfileDestination() {
+  return String(
+    sessionStorage.getItem('pendingProfileUsername') ||
+    localStorage.getItem('pendingProfileUsername') ||
+    profileUsernameFromPath(location.pathname) ||
+    ''
+  ).trim();
+}
+
+function clearPendingProfileDestination() {
+  localStorage.removeItem('pendingProfileUsername');
+  sessionStorage.removeItem('pendingProfileUsername');
+}
+
 (() => {
   try {
     const params = new URLSearchParams(location.search);
@@ -46,7 +68,7 @@ function setHomeBrowserUrl({ replace = false } = {}) {
     if (ref) localStorage.setItem('pendingReferralCode', ref);
     if (ref && gate) localStorage.setItem('pendingGateCode', gate);
     if (/^[a-zA-Z0-9_.]{3,30}$/.test(profile) && !RESERVED_PROFILE_SLUGS.has(profile.toLowerCase())) {
-      localStorage.setItem('pendingProfileUsername', profile);
+      rememberPendingProfile(profile);
       // Convierte enlaces antiguos ?profile=usuario al nuevo formato /usuario sin romper ref/invite.
       if (!pathProfile && legacyProfile && !params.get('action')) {
         params.delete('profile');
@@ -230,7 +252,7 @@ function legalLinks() {
 }
 
 function authScreen() {
-  const directProfile = String(localStorage.getItem('pendingProfileUsername') || profileUsernameFromPath(location.pathname) || '').trim();
+  const directProfile = pendingProfileDestination();
   $('#app').innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
@@ -250,6 +272,7 @@ function authScreen() {
           <div id="authbox"></div>
         </section>
         ${legalLinks()}
+        <div class="auth-mobile-footer-note">18+ · Comunidad privada · Instant Admirers</div>
       </section>
     </div>`;
   showAuth('login');
@@ -267,8 +290,8 @@ window.showAuth = (mode) => {
       <button class="auth-text-link" onclick="openForgotPassword()">¿Has olvidado tu contraseña?</button>
     </div>` : `
     <div class="auth-form">
-      ${(localStorage.getItem('pendingProfileUsername') || profileUsernameFromPath(location.pathname))
-        ? `<div class="invite-auth-note profile-invite-note"><b>🔐 Te han invitado al perfil de @${escapeHtml(localStorage.getItem('pendingProfileUsername') || profileUsernameFromPath(location.pathname))}</b><span>Crea tu cuenta. Entrarás directamente a ese perfil y podrás usar Instant Admirers con normalidad mientras completas su acceso.</span></div>`
+      ${pendingProfileDestination()
+        ? `<div class="invite-auth-note profile-invite-note"><b>🔐 Te han invitado al perfil de @${escapeHtml(pendingProfileDestination())}</b><span>Crea tu cuenta. Entrarás directamente a ese perfil y podrás usar Instant Admirers con normalidad mientras completas su acceso.</span></div>`
         : (localStorage.getItem('pendingReferralCode') ? '<div class="invite-auth-note"><b>💬 Has llegado con una invitación</b><span>Crea tu perfil en Instant Admirers desde aquí.</span></div>' : '')}
       <label>Nombre</label><input id="regname" placeholder="Tu nombre">
       <label>Usuario</label><input id="reguser" autocomplete="username" placeholder="tuusuario">
@@ -282,10 +305,12 @@ window.showAuth = (mode) => {
 window.login = async () => {
   const btn = $('#loginSubmit');
   if (btn?.disabled) return;
+  const directProfile = pendingProfileDestination();
+  if (directProfile) rememberPendingProfile(directProfile);
   try {
     if (btn) { btn.disabled = true; btn.textContent = 'Entrando…'; }
     const d = await api('/api/auth/login', { method:'POST', body: JSON.stringify({ emailOrUsername: $('#loginid').value, password: $('#loginpass').value }) });
-    state.token = d.token; localStorage.setItem('token', d.token); await init();
+    state.token = d.token; localStorage.setItem('token', d.token); await init({ preferredProfile: directProfile });
   } catch (e) {
     if (e.code === 'EMAIL_NOT_VERIFIED') openVerifyEmailPrompt($('#loginid')?.value || '');
     else toast(e.message, 'error');
@@ -297,6 +322,8 @@ window.register = async () => {
   const btn = $('#registerSubmit');
   if (btn?.disabled) return;
   if (!$('#reglegal')?.checked) return toast('Debes confirmar que tienes 18 años y aceptar los Términos de Uso','error');
+  const directProfile = pendingProfileDestination();
+  if (directProfile) rememberPendingProfile(directProfile);
   try {
     if (btn) { btn.disabled = true; btn.textContent = 'Creando cuenta…'; }
     const d = await api('/api/auth/register', { method:'POST', body: JSON.stringify({ name: $('#regname').value, username: $('#reguser').value, email: $('#regemail').value, password: $('#regpass').value, age_confirmed:true, terms_accepted:true, terms_version:'2026-09-20', referral_code:localStorage.getItem('pendingReferralCode') || '', gate_code:localStorage.getItem('pendingGateCode') || '' }) });
@@ -305,7 +332,7 @@ window.register = async () => {
       modal(`<div class="modal-head"><h3>Confirma tu email</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="account-form"><div class="security-callout"><b>Cuenta creada</b><p>Te hemos enviado un enlace de verificación. Ábrelo antes de iniciar sesión.</p></div><button class="btn primary" onclick="closeModal();showAuth('login')">Volver a entrar</button></div>`);
       return;
     }
-    state.token = d.token; localStorage.setItem('token', d.token); await init();
+    state.token = d.token; localStorage.setItem('token', d.token); await init({ preferredProfile: directProfile });
   } catch (e) { toast(e.message, 'error'); }
   finally { if (btn?.isConnected) { btn.disabled = false; btn.textContent = 'Crear mi cuenta'; } }
 };
@@ -1857,14 +1884,15 @@ window.adminToggleUser = async (userId,status,reportId) => {
   }catch(e){toast(e.message,'error');}
 };
 
-async function init() {
+async function init(options = {}) {
   if (await handleAuthLink()) return;
   if (!state.token) return authScreen();
   try {
     state.me = await api('/api/me');
     connectRealtime();
-    const pendingProfile = String(localStorage.getItem('pendingProfileUsername') || profileUsernameFromPath(location.pathname) || '').trim();
+    const pendingProfile = String(options.preferredProfile || pendingProfileDestination()).trim();
     if (pendingProfile) {
+      rememberPendingProfile(pendingProfile);
       state.view='profile';
       state.profile=pendingProfile;
     }
@@ -1873,8 +1901,14 @@ async function init() {
       try {
         setProfileBrowserUrl(pendingProfile, { replace:true });
         await renderProfile(pendingProfile);
-      } finally {
-        localStorage.removeItem('pendingProfileUsername');
+        clearPendingProfileDestination();
+      } catch (profileError) {
+        console.error('No se pudo abrir el perfil pendiente', profileError);
+        toast(profileError?.message || 'No se pudo abrir el perfil solicitado.', 'error');
+        state.view='feed';
+        state.profile=null;
+        setHomeBrowserUrl({ replace:true });
+        await renderView();
       }
     } else {
       await renderView();
@@ -1892,7 +1926,7 @@ async function init() {
 window.addEventListener('popstate', async () => {
   if (!state.token) {
     const username = profileUsernameFromPath(location.pathname);
-    if (username) localStorage.setItem('pendingProfileUsername', username);
+    if (username) rememberPendingProfile(username);
     authScreen();
     return;
   }
