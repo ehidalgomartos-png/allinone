@@ -1,13 +1,59 @@
-// V1.2.3 · Captura de enlaces de invitación antes del registro.
+// V1.2.5 · URLs limpias de perfil: https://instantadmirers.com/usuario
+const RESERVED_PROFILE_SLUGS = new Set([
+  'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
+  'favicon.ico','manifest.webmanifest','robots.txt','sitemap.xml','login','register','logout','admin',
+  'feed','reels','discover','search','messages','notifications','bookmarks','friends','settings','profile',
+  'invite','invites','help','support','about'
+]);
+
+function profileUsernameFromPath(pathname = location.pathname) {
+  try {
+    const parts = String(pathname || '/').split('/').filter(Boolean);
+    if (parts.length !== 1) return '';
+    const raw = decodeURIComponent(parts[0]).replace(/^@/, '').trim();
+    if (!/^[a-zA-Z0-9_.]{3,30}$/.test(raw)) return '';
+    if (RESERVED_PROFILE_SLUGS.has(raw.toLowerCase())) return '';
+    return raw;
+  } catch (_) { return ''; }
+}
+
+function profileUrl(username = '') {
+  const clean = String(username).trim().replace(/^@/, '');
+  return `${location.origin}/${encodeURIComponent(clean)}`;
+}
+
+function setProfileBrowserUrl(username, { replace = false } = {}) {
+  const clean = String(username || '').trim().replace(/^@/, '');
+  if (!clean) return;
+  const next = `/${encodeURIComponent(clean)}`;
+  if (location.pathname === next && !location.search) return;
+  history[replace ? 'replaceState' : 'pushState']({ profile: clean }, '', next);
+}
+
+function setHomeBrowserUrl({ replace = false } = {}) {
+  if (location.pathname === '/' && !location.search) return;
+  history[replace ? 'replaceState' : 'pushState']({ view: 'feed' }, '', '/');
+}
+
 (() => {
   try {
     const params = new URLSearchParams(location.search);
     const ref = String(params.get('ref') || '').trim();
     const gate = String(params.get('gate') || '').trim();
-    const profile = String(params.get('profile') || '').trim().replace(/^@/,'');
+    const pathProfile = profileUsernameFromPath(location.pathname);
+    const legacyProfile = String(params.get('profile') || '').trim().replace(/^@/, '');
+    const profile = pathProfile || legacyProfile;
     if (ref) localStorage.setItem('pendingReferralCode', ref);
     if (ref && gate) localStorage.setItem('pendingGateCode', gate);
-    if (/^[a-zA-Z0-9_.]{3,30}$/.test(profile)) localStorage.setItem('pendingProfileUsername', profile);
+    if (/^[a-zA-Z0-9_.]{3,30}$/.test(profile) && !RESERVED_PROFILE_SLUGS.has(profile.toLowerCase())) {
+      localStorage.setItem('pendingProfileUsername', profile);
+      // Convierte enlaces antiguos ?profile=usuario al nuevo formato /usuario sin romper ref/invite.
+      if (!pathProfile && legacyProfile && !params.get('action')) {
+        params.delete('profile');
+        const qs = params.toString();
+        history.replaceState({ profile }, '', `/${encodeURIComponent(profile)}${qs ? '?' + qs : ''}`);
+      }
+    }
   } catch (_) {}
 })();
 
@@ -184,6 +230,7 @@ function legalLinks() {
 }
 
 function authScreen() {
+  const directProfile = String(localStorage.getItem('pendingProfileUsername') || profileUsernameFromPath(location.pathname) || '').trim();
   $('#app').innerHTML = `
     <div class="auth-page">
       <section class="auth-hero">
@@ -194,6 +241,7 @@ function authScreen() {
       </section>
       <section class="auth-card-wrap">
         <section class="auth-card card">
+          ${directProfile ? `<div class="invite-auth-note profile-direct-note"><b>Perfil de @${escapeHtml(directProfile)}</b><span>Inicia sesión o crea tu cuenta para entrar directamente en este perfil.</span></div>` : ''}
           <div class="tabs">
             <button id="loginTab" class="tab active" onclick="showAuth('login')">Entrar</button>
             <button id="registerTab" class="tab" onclick="showAuth('register')">Crear cuenta</button>
@@ -218,8 +266,8 @@ window.showAuth = (mode) => {
       <button class="auth-text-link" onclick="openForgotPassword()">¿Has olvidado tu contraseña?</button>
     </div>` : `
     <div class="auth-form">
-      ${localStorage.getItem('pendingProfileUsername')
-        ? `<div class="invite-auth-note profile-invite-note"><b>🔐 Te han invitado al perfil de @${escapeHtml(localStorage.getItem('pendingProfileUsername'))}</b><span>Crea tu cuenta. Entrarás directamente a ese perfil y podrás usar Instant Admirers con normalidad mientras completas su acceso.</span></div>`
+      ${(localStorage.getItem('pendingProfileUsername') || profileUsernameFromPath(location.pathname))
+        ? `<div class="invite-auth-note profile-invite-note"><b>🔐 Te han invitado al perfil de @${escapeHtml(localStorage.getItem('pendingProfileUsername') || profileUsernameFromPath(location.pathname))}</b><span>Crea tu cuenta. Entrarás directamente a ese perfil y podrás usar Instant Admirers con normalidad mientras completas su acceso.</span></div>`
         : (localStorage.getItem('pendingReferralCode') ? '<div class="invite-auth-note"><b>💬 Has llegado con una invitación</b><span>Crea tu perfil en Instant Admirers desde aquí.</span></div>' : '')}
       <label>Nombre</label><input id="regname" placeholder="Tu nombre">
       <label>Usuario</label><input id="reguser" autocomplete="username" placeholder="tuusuario">
@@ -405,10 +453,15 @@ window.logout = () => {
   localStorage.removeItem('token'); state.token = ''; state.me = null; state.view = 'feed'; authScreen();
 };
 
-window.go = async (view) => {
+window.go = async (view, opts = {}) => {
   if (state.messagePoll) { clearInterval(state.messagePoll); state.messagePoll = null; }
   state.view = view;
-  if (view !== 'profile') state.profile = null;
+  if (view !== 'profile') {
+    document.title = 'Instant Admirers — Conecta. Comparte. Descubre.';
+    const canonical = document.querySelector('link[rel="canonical"]'); if (canonical) canonical.href = location.origin + '/';
+    state.profile = null;
+    if (opts.history !== false) setHomeBrowserUrl({ replace:Boolean(opts.replace) });
+  }
   if (view !== 'messages') { state.activeConversation = null; state.replyTo = null; }
   layout();
   await renderView();
@@ -740,11 +793,13 @@ function userRow(u) {
   return `<div class="user-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u)}<span><b>${escapeHtml(u.name)}${u.account_private ? ' <i class="private-mini">🔒</i>' : ''}</b><small>@${escapeHtml(u.username)}</small>${summary ? `<em>${escapeHtml(summary).slice(0,90)}</em>` : ''}</span></button>${followButtonHtml(u)}</div>`;
 }
 
-window.openProfile = async (username) => { if (state.messagePoll) { clearInterval(state.messagePoll); state.messagePoll = null; } state.view = 'profile'; state.profile = username; layout(); await renderProfile(username); };
+window.openProfile = async (username, opts = {}) => { if (state.messagePoll) { clearInterval(state.messagePoll); state.messagePoll = null; } state.view = 'profile'; state.profile = username; if (opts.history !== false) setProfileBrowserUrl(username, { replace:Boolean(opts.replace) }); layout(); await renderProfile(username); };
 
 async function renderProfile(username) {
   const u = await api('/api/users/' + encodeURIComponent(username));
   state.profileData = u;
+  document.title = `${u.name || u.username} (@${u.username}) · Instant Admirers`;
+  const canonical = document.querySelector('link[rel="canonical"]'); if (canonical) canonical.href = profileUrl(u.username);
   const profileLocked = Boolean(u.profile_locked);
   let posts = [];
   if (!u.blocked_by_me && !profileLocked) posts = await api('/api/users/' + encodeURIComponent(username) + '/posts');
@@ -753,7 +808,7 @@ async function renderProfile(username) {
   const privateLocked = !profileLocked && u.account_private && !u.own && !u.following;
   let actions = '';
   if (u.own) {
-    actions = `<div class="profile-desktop-actions"><button class="btn ghost compact" onclick="go('friends')">Amigos</button><button class="btn ghost compact" onclick="openFriendGateSettings()">🔐 Condición</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad</button><button class="btn ghost compact" onclick="openAccountSettings()">Ajustes</button>${state.me?.is_admin ? `<button class="btn ghost compact" onclick="go('admin')">Administración</button>` : ''}<button class="btn ghost compact" onclick="editProfile()">Editar perfil</button></div><div class="profile-mobile-actions"><button class="btn ghost compact profile-edit-mobile" onclick="editProfile()">Editar perfil</button><button class="icon-btn profile-own-more" title="Más opciones" aria-label="Más opciones de perfil" onclick="openOwnProfileMenu()">•••</button></div>`;
+    actions = `<div class="profile-desktop-actions"><button class="btn ghost compact" onclick="sharePublicProfile('${escapeAttr(u.username)}')">Compartir perfil</button><button class="btn ghost compact" onclick="go('friends')">Amigos</button><button class="btn ghost compact" onclick="openFriendGateSettings()">🔐 Condición</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad</button><button class="btn ghost compact" onclick="openAccountSettings()">Ajustes</button>${state.me?.is_admin ? `<button class="btn ghost compact" onclick="go('admin')">Administración</button>` : ''}<button class="btn ghost compact" onclick="editProfile()">Editar perfil</button></div><div class="profile-mobile-actions"><button class="btn ghost compact profile-edit-mobile" onclick="editProfile()">Editar perfil</button><button class="icon-btn profile-own-more" title="Más opciones" aria-label="Más opciones de perfil" onclick="openOwnProfileMenu()">•••</button></div>`;
   } else if (u.blocked_by_me) {
     actions = `<button class="btn primary compact" onclick="toggleBlock(${u.id},'${escapeAttr(u.username)}')">Desbloquear</button>`;
   } else {
@@ -783,6 +838,7 @@ async function renderProfile(username) {
 window.openProfileMenu = (userId, username, muted = false) => {
   modal(`<div class="modal-head"><h3>@${escapeHtml(username)}</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
     <div class="post-menu">
+      <button onclick="closeModal();sharePublicProfile('${escapeAttr(username)}')"><span>↗</span><div><b>Compartir perfil</b><small>${escapeHtml(profileUrl(username))}</small></div></button>
       <button onclick="closeModal();toggleMute(${userId},'${escapeAttr(username)}')"><span>◌</span><div><b>${muted ? 'Dejar de silenciar' : 'Silenciar'}</b><small>${muted ? 'Volver a mostrar su contenido' : 'Ocultar sus posts y Stories de tus feeds'}</small></div></button>
       <button onclick="reportModal({userId:${userId},username:'${escapeAttr(username)}'})"><span>!</span><div><b>Denunciar perfil</b><small>Enviar este perfil a revisión</small></div></button>
       <button class="danger-option" onclick="closeModal();toggleBlock(${userId},'${escapeAttr(username)}')"><span>⊘</span><div><b>Bloquear</b><small>Impide seguimiento, amistad y mensajes</small></div></button>
@@ -934,6 +990,7 @@ function friendRow(u) {
 window.openOwnProfileMenu = () => {
   modal(`<div class="modal-head"><h3>Tu perfil</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
     <div class="post-menu own-profile-menu">
+      <button onclick="closeModal();sharePublicProfile('${escapeAttr(state.me?.username || '')}')"><span>↗</span><div><b>Compartir mi perfil</b><small>instantadmirers.com/${escapeHtml(state.me?.username || '')}</small></div></button>
       <button onclick="closeModal();go('friends')"><span>👥</span><div><b>Amigos</b><small>Gestiona amistades y solicitudes</small></div></button>
       <button onclick="closeModal();openInviteFriends()"><span>💬</span><div><b>Invitar amigos</b><small>Comparte tu enlace por WhatsApp y sigue tus referidos</small></div></button>
       <button onclick="closeModal();openFriendGateSettings()"><span>🔐</span><div><b>Acceso a mi perfil</b><small>Pide invitaciones antes de que puedan ver tu perfil</small></div></button>
@@ -974,6 +1031,16 @@ window.openInviteFriends = async () => {
 };
 
 window.copyInviteLink = async link => { try{await navigator.clipboard.writeText(link);toast('Enlace copiado');}catch(_){prompt('Copia este enlace:',link);} };
+window.sharePublicProfile = async (username) => {
+  const url = profileUrl(username);
+  const title = `@${username} en Instant Admirers`;
+  const text = `Mira el perfil de @${username} en Instant Admirers`;
+  try {
+    if (navigator.share) { await navigator.share({ title, text, url }); return; }
+  } catch (err) { if (err?.name === 'AbortError') return; }
+  try { await navigator.clipboard.writeText(url); toast('Enlace del perfil copiado'); }
+  catch (_) { prompt('Copia este enlace:', url); }
+};
 window.shareNormalInviteWhatsApp = link => {
   const text=`¡Únete a Instant Admirers! Crea tu perfil y nos vemos dentro: ${link}`;
   window.open(`https://wa.me/?text=${encodeURIComponent(text)}`,'_blank','noopener');
@@ -1780,17 +1847,18 @@ async function init() {
   try {
     state.me = await api('/api/me');
     connectRealtime();
-    const pendingProfile = String(localStorage.getItem('pendingProfileUsername') || '').trim();
+    const pendingProfile = String(localStorage.getItem('pendingProfileUsername') || profileUsernameFromPath(location.pathname) || '').trim();
     if (pendingProfile) {
       state.view='profile';
       state.profile=pendingProfile;
     }
     layout();
     if (pendingProfile) {
-      try { await renderProfile(pendingProfile); }
-      finally {
+      try {
+        setProfileBrowserUrl(pendingProfile, { replace:true });
+        await renderProfile(pendingProfile);
+      } finally {
         localStorage.removeItem('pendingProfileUsername');
-        history.replaceState({},'',location.pathname);
       }
     } else {
       await renderView();
@@ -1804,6 +1872,23 @@ async function init() {
     logout();
   }
 }
+
+window.addEventListener('popstate', async () => {
+  if (!state.token) {
+    const username = profileUsernameFromPath(location.pathname);
+    if (username) localStorage.setItem('pendingProfileUsername', username);
+    authScreen();
+    return;
+  }
+  const username = profileUsernameFromPath(location.pathname);
+  try {
+    if (username) {
+      state.view = 'profile'; state.profile = username; layout(); await renderProfile(username);
+    } else {
+      await go('feed', { history:false });
+    }
+  } catch (e) { toast(e.message, 'error'); }
+});
 
 window.addEventListener('offline', () => showNetworkState(false));
 window.addEventListener('online', () => showNetworkState(true));

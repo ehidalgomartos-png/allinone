@@ -588,8 +588,15 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.2.4', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks'] });
+  res.json({ ok: true, version: '1.2.5', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links'] });
 }));
+
+const RESERVED_PROFILE_SLUGS = new Set([
+  'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
+  'favicon.ico','manifest.webmanifest','robots.txt','sitemap.xml','login','register','logout','admin',
+  'feed','reels','discover','search','messages','notifications','bookmarks','friends','settings','profile',
+  'invite','invites','help','support','about'
+]);
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
   const { username, name, email, password, age_confirmed, terms_accepted, terms_version, referral_code, gate_code } = req.body;
@@ -603,6 +610,7 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
   const plainPassword = String(password);
 
   if (!/^[a-zA-Z0-9_.]{3,30}$/.test(normalizedUsername)) return res.status(400).json({ error: 'El usuario debe tener 3-30 caracteres: letras, números, _ o .' });
+  if (RESERVED_PROFILE_SLUGS.has(normalizedUsername)) return res.status(400).json({ error: 'Ese nombre de usuario está reservado. Elige otro.' });
   if (!normalizedEmail.includes('@') || normalizedEmail.length > 255) return res.status(400).json({ error: 'Email inválido' });
   if (plainPassword.length < 8) return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
 
@@ -1416,7 +1424,7 @@ app.get('/api/invites/me', auth, asyncRoute(async (req,res)=>{
   `,[req.user.id]);
   const normalLink = `${APP_URL}/?ref=${encodeURIComponent(code)}`;
   const profileLink = me.friend_gate_enabled
-    ? `${APP_URL}/?profile=${encodeURIComponent(me.username)}&ref=${encodeURIComponent(code)}&invite=profile`
+    ? `${APP_URL}/${encodeURIComponent(me.username)}?ref=${encodeURIComponent(code)}&invite=profile`
     : '';
   res.json({
     code,
@@ -2087,7 +2095,7 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   await initDb();
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.2.3 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.2.5 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {
