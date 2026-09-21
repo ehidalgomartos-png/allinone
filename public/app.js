@@ -235,8 +235,9 @@ function authScreen() {
     <div class="auth-page">
       <section class="auth-hero">
         <div class="brand-logo-wrap">${brandLockup('big')}</div>
-        <h1>Encuentra tu gente. Comparte tu mundo.</h1>
-        <p><span class="auth-copy-desktop">Conecta con personas, comparte fotos y vídeos, descubre nuevas historias y crea una comunidad a tu manera.</span><span class="auth-copy-mobile">Conecta con personas y comparte lo que te importa.</span></p>
+        <div class="auth-mobile-kicker"><span></span> Tu comunidad, a tu manera</div>
+        <h1><span>Encuentra tu gente.</span> <span class="hero-accent">Comparte tu mundo.</span></h1>
+        <p><span class="auth-copy-desktop">Conecta con personas, comparte fotos y vídeos, descubre nuevas historias y crea una comunidad a tu manera.</span><span class="auth-copy-mobile">Conecta, publica y descubre nuevas historias.</span></p>
         <div class="hero-pills"><span>📸 Fotos</span><span>🎬 Vídeos</span><span>💬 Conversaciones</span><span>✨ Comunidad</span></div>
       </section>
       <section class="auth-card-wrap">

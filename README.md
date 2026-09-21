@@ -1,4 +1,4 @@
-# Instant Admirers V1.2.6
+# Instant Admirers V1.2.7
 
 ## URLs públicas de perfil
 
@@ -21,8 +21,13 @@ https://instantadmirers.com/nombredeusuario
 
 No hay migraciones de PostgreSQL. Se conserva toda la información de V1.2.4.
 
-Consulta `ACTUALIZAR-A-V1.2.6.md`.
+Consulta `ACTUALIZAR-A-V1.2.7.md`.
 
 
 ## V1.2.6
 Rediseño responsive del panel de acceso especial por invitaciones.
+
+
+## V1.2.7
+
+Portada móvil más expresiva y premium sin alterar el escritorio ni la base de datos.
