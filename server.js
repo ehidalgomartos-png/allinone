@@ -467,6 +467,17 @@ async function postQuery(userId, { mode = 'following', profileId = null, search 
   // Privacidad V0.9: bloqueos, perfiles privados y silencios en feeds automáticos.
   clauses.push(`NOT EXISTS (SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))`);
   clauses.push(`(p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))`);
+  // V1.2.4: un perfil con reto de acceso no filtra sus posts antes del desbloqueo.
+  clauses.push(`(
+    p.user_id=$1 OR NOT u.friend_gate_enabled OR
+    EXISTS(SELECT 1 FROM friendships fgfr WHERE (fgfr.user1_id=$1 AND fgfr.user2_id=p.user_id) OR (fgfr.user1_id=p.user_id AND fgfr.user2_id=$1)) OR
+    (
+      CASE WHEN u.friend_gate_require_post
+        THEN (SELECT COUNT(*) FROM referral_attributions gra WHERE gra.inviter_id=$1 AND gra.gate_user_id=p.user_id AND gra.qualified_at IS NOT NULL)
+        ELSE (SELECT COUNT(*) FROM referral_attributions gra WHERE gra.inviter_id=$1 AND gra.gate_user_id=p.user_id)
+      END
+    ) >= u.friend_gate_required_referrals
+  )`);
   if (!profileId) clauses.push(`NOT EXISTS (SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)`);
   clauses.push(`u.account_status = 'active'`);
   clauses.push(`(p.visibility = 'public' OR p.user_id = $1 OR (p.visibility = 'followers' AND EXISTS (SELECT 1 FROM follows vf WHERE vf.follower_id = $1 AND vf.followed_id = p.user_id)))`);
@@ -577,7 +588,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.2.3', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates'] });
+  res.json({ ok: true, version: '1.2.4', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks'] });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
@@ -1177,13 +1188,51 @@ app.get('/api/users/:username', auth, asyncRoute(async (req, res) => {
   if (row.blocked_me && !row.own) return res.status(404).json({ error:'Perfil no disponible' });
   const canMessage = row.own ? false : await canMessageUser(req.user.id,row.id);
   const friendGate = (!row.own && row.friend_gate_enabled && row.friendship_status !== 'friends') ? await friendGateProgress(req.user.id,row.id) : null;
-  res.json({ ...safeUser(row), can_message:canMessage, followers_count: row.followers_count, following_count: row.following_count, posts_count: row.posts_count, friends_count: row.friends_count, following: Boolean(row.following), follow_requested:Boolean(row.follow_requested), muted:Boolean(row.muted), blocked_by_me:Boolean(row.blocked_by_me), friendship_status: row.friendship_status, friend_request_id: row.friend_request_id, friend_gate:friendGate, own: Boolean(row.own), online: isOnline(row.id), last_seen_at: row.last_seen_at });
+  const profileLocked = Boolean(friendGate?.enabled && !friendGate.unlocked && row.friendship_status !== 'friends' && !row.own);
+
+  if (profileLocked) {
+    const teaser = safeUser(row);
+    teaser.cover = '';
+    teaser.headline = '';
+    teaser.bio = '';
+    teaser.interests = '';
+    teaser.location = '';
+    teaser.website = '';
+    return res.json({
+      ...teaser,
+      can_message:false,
+      followers_count:0,
+      following_count:0,
+      posts_count:0,
+      friends_count:0,
+      following:Boolean(row.following),
+      follow_requested:Boolean(row.follow_requested),
+      muted:Boolean(row.muted),
+      blocked_by_me:Boolean(row.blocked_by_me),
+      friendship_status:row.friendship_status,
+      friend_request_id:row.friend_request_id,
+      friend_gate:friendGate,
+      profile_locked:true,
+      own:false,
+      online:false,
+      last_seen_at:null
+    });
+  }
+
+  res.json({ ...safeUser(row), can_message:canMessage, followers_count: row.followers_count, following_count: row.following_count, posts_count: row.posts_count, friends_count: row.friends_count, following: Boolean(row.following), follow_requested:Boolean(row.follow_requested), muted:Boolean(row.muted), blocked_by_me:Boolean(row.blocked_by_me), friendship_status: row.friendship_status, friend_request_id: row.friend_request_id, friend_gate:friendGate, profile_locked:false, own: Boolean(row.own), online: isOnline(row.id), last_seen_at: row.last_seen_at });
 }));
 
 app.get('/api/users/:username/posts', auth, asyncRoute(async (req, res) => {
-  const found = await pool.query('SELECT id FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1', [req.params.username]);
+  const found = await pool.query('SELECT id,friend_gate_enabled FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1', [req.params.username]);
   if (!found.rowCount) return res.status(404).json({ error: 'Usuario no encontrado' });
-  res.json(await postQuery(req.user.id, { mode: 'all', profileId: found.rows[0].id }));
+  const target = found.rows[0];
+  if (Number(target.id) !== Number(req.user.id) && target.friend_gate_enabled) {
+    const pair = friendshipPair(req.user.id,target.id);
+    const friendship = await pool.query('SELECT 1 FROM friendships WHERE user1_id=$1 AND user2_id=$2 LIMIT 1',pair);
+    const gate = friendship.rowCount ? null : await friendGateProgress(req.user.id,target.id);
+    if (gate?.enabled && !gate.unlocked) return res.status(403).json({ error:'Completa el reto para ver este perfil', code:'PROFILE_ACCESS_LOCKED', friend_gate:gate });
+  }
+  res.json(await postQuery(req.user.id, { mode: 'all', profileId: target.id }));
 }));
 
 app.post('/api/users/:id/follow', auth, asyncRoute(async (req, res) => {
@@ -1353,8 +1402,9 @@ app.get('/api/friends/requests', auth, asyncRoute(async (req, res) => {
 
 // --- V1.2.3: invitaciones y retos de amistad ------------------------------
 app.get('/api/invites/me', auth, asyncRoute(async (req,res)=>{
-  const userResult = await pool.query('SELECT invite_code FROM users WHERE id=$1',[req.user.id]);
-  const code = userResult.rows[0]?.invite_code || '';
+  const userResult = await pool.query(`SELECT invite_code,username,friend_gate_enabled,friend_gate_required_referrals,friend_gate_require_post FROM users WHERE id=$1`,[req.user.id]);
+  const me = userResult.rows[0] || {};
+  const code = me.invite_code || '';
   const {rows:summaryRows}=await pool.query(`SELECT COUNT(*)::int AS registered, COUNT(*) FILTER (WHERE qualified_at IS NOT NULL)::int AS qualified FROM referral_attributions WHERE inviter_id=$1`,[req.user.id]);
   const {rows:recent}=await pool.query(`
     SELECT ra.id,ra.registered_at,ra.qualified_at,u.id AS user_id,u.username,u.name,u.avatar,
@@ -1364,7 +1414,25 @@ app.get('/api/invites/me', auth, asyncRoute(async (req,res)=>{
       LEFT JOIN users gate ON gate.id=ra.gate_user_id
      WHERE ra.inviter_id=$1 ORDER BY ra.registered_at DESC LIMIT 30
   `,[req.user.id]);
-  res.json({code,link:`${APP_URL}/?ref=${encodeURIComponent(code)}`,registered:Number(summaryRows[0]?.registered||0),qualified:Number(summaryRows[0]?.qualified||0),recent});
+  const normalLink = `${APP_URL}/?ref=${encodeURIComponent(code)}`;
+  const profileLink = me.friend_gate_enabled
+    ? `${APP_URL}/?profile=${encodeURIComponent(me.username)}&ref=${encodeURIComponent(code)}&invite=profile`
+    : '';
+  res.json({
+    code,
+    link:normalLink,
+    normal_link:normalLink,
+    profile_link:profileLink,
+    username:me.username || '',
+    friend_gate:{
+      enabled:Boolean(me.friend_gate_enabled),
+      required:Number(me.friend_gate_required_referrals || 5),
+      require_post:me.friend_gate_require_post !== false
+    },
+    registered:Number(summaryRows[0]?.registered||0),
+    qualified:Number(summaryRows[0]?.qualified||0),
+    recent
+  });
 }));
 
 app.get('/api/friend-gate', auth, asyncRoute(async (req,res)=>{
@@ -1537,6 +1605,16 @@ app.get('/api/stories', auth, asyncRoute(async (req, res) => {
        AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=s.user_id)
        AND (s.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=s.user_id))
        AND (
+         s.user_id=$1 OR NOT u.friend_gate_enabled OR
+         EXISTS(SELECT 1 FROM friendships sgfr WHERE (sgfr.user1_id=$1 AND sgfr.user2_id=s.user_id) OR (sgfr.user1_id=s.user_id AND sgfr.user2_id=$1)) OR
+         (
+           CASE WHEN u.friend_gate_require_post
+             THEN (SELECT COUNT(*) FROM referral_attributions sra WHERE sra.inviter_id=$1 AND sra.gate_user_id=s.user_id AND sra.qualified_at IS NOT NULL)
+             ELSE (SELECT COUNT(*) FROM referral_attributions sra WHERE sra.inviter_id=$1 AND sra.gate_user_id=s.user_id)
+           END
+         ) >= u.friend_gate_required_referrals
+       )
+       AND (
          s.visibility = 'public' OR s.user_id = $1 OR
          (s.visibility = 'followers' AND EXISTS(
            SELECT 1 FROM follows vf WHERE vf.follower_id = $1 AND vf.followed_id = s.user_id
@@ -1570,7 +1648,18 @@ app.post('/api/stories/:id/view', auth, asyncRoute(async (req, res) => {
      WHERE s.id = $1
        AND u.account_status='active'
        AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$2 AND bl.blocked_id=s.user_id) OR (bl.blocker_id=s.user_id AND bl.blocked_id=$2))
-       AND (s.user_id=$2 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$2 AND pf.followed_id=s.user_id)) AND s.expires_at > NOW()
+       AND (s.user_id=$2 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$2 AND pf.followed_id=s.user_id))
+       AND (
+         s.user_id=$2 OR NOT u.friend_gate_enabled OR
+         EXISTS(SELECT 1 FROM friendships svgfr WHERE (svgfr.user1_id=$2 AND svgfr.user2_id=s.user_id) OR (svgfr.user1_id=s.user_id AND svgfr.user2_id=$2)) OR
+         (
+           CASE WHEN u.friend_gate_require_post
+             THEN (SELECT COUNT(*) FROM referral_attributions svra WHERE svra.inviter_id=$2 AND svra.gate_user_id=s.user_id AND svra.qualified_at IS NOT NULL)
+             ELSE (SELECT COUNT(*) FROM referral_attributions svra WHERE svra.inviter_id=$2 AND svra.gate_user_id=s.user_id)
+           END
+         ) >= u.friend_gate_required_referrals
+       )
+       AND s.expires_at > NOW()
        AND (s.visibility = 'public' OR s.user_id = $2 OR
          (s.visibility = 'followers' AND EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = $2 AND f.followed_id = s.user_id)))
   `, [req.params.id, req.user.id]);
@@ -1616,6 +1705,16 @@ app.get('/api/reels', auth, asyncRoute(async (req, res) => {
        AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
        AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)
        AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
+       AND (
+         p.user_id=$1 OR NOT u.friend_gate_enabled OR
+         EXISTS(SELECT 1 FROM friendships rgfr WHERE (rgfr.user1_id=$1 AND rgfr.user2_id=p.user_id) OR (rgfr.user1_id=p.user_id AND rgfr.user2_id=$1)) OR
+         (
+           CASE WHEN u.friend_gate_require_post
+             THEN (SELECT COUNT(*) FROM referral_attributions rra WHERE rra.inviter_id=$1 AND rra.gate_user_id=p.user_id AND rra.qualified_at IS NOT NULL)
+             ELSE (SELECT COUNT(*) FROM referral_attributions rra WHERE rra.inviter_id=$1 AND rra.gate_user_id=p.user_id)
+           END
+         ) >= u.friend_gate_required_referrals
+       )
        AND (p.visibility = 'public' OR p.user_id = $1 OR
          (p.visibility = 'followers' AND EXISTS(SELECT 1 FROM follows vf WHERE vf.follower_id = $1 AND vf.followed_id = p.user_id)))
      GROUP BY p.id, u.id
@@ -1643,6 +1742,16 @@ async function canUserViewPost(postId, viewerId) {
        AND u.account_status='active'
        AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$2 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$2))
        AND (p.user_id=$2 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$2 AND pf.followed_id=p.user_id))
+       AND (
+         p.user_id=$2 OR NOT u.friend_gate_enabled OR
+         EXISTS(SELECT 1 FROM friendships pvgfr WHERE (pvgfr.user1_id=$2 AND pvgfr.user2_id=p.user_id) OR (pvgfr.user1_id=p.user_id AND pvgfr.user2_id=$2)) OR
+         (
+           CASE WHEN u.friend_gate_require_post
+             THEN (SELECT COUNT(*) FROM referral_attributions pvra WHERE pvra.inviter_id=$2 AND pvra.gate_user_id=p.user_id AND pvra.qualified_at IS NOT NULL)
+             ELSE (SELECT COUNT(*) FROM referral_attributions pvra WHERE pvra.inviter_id=$2 AND pvra.gate_user_id=p.user_id)
+           END
+         ) >= u.friend_gate_required_referrals
+       )
        AND (p.visibility='public' OR p.user_id=$2 OR
        (p.visibility='followers' AND EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=$2 AND f.followed_id=p.user_id)))
      LIMIT 1

@@ -1,16 +1,9 @@
-# Render — Instant Admirers V1.2.3
+# Deploy Instant Admirers V1.2.4
 
-No necesitas crear un servicio ni una base nuevos.
+Usa el mismo servicio Render y la misma PostgreSQL existentes.
 
-1. Sube V1.2.3 al repositorio actual.
-2. Render hará Auto-Deploy.
-3. El arranque ejecutará las migraciones PostgreSQL automáticamente.
-4. Comprueba `/api/health`.
+- Build Command: `npm install`
+- Start Command: `npm start`
+- Dominio: `https://instantadmirers.com`
 
-Resultado esperado:
-
-```json
-{"ok":true,"version":"1.2.3"}
-```
-
-No hay variables de entorno nuevas obligatorias en esta versión.
+Después del deploy comprueba `/api/health` y confirma `version: 1.2.4`.

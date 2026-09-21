@@ -4,8 +4,10 @@
     const params = new URLSearchParams(location.search);
     const ref = String(params.get('ref') || '').trim();
     const gate = String(params.get('gate') || '').trim();
+    const profile = String(params.get('profile') || '').trim().replace(/^@/,'');
     if (ref) localStorage.setItem('pendingReferralCode', ref);
     if (ref && gate) localStorage.setItem('pendingGateCode', gate);
+    if (/^[a-zA-Z0-9_.]{3,30}$/.test(profile)) localStorage.setItem('pendingProfileUsername', profile);
   } catch (_) {}
 })();
 
@@ -216,7 +218,9 @@ window.showAuth = (mode) => {
       <button class="auth-text-link" onclick="openForgotPassword()">¿Has olvidado tu contraseña?</button>
     </div>` : `
     <div class="auth-form">
-      ${localStorage.getItem('pendingReferralCode') ? '<div class="invite-auth-note"><b>💬 Has llegado con una invitación</b><span>Crea tu cuenta desde aquí para que la invitación quede registrada.</span></div>' : ''}
+      ${localStorage.getItem('pendingProfileUsername')
+        ? `<div class="invite-auth-note profile-invite-note"><b>🔐 Te han invitado al perfil de @${escapeHtml(localStorage.getItem('pendingProfileUsername'))}</b><span>Crea tu cuenta. Entrarás directamente a ese perfil y podrás usar Instant Admirers con normalidad mientras completas su acceso.</span></div>`
+        : (localStorage.getItem('pendingReferralCode') ? '<div class="invite-auth-note"><b>💬 Has llegado con una invitación</b><span>Crea tu perfil en Instant Admirers desde aquí.</span></div>' : '')}
       <label>Nombre</label><input id="regname" placeholder="Tu nombre">
       <label>Usuario</label><input id="reguser" autocomplete="username" placeholder="tuusuario">
       <label>Email</label><input id="regemail" type="email" autocomplete="email" placeholder="tu@email.com">
@@ -741,11 +745,12 @@ window.openProfile = async (username) => { if (state.messagePoll) { clearInterva
 async function renderProfile(username) {
   const u = await api('/api/users/' + encodeURIComponent(username));
   state.profileData = u;
+  const profileLocked = Boolean(u.profile_locked);
   let posts = [];
-  if (!u.blocked_by_me) posts = await api('/api/users/' + encodeURIComponent(username) + '/posts');
+  if (!u.blocked_by_me && !profileLocked) posts = await api('/api/users/' + encodeURIComponent(username) + '/posts');
   const website = u.website ? `<a class="profile-link" href="${escapeAttr(normalizeUrl(u.website))}" target="_blank" rel="noopener">↗ ${escapeHtml(u.website)}</a>` : '';
   const interests = String(u.interests || '').split(',').map(x=>x.trim()).filter(Boolean).slice(0,10);
-  const privateLocked = u.account_private && !u.own && !u.following;
+  const privateLocked = !profileLocked && u.account_private && !u.own && !u.following;
   let actions = '';
   if (u.own) {
     actions = `<div class="profile-desktop-actions"><button class="btn ghost compact" onclick="go('friends')">Amigos</button><button class="btn ghost compact" onclick="openFriendGateSettings()">🔐 Condición</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad</button><button class="btn ghost compact" onclick="openAccountSettings()">Ajustes</button>${state.me?.is_admin ? `<button class="btn ghost compact" onclick="go('admin')">Administración</button>` : ''}<button class="btn ghost compact" onclick="editProfile()">Editar perfil</button></div><div class="profile-mobile-actions"><button class="btn ghost compact profile-edit-mobile" onclick="editProfile()">Editar perfil</button><button class="icon-btn profile-own-more" title="Más opciones" aria-label="Más opciones de perfil" onclick="openOwnProfileMenu()">•••</button></div>`;
@@ -765,12 +770,14 @@ async function renderProfile(username) {
       ${u.bio && !u.blocked_by_me ? `<p class="profile-bio">${formatText(u.bio)}</p>` : ''}
       ${!u.blocked_by_me ? `<div class="profile-meta">${u.location ? `<span>⌖ ${escapeHtml(u.location)}</span>` : ''}${website}</div>` : ''}
       ${interests.length && !u.blocked_by_me ? `<div class="interest-chips">${interests.map(x=>`<button onclick="searchTag('#${escapeAttr(x.replace(/^#/,'').replace(/\s+/g,'_'))}')">${escapeHtml(x)}</button>`).join('')}</div>` : ''}
-      <div class="profile-stats"><span><b>${u.posts_count}</b> publicaciones</span><span><b>${u.followers_count}</b> seguidores</span><span><b>${u.following_count}</b> siguiendo</span>${u.own ? `<button onclick="go('friends')"><b>${u.friends_count || 0}</b> amigos</button>` : `<span><b>${u.friends_count || 0}</b> amigos</span>`}</div>
+      ${profileLocked
+        ? `<div class="profile-stats locked-profile-stats"><span>🔐 Perfil con acceso especial</span></div>`
+        : `<div class="profile-stats"><span><b>${u.posts_count}</b> publicaciones</span><span><b>${u.followers_count}</b> seguidores</span><span><b>${u.following_count}</b> siguiendo</span>${u.own ? `<button onclick="go('friends')"><b>${u.friends_count || 0}</b> amigos</button>` : `<span><b>${u.friends_count || 0}</b> amigos</span>`}</div>`}
     </div>
   </section>
   ${friendGateBanner(u)}
   ${privateLocked ? `<div class="card private-profile-lock"><div>🔒</div><h3>Esta cuenta es privada</h3><p>Envía una solicitud para ver sus publicaciones y Stories.</p>${u.follow_requested ? '<span>Solicitud de seguimiento enviada</span>' : followButtonHtml(u)}</div>` : ''}
-  ${!u.blocked_by_me && !privateLocked ? `<div class="profile-section-title">Publicaciones</div><div class="post-list">${posts.length ? posts.map(postHtml).join('') : `<div class="card empty profile-empty"><div class="empty-icon">▧</div><h3>Sin publicaciones todavía</h3><p>${u.own ? 'Tu primera publicación aparecerá aquí.' : 'Cuando publique algo, aparecerá aquí.'}</p>${u.own ? '<button class="btn primary compact" onclick="openComposerModal()">Crear publicación</button>' : ''}</div>`}</div>` : ''}`;
+  ${!u.blocked_by_me && !privateLocked && !profileLocked ? `<div class="profile-section-title">Publicaciones</div><div class="post-list">${posts.length ? posts.map(postHtml).join('') : `<div class="card empty profile-empty"><div class="empty-icon">▧</div><h3>Sin publicaciones todavía</h3><p>${u.own ? 'Tu primera publicación aparecerá aquí.' : 'Cuando publique algo, aparecerá aquí.'}</p>${u.own ? '<button class="btn primary compact" onclick="openComposerModal()">Crear publicación</button>' : ''}</div>`}</div>` : ''}`;
 }
 
 window.openProfileMenu = (userId, username, muted = false) => {
@@ -788,7 +795,7 @@ function friendButton(u) {
   if (u.friendship_status === 'friends') return `<button class="btn ghost compact friendship-btn" onclick="removeFriend(${u.id},'${escapeAttr(u.username)}')">✓ Amigos</button>`;
   if (u.friendship_status === 'sent') return `<button class="btn ghost compact friendship-btn" onclick="sendFriendRequest(${u.id},'${escapeAttr(u.username)}')">Solicitud enviada</button>`;
   if (u.friendship_status === 'received') return `<button class="btn primary compact friendship-btn" onclick="acceptFriendRequest(${Number(u.friend_request_id)},'${escapeAttr(u.username)}')">Aceptar amistad</button>`;
-  if (u.friend_gate?.enabled && !u.friend_gate.unlocked) return `<button class="btn ghost compact friendship-btn gate-btn" onclick="openFriendGateChallenge()">🔒 ${Number(u.friend_gate.progress||0)}/${Number(u.friend_gate.required||5)}</button>`;
+  if (u.friend_gate?.enabled && !u.friend_gate.unlocked) return `<button class="btn ghost compact friendship-btn gate-btn" onclick="openFriendGateChallenge()">🔒 Faltan ${Math.max(0,Number(u.friend_gate.required||5)-Number(u.friend_gate.progress||0))}</button>`;
   if (u.friend_gate?.enabled && u.friend_gate.unlocked) return `<button class="btn primary compact friendship-btn" onclick="sendFriendRequest(${u.id},'${escapeAttr(u.username)}')">✓ Acceso conseguido</button>`;
   return `<button class="btn ghost compact friendship-btn" onclick="sendFriendRequest(${u.id},'${escapeAttr(u.username)}')">＋ Amigo</button>`;
 }
@@ -796,9 +803,27 @@ function friendButton(u) {
 function friendGateBanner(u) {
   const g=u?.friend_gate;
   if(!g?.enabled || u.own || u.friendship_status==='friends') return '';
-  const pct=Math.min(100,Math.round((Number(g.progress||0)/Math.max(1,Number(g.required||1)))*100));
-  const detail=g.require_post ? `Invita a ${g.required} personas. Cada una debe registrarse con tu enlace y publicar al menos 1 post.` : `Invita a ${g.required} personas para que se registren con tu enlace.`;
-  return `<section class="card friend-gate-card ${g.unlocked?'unlocked':''}"><div class="friend-gate-icon">${g.unlocked?'✓':'🔐'}</div><div class="friend-gate-copy"><b>${g.unlocked?'Reto completado':'Desbloquea la amistad con @'+escapeHtml(u.username)}</b><p>${g.unlocked?(g.auto_accept?'Ya puedes convertirte en amigo automáticamente.':'Ya puedes enviar tu solicitud de amistad.'):detail}</p><div class="gate-progress"><span style="width:${pct}%"></span></div><small>${Number(g.progress||0)} de ${Number(g.required||0)} completados</small></div>${g.unlocked?`<button class="btn primary compact" onclick="sendFriendRequest(${u.id},'${escapeAttr(u.username)}')">${g.auto_accept?'Ser amigos':'Enviar solicitud'}</button>`:`<button class="btn primary compact whatsapp-btn" onclick="openFriendGateChallenge()">Invitar por WhatsApp</button>`}</section>`;
+  const progress=Number(g.progress||0), required=Math.max(1,Number(g.required||1));
+  const remaining=Math.max(0,required-progress);
+  const pct=Math.min(100,Math.round((progress/required)*100));
+  if(g.unlocked) return `<section class="card friend-gate-card unlocked"><div class="friend-gate-icon">✓</div><div class="friend-gate-copy"><b>Acceso conseguido</b><p>Ya puedes ver este perfil. ${g.auto_accept?'La amistad puede activarse automáticamente.':'También puedes enviarle una solicitud de amistad.'}</p><div class="gate-progress"><span style="width:100%"></span></div></div><button class="btn primary compact" onclick="renderProfile('${escapeAttr(u.username)}')">Ver perfil</button></section>`;
+  const detail=g.require_post
+    ? `Invita a ${required} personas. Cada una debe crear su perfil y publicar al menos 1 post.`
+    : `Invita a ${required} personas para que creen su perfil en Instant Admirers.`;
+  return `<section class="card friend-gate-card profile-access-gate">
+    <div class="friend-gate-icon">🔐</div>
+    <div class="friend-gate-copy">
+      <b>Te quedan ${remaining} para poder ver este perfil</b>
+      <p>${detail}</p>
+      <div class="gate-progress"><span style="width:${pct}%"></span></div>
+      <small>${progress} de ${required} completados</small>
+      <div class="gate-account-note">Tu cuenta funciona con normalidad: puedes completar tu perfil, publicar, descubrir personas y usar Instant Admirers mientras consigues el acceso.</div>
+    </div>
+    <div class="gate-actions">
+      <button class="btn primary compact whatsapp-btn" onclick="openFriendGateChallenge()">Invitar por WhatsApp</button>
+      <button class="btn ghost compact" onclick="go('feed')">Seguir usando mi cuenta</button>
+    </div>
+  </section>`;
 }
 
 
@@ -911,7 +936,7 @@ window.openOwnProfileMenu = () => {
     <div class="post-menu own-profile-menu">
       <button onclick="closeModal();go('friends')"><span>👥</span><div><b>Amigos</b><small>Gestiona amistades y solicitudes</small></div></button>
       <button onclick="closeModal();openInviteFriends()"><span>💬</span><div><b>Invitar amigos</b><small>Comparte tu enlace por WhatsApp y sigue tus referidos</small></div></button>
-      <button onclick="closeModal();openFriendGateSettings()"><span>🔐</span><div><b>Condición de amistad</b><small>Pide invitaciones antes de aceptar nuevos amigos</small></div></button>
+      <button onclick="closeModal();openFriendGateSettings()"><span>🔐</span><div><b>Acceso a mi perfil</b><small>Pide invitaciones antes de que puedan ver tu perfil</small></div></button>
       <button onclick="closeModal();openPrivacySettings()"><span>🔒</span><div><b>Privacidad</b><small>Cuenta privada, mensajes, bloqueos y silencios</small></div></button>
       <button onclick="closeModal();openAccountSettings()"><span>⚙</span><div><b>Ajustes</b><small>Contraseña, legal y cuenta</small></div></button>
       ${state.me?.is_admin ? `<button onclick="closeModal();go('admin')"><span>🛡</span><div><b>Administración</b><small>Moderación y denuncias</small></div></button>` : ''}
@@ -923,21 +948,44 @@ window.openInviteFriends = async () => {
   try {
     const d=await api('/api/invites/me');
     const recent=d.recent||[];
+    const normalLink=d.normal_link || d.link;
+    const profileBlock=d.profile_link
+      ? `<section class="invite-mode-card profile-mode">
+          <div class="invite-mode-icon">🔐</div>
+          <div><h4>Invitación a tu perfil</h4><p>La persona entra directamente a <b>@${escapeHtml(d.username)}</b>. Para verlo tendrá que conseguir ${Number(d.friend_gate?.required||5)} altas nuevas${d.friend_gate?.require_post?' que publiquen al menos 1 post':''}. Mientras tanto podrá usar su propia cuenta normalmente.</p></div>
+          <div class="invite-link"><input readonly value="${escapeAttr(d.profile_link)}"><button class="btn ghost compact" onclick="copyInviteLink('${escapeAttr(d.profile_link)}')">Copiar</button></div>
+          <button class="btn primary whatsapp-btn" onclick="shareProfileInviteWhatsApp('${escapeAttr(d.profile_link)}','${escapeAttr(d.username)}',${Number(d.friend_gate?.required||5)})">Invitar a mi perfil por WhatsApp</button>
+        </section>`
+      : `<section class="invite-mode-card profile-mode disabled-mode"><div class="invite-mode-icon">🔐</div><div><h4>Invitación a tu perfil</h4><p>Activa primero <b>Acceso a mi perfil</b> para generar un enlace que lleve directamente a tu página y muestre el reto de invitaciones.</p></div><button class="btn ghost" onclick="closeModal();openFriendGateSettings()">Configurar acceso</button></section>`;
     modal(`<div class="modal-head"><h3>Invitar amigos</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
       <div class="invite-center">
-        <div class="invite-hero"><span>💬</span><div><b>Invita a tus amigos a Instant Admirers</b><p>Cada persona que se registre desde tu enlace quedará asociada a tu invitación.</p></div></div>
-        <div class="invite-link"><input id="personalInviteLink" readonly value="${escapeAttr(d.link)}"><button class="btn ghost compact" onclick="copyInviteLink('${escapeAttr(d.link)}')">Copiar</button></div>
-        <button class="btn primary whatsapp-btn" onclick="shareInviteWhatsApp('${escapeAttr(d.link)}')">Compartir por WhatsApp</button>
+        <div class="invite-hero"><span>💬</span><div><b>Dos formas de invitar</b><p>Elige entre traer a alguien a Instant Admirers o enviarlo directamente a tu perfil.</p></div></div>
+        <section class="invite-mode-card normal-mode">
+          <div class="invite-mode-icon">✨</div>
+          <div><h4>Invitación normal</h4><p>Abre la página principal. Tu amigo crea su cuenta y empieza a usar Instant Admirers.</p></div>
+          <div class="invite-link"><input id="personalInviteLink" readonly value="${escapeAttr(normalLink)}"><button class="btn ghost compact" onclick="copyInviteLink('${escapeAttr(normalLink)}')">Copiar</button></div>
+          <button class="btn primary whatsapp-btn" onclick="shareNormalInviteWhatsApp('${escapeAttr(normalLink)}')">Compartir por WhatsApp</button>
+        </section>
+        ${profileBlock}
         <div class="referral-stats"><div><b>${Number(d.registered||0)}</b><span>registrados</span></div><div><b>${Number(d.qualified||0)}</b><span>ya publicaron</span></div></div>
-        ${recent.length?`<section class="invite-list"><h4>Tus últimas invitaciones</h4>${recent.map(r=>`<div class="invite-person">${avatar(r,'small')}<span><b>${escapeHtml(r.name)}</b><small>@${escapeHtml(r.username)}${r.gate_username?' · reto @'+escapeHtml(r.gate_username):''}</small></span><i class="${r.qualified_at?'done':''}">${r.qualified_at?'✓ Publicó':'Registrado'}</i></div>`).join('')}</section>`:''}
+        ${recent.length?`<section class="invite-list"><h4>Tus últimas invitaciones</h4>${recent.map(r=>`<div class="invite-person">${avatar(r,'small')}<span><b>${escapeHtml(r.name)}</b><small>@${escapeHtml(r.username)}${r.gate_username?' · ayudó a desbloquear @'+escapeHtml(r.gate_username):''}</small></span><i class="${r.qualified_at?'done':''}">${r.qualified_at?'✓ Publicó':'Registrado'}</i></div>`).join('')}</section>`:''}
       </div>`);
   } catch(e){toast(e.message,'error');}
 };
 
 window.copyInviteLink = async link => { try{await navigator.clipboard.writeText(link);toast('Enlace copiado');}catch(_){prompt('Copia este enlace:',link);} };
-window.shareInviteWhatsApp = (link,target='') => {
-  const targetText=target?` Quiero desbloquear el acceso a @${target}.`:'';
-  const text=`¡Únete a Instant Admirers!${targetText} Regístrate con mi enlace y comparte tu primer post: ${link}`;
+window.shareNormalInviteWhatsApp = link => {
+  const text=`¡Únete a Instant Admirers! Crea tu perfil y nos vemos dentro: ${link}`;
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`,'_blank','noopener');
+};
+
+window.shareProfileInviteWhatsApp = (link,username,required=5) => {
+  const text=`Te invito a mi perfil de Instant Admirers (@${username}). Crea tu cuenta y entra directamente. Para desbloquear mi perfil tendrás que invitar a ${required} personas. Puedes usar tu cuenta normalmente mientras lo consigues: ${link}`;
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`,'_blank','noopener');
+};
+
+window.shareChallengeInviteWhatsApp = (link,target='',requirePost=true) => {
+  const text=`¿Me ayudas a desbloquear el perfil de @${target} en Instant Admirers? Crea tu perfil con este enlace${requirePost?' y publica al menos 1 post':''}. A mí me contará para conseguir el acceso: ${link}`;
   window.open(`https://wa.me/?text=${encodeURIComponent(text)}`,'_blank','noopener');
 };
 
@@ -952,12 +1000,13 @@ window.openFriendGateChallenge = async () => {
     modal(`<div class="modal-head"><h3>Desbloquear @${escapeHtml(u.username)}</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
       <div class="friend-challenge">
         <div class="challenge-lock">🔐</div>
-        <h3>${g.unlocked?'Reto completado':'Invita a '+g.required+' amigos'}</h3>
-        <p>${g.require_post?`Para desbloquear esta amistad, ${g.required} amigos deben registrarse desde este enlace y publicar al menos 1 post.`:`Para desbloquear esta amistad, ${g.required} amigos deben registrarse desde este enlace.`}</p>
+        <h3>${g.unlocked?'Acceso conseguido':'Te faltan '+Math.max(0,Number(g.required||0)-Number(g.progress||0))}</h3>
+        <p>${g.require_post?`Para ver este perfil, ${g.required} personas nuevas deben crear su perfil desde tu enlace y publicar al menos 1 post.`:`Para ver este perfil, ${g.required} personas nuevas deben crear su perfil desde tu enlace.`}</p>
         <div class="challenge-number"><b>${Number(g.progress||0)}</b><span>/ ${Number(g.required||0)}</span></div>
         <div class="gate-progress large"><span style="width:${pct}%"></span></div>
-        ${g.unlocked?`<button class="btn primary" onclick="closeModal();sendFriendRequest(${u.id},'${escapeAttr(u.username)}')">${g.auto_accept?'Ser amigos ahora':'Enviar solicitud de amistad'}</button>`:`<button class="btn primary whatsapp-btn" onclick="shareInviteWhatsApp('${escapeAttr(link)}','${escapeAttr(u.username)}')">Invitar por WhatsApp</button><button class="btn ghost" onclick="copyInviteLink('${escapeAttr(link)}')">Copiar enlace del reto</button>`}
-        <small class="challenge-note">Solo cuentan las nuevas cuentas que se registren desde este enlace de reto.${g.require_post?' La publicación puede hacerse después del registro.':''}</small>
+        ${g.unlocked?`<button class="btn primary" onclick="closeModal();renderProfile('${escapeAttr(u.username)}')">Ver perfil</button>`:`<button class="btn primary whatsapp-btn" onclick="shareChallengeInviteWhatsApp('${escapeAttr(link)}','${escapeAttr(u.username)}',${g.require_post?'true':'false'})">Invitar por WhatsApp</button><button class="btn ghost" onclick="copyInviteLink('${escapeAttr(link)}')">Copiar enlace para mis amigos</button>`}
+        <small class="challenge-note">Tus amigos irán a crear su propia cuenta. No quedan bloqueados en este perfil. Solo las nuevas cuentas registradas desde este enlace cuentan para tu progreso.${g.require_post?' La publicación puede hacerse después del registro.':''}</small>
+        <button class="btn ghost" onclick="closeModal();go('feed')">Seguir usando Instant Admirers</button>
       </div>`);
   } catch(e){toast(e.message,'error');}
 };
@@ -965,13 +1014,13 @@ window.openFriendGateChallenge = async () => {
 window.openFriendGateSettings = async () => {
   try{
     const g=await api('/api/friend-gate');
-    modal(`<div class="modal-head"><h3>Condición de amistad</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+    modal(`<div class="modal-head"><h3>Acceso a mi perfil</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
       <div class="gate-settings">
-        <div class="security-callout"><b>Convierte tu perfil en un reto viral</b><p>Las personas tendrán que cumplir la condición antes de poder hacerse amigas tuyas.</p></div>
-        <label class="privacy-section"><span><b>Activar condición</b><small>Si está desactivada, cualquiera podrá enviarte una solicitud normal.</small></span><span class="switch"><input id="gateEnabled" type="checkbox" ${g.friend_gate_enabled?'checked':''}><span></span></span></label>
-        <label>Número de amigos que deben invitar<input id="gateRequired" type="number" min="1" max="50" value="${Number(g.friend_gate_required_referrals||5)}"></label>
-        <label class="legal-check"><input id="gateRequirePost" type="checkbox" ${g.friend_gate_require_post!==false?'checked':''}><span>Los invitados deben publicar al menos 1 post para contar.</span></label>
-        <label class="legal-check"><input id="gateAutoAccept" type="checkbox" ${g.friend_gate_auto_accept!==false?'checked':''}><span>Al completar el reto, aceptar automáticamente la amistad cuando pulse “Ser amigos”.</span></label>
+        <div class="security-callout"><b>Convierte tu perfil en un acceso por invitaciones</b><p>Quien llegue a tu perfil verá el progreso del reto y podrá usar su cuenta con normalidad mientras lo completa.</p></div>
+        <label class="privacy-section"><span><b>Activar acceso especial</b><small>Si está activado, las personas deberán completar el reto antes de ver tu perfil.</small></span><span class="switch"><input id="gateEnabled" type="checkbox" ${g.friend_gate_enabled?'checked':''}><span></span></span></label>
+        <label>Número de personas que deben invitar<input id="gateRequired" type="number" min="1" max="50" value="${Number(g.friend_gate_required_referrals||5)}"></label>
+        <label class="legal-check"><input id="gateRequirePost" type="checkbox" ${g.friend_gate_require_post!==false?'checked':''}><span>Las nuevas cuentas deben publicar al menos 1 post para contar.</span></label>
+        <label class="legal-check"><input id="gateAutoAccept" type="checkbox" ${g.friend_gate_auto_accept!==false?'checked':''}><span>Al completar el reto, crear automáticamente la amistad con esa persona.</span></label>
         <button class="btn primary" onclick="saveFriendGateSettings()">Guardar condición</button>
       </div>`);
   }catch(e){toast(e.message,'error');}
@@ -1731,8 +1780,21 @@ async function init() {
   try {
     state.me = await api('/api/me');
     connectRealtime();
+    const pendingProfile = String(localStorage.getItem('pendingProfileUsername') || '').trim();
+    if (pendingProfile) {
+      state.view='profile';
+      state.profile=pendingProfile;
+    }
     layout();
-    await renderView();
+    if (pendingProfile) {
+      try { await renderProfile(pendingProfile); }
+      finally {
+        localStorage.removeItem('pendingProfileUsername');
+        history.replaceState({},'',location.pathname);
+      }
+    } else {
+      await renderView();
+    }
     if (!state.me?.terms_accepted_at || state.me?.terms_version !== '2026-09-20' || !state.me?.age_confirmed_at) {
       setTimeout(openLegalAcceptance, 120);
     } else if (state.me && state.me.onboarding_completed === false) {

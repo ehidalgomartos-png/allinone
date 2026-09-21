@@ -1,25 +1,14 @@
-# Instant Admirers V1.2.3 — Invitaciones y retos de amistad
+# Instant Admirers V1.2.4
 
-Esta versión añade crecimiento viral nativo a Instant Admirers.
+Red social propia desplegable en GitHub + Render + PostgreSQL.
 
-## Invitaciones
+## Novedad principal
 
-Cada usuario tiene un enlace único que puede compartir por WhatsApp. Si una persona crea una cuenta desde ese enlace, queda registrada como referido del invitador. Cuando el nuevo usuario publica por primera vez, pasa a estado `ya publicó`.
+V1.2.4 separa por completo dos flujos:
 
-## Retos de amistad
+1. **Invitación normal** → página principal → crear perfil.
+2. **Invitación a un perfil especial** → registro/login → perfil concreto → reto de X invitaciones antes de ver su contenido.
 
-Cada cuenta puede activar una condición antes de aceptar nuevas amistades. Ejemplo:
+Mientras completa el reto, la persona puede utilizar Instant Admirers con normalidad.
 
-> Invita a 5 amigos a Instant Admirers. Cuando los 5 se registren desde tu enlace de reto y publiquen al menos 1 post, desbloquearás la amistad con esta cuenta.
-
-Los referidos quedan asociados al reto de esa cuenta concreta, por lo que los mismos invitados no desbloquean todos los perfiles con condición.
-
-La cuenta puede elegir si al completar el reto la amistad se acepta automáticamente o si simplemente se desbloquea el envío de la solicitud.
-
-## Base técnica
-
-- Node.js / Express
-- PostgreSQL
-- Socket.IO
-- Resend API para correo transaccional
-- Render
+Consulta `ACTUALIZAR-A-V1.2.4.md` para actualizar desde V1.2.3.
