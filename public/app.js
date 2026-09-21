@@ -851,7 +851,10 @@ function friendButton(u) {
   if (u.friendship_status === 'friends') return `<button class="btn ghost compact friendship-btn" onclick="removeFriend(${u.id},'${escapeAttr(u.username)}')">✓ Amigos</button>`;
   if (u.friendship_status === 'sent') return `<button class="btn ghost compact friendship-btn" onclick="sendFriendRequest(${u.id},'${escapeAttr(u.username)}')">Solicitud enviada</button>`;
   if (u.friendship_status === 'received') return `<button class="btn primary compact friendship-btn" onclick="acceptFriendRequest(${Number(u.friend_request_id)},'${escapeAttr(u.username)}')">Aceptar amistad</button>`;
-  if (u.friend_gate?.enabled && !u.friend_gate.unlocked) return `<button class="btn ghost compact friendship-btn gate-btn" onclick="openFriendGateChallenge()">🔒 Faltan ${Math.max(0,Number(u.friend_gate.required||5)-Number(u.friend_gate.progress||0))}</button>`;
+  if (u.friend_gate?.enabled && !u.friend_gate.unlocked) {
+    const progress=Math.max(0,Number(u.friend_gate.progress||0)), required=Math.max(1,Number(u.friend_gate.required||5));
+    return `<button class="btn ghost compact friendship-btn gate-btn" onclick="openFriendGateChallenge()">🔒 Acceso ${Math.min(progress,required)}/${required}</button>`;
+  }
   if (u.friend_gate?.enabled && u.friend_gate.unlocked) return `<button class="btn primary compact friendship-btn" onclick="sendFriendRequest(${u.id},'${escapeAttr(u.username)}')">✓ Acceso conseguido</button>`;
   return `<button class="btn ghost compact friendship-btn" onclick="sendFriendRequest(${u.id},'${escapeAttr(u.username)}')">＋ Amigo</button>`;
 }
@@ -862,22 +865,34 @@ function friendGateBanner(u) {
   const progress=Number(g.progress||0), required=Math.max(1,Number(g.required||1));
   const remaining=Math.max(0,required-progress);
   const pct=Math.min(100,Math.round((progress/required)*100));
-  if(g.unlocked) return `<section class="card friend-gate-card unlocked"><div class="friend-gate-icon">✓</div><div class="friend-gate-copy"><b>Acceso conseguido</b><p>Ya puedes ver este perfil. ${g.auto_accept?'La amistad puede activarse automáticamente.':'También puedes enviarle una solicitud de amistad.'}</p><div class="gate-progress"><span style="width:100%"></span></div></div><button class="btn primary compact" onclick="renderProfile('${escapeAttr(u.username)}')">Ver perfil</button></section>`;
+  if(g.unlocked) return `<section class="card access-gate-card access-gate-unlocked">
+    <div class="access-gate-icon">✓</div>
+    <div class="access-gate-copy"><span class="access-gate-kicker">Acceso especial</span><h3>Perfil desbloqueado</h3><p>Ya puedes ver todo el contenido de @${escapeHtml(u.username)}.</p></div>
+    <button class="btn primary compact" onclick="renderProfile('${escapeAttr(u.username)}')">Ver perfil</button>
+  </section>`;
   const detail=g.require_post
     ? `Invita a ${required} personas. Cada una debe crear su perfil y publicar al menos 1 post.`
     : `Invita a ${required} personas para que creen su perfil en Instant Admirers.`;
-  return `<section class="card friend-gate-card profile-access-gate">
-    <div class="friend-gate-icon">🔐</div>
-    <div class="friend-gate-copy">
-      <b>Te quedan ${remaining} para poder ver este perfil</b>
-      <p>${detail}</p>
-      <div class="gate-progress"><span style="width:${pct}%"></span></div>
-      <small>${progress} de ${required} completados</small>
-      <div class="gate-account-note">Tu cuenta funciona con normalidad: puedes completar tu perfil, publicar, descubrir personas y usar Instant Admirers mientras consigues el acceso.</div>
+  return `<section class="card access-gate-card">
+    <div class="access-gate-top">
+      <div class="access-gate-icon">🔐</div>
+      <div class="access-gate-copy">
+        <span class="access-gate-kicker">Acceso especial</span>
+        <h3>Te faltan ${remaining} ${remaining===1?'persona':'personas'}</h3>
+        <p>${detail}</p>
+      </div>
+      <div class="access-gate-count"><strong>${progress}</strong><span>/${required}</span></div>
     </div>
-    <div class="gate-actions">
-      <button class="btn primary compact whatsapp-btn" onclick="openFriendGateChallenge()">Invitar por WhatsApp</button>
-      <button class="btn ghost compact" onclick="go('feed')">Seguir usando mi cuenta</button>
+    <div class="access-gate-progress-wrap">
+      <div class="gate-progress access-gate-progress"><span style="width:${pct}%"></span></div>
+      <small>${progress} de ${required} completados</small>
+    </div>
+    <div class="access-gate-bottom">
+      <div class="access-gate-note"><span>✓</span><span>Puedes seguir usando tu cuenta con normalidad mientras completas el acceso.</span></div>
+      <div class="access-gate-actions">
+        <button class="btn primary compact whatsapp-btn" onclick="openFriendGateChallenge()">Invitar por WhatsApp</button>
+        <button class="btn ghost compact access-gate-skip" onclick="go('feed')">Ahora no</button>
+      </div>
     </div>
   </section>`;
 }
