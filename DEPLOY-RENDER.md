@@ -1,26 +1,16 @@
-# Render — Instant Admirers V1.2.2
+# Render — Instant Admirers V1.2.3
 
-La aplicación usa la API HTTPS de Resend para correo transaccional, por lo que no depende de puertos SMTP.
+No necesitas crear un servicio ni una base nuevos.
 
-## Variables de entorno
+1. Sube V1.2.3 al repositorio actual.
+2. Render hará Auto-Deploy.
+3. El arranque ejecutará las migraciones PostgreSQL automáticamente.
+4. Comprueba `/api/health`.
 
-```text
-APP_URL=https://instantadmirers.com
-RESEND_API_KEY=re_xxxxxxxxxxxxxxxxx
-EMAIL_FROM=Instant Admirers <no-reply@vrmatch.es>
-REQUIRE_EMAIL_VERIFICATION=false
+Resultado esperado:
+
+```json
+{"ok":true,"version":"1.2.3"}
 ```
 
-`DATABASE_URL` y `JWT_SECRET` deben conservarse como están.
-
-## Comprobación
-
-Abre `/api/health`. Debe mostrar `version: 1.2.2`, `email.configured: true` y `email.provider: resend`.
-
-## Activar verificación obligatoria
-
-Hazlo únicamente después de comprobar que los emails llegan:
-
-```text
-REQUIRE_EMAIL_VERIFICATION=true
-```
+No hay variables de entorno nuevas obligatorias en esta versión.

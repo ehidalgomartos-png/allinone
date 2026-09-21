@@ -234,6 +234,11 @@ function safeUser(row, includePrivate = false) {
     user.terms_accepted_at = row.terms_accepted_at || null;
     user.age_confirmed_at = row.age_confirmed_at || null;
     user.email_verified_at = row.email_verified_at || null;
+    user.invite_code = row.invite_code || '';
+    user.friend_gate_enabled = Boolean(row.friend_gate_enabled);
+    user.friend_gate_required_referrals = Number(row.friend_gate_required_referrals || 5);
+    user.friend_gate_require_post = row.friend_gate_require_post !== false;
+    user.friend_gate_auto_accept = row.friend_gate_auto_accept !== false;
   }
   return user;
 }
@@ -522,13 +527,61 @@ function peopleRecommendationReason(row = {}) {
   return 'Nuevo en Instant Admirers';
 }
 
+
+async function friendGateProgress(inviterId, gateUserId, client = pool) {
+  const targetResult = await client.query(`
+    SELECT id, username, invite_code, friend_gate_enabled, friend_gate_required_referrals,
+           friend_gate_require_post, friend_gate_auto_accept
+      FROM users WHERE id=$1 AND account_status='active' LIMIT 1
+  `,[gateUserId]);
+  const target = targetResult.rows[0];
+  if (!target) return null;
+  const { rows } = await client.query(`
+    SELECT COUNT(*)::int AS registered,
+           COUNT(*) FILTER (WHERE qualified_at IS NOT NULL)::int AS qualified
+      FROM referral_attributions
+     WHERE inviter_id=$1 AND gate_user_id=$2
+  `,[inviterId,gateUserId]);
+  const registered = Number(rows[0]?.registered || 0);
+  const qualified = Number(rows[0]?.qualified || 0);
+  const required = Math.max(1, Number(target.friend_gate_required_referrals || 5));
+  const requirePost = target.friend_gate_require_post !== false;
+  const progress = requirePost ? qualified : registered;
+  return {
+    enabled:Boolean(target.friend_gate_enabled),
+    required,
+    require_post:requirePost,
+    auto_accept:target.friend_gate_auto_accept !== false,
+    registered,
+    qualified,
+    progress,
+    unlocked:progress >= required,
+    gate_code:target.invite_code || '',
+    username:target.username
+  };
+}
+
+async function autoCompleteFriendGate(client, inviterId, gateUserId) {
+  if (!gateUserId) return false;
+  const gate = await friendGateProgress(inviterId, gateUserId, client);
+  if (!gate?.enabled || !gate.unlocked || !gate.auto_accept) return false;
+  const blocked = await client.query(`SELECT 1 FROM blocks WHERE (blocker_id=$1 AND blocked_id=$2) OR (blocker_id=$2 AND blocked_id=$1) LIMIT 1`,[inviterId,gateUserId]);
+  if (blocked.rowCount) return false;
+  const a=Math.min(Number(inviterId),Number(gateUserId)), b=Math.max(Number(inviterId),Number(gateUserId));
+  const inserted = await client.query(`INSERT INTO friendships(user1_id,user2_id) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING user1_id`,[a,b]);
+  await client.query(`UPDATE friend_requests SET status='declined',updated_at=NOW() WHERE status='pending' AND ((from_user_id=$1 AND to_user_id=$2) OR (from_user_id=$2 AND to_user_id=$1))`,[inviterId,gateUserId]);
+  if (inserted.rowCount) await addNotification(client,{userId:inviterId,actorId:gateUserId,type:'friend_accept'});
+  return Boolean(inserted.rowCount);
+}
+
+
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.2.2', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email'] });
+  res.json({ ok: true, version: '1.2.3', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates'] });
 }));
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
-  const { username, name, email, password, age_confirmed, terms_accepted, terms_version } = req.body;
+  const { username, name, email, password, age_confirmed, terms_accepted, terms_version, referral_code, gate_code } = req.body;
   if (!username || !name || !email || !password) return res.status(400).json({ error: 'Faltan datos' });
   if (age_confirmed !== true) return res.status(400).json({ error: 'Debes confirmar que tienes 18 años o más' });
   if (terms_accepted !== true) return res.status(400).json({ error: 'Debes aceptar los Términos de Uso' });
@@ -544,14 +597,33 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
 
   const passwordHash = await bcrypt.hash(plainPassword, 10);
   try {
-    const { rows } = await pool.query(`
-      INSERT INTO users (username, name, email, password_hash, onboarding_completed, age_confirmed_at, terms_accepted_at, terms_version)
-      VALUES ($1, $2, $3, $4, FALSE, NOW(), NOW(), $5)
-      RETURNING *
-    `, [normalizedUsername, normalizedName, normalizedEmail, passwordHash, CURRENT_TERMS_VERSION]);
-    const user = rows[0];
+    const inviteCode = crypto.randomBytes(8).toString('hex');
+    const user = await withTransaction(async client => {
+      const { rows } = await client.query(`
+        INSERT INTO users (username, name, email, password_hash, onboarding_completed, age_confirmed_at, terms_accepted_at, terms_version, invite_code)
+        VALUES ($1, $2, $3, $4, FALSE, NOW(), NOW(), $5, $6)
+        RETURNING *
+      `, [normalizedUsername, normalizedName, normalizedEmail, passwordHash, CURRENT_TERMS_VERSION, inviteCode]);
+      const created = rows[0];
+      const ref = String(referral_code || '').trim().toLowerCase().slice(0,24);
+      const gate = String(gate_code || '').trim().toLowerCase().slice(0,24);
+      if (ref) {
+        const inviterResult = await client.query('SELECT id FROM users WHERE LOWER(invite_code)=LOWER($1) AND id<>$2 LIMIT 1',[ref,created.id]);
+        const inviter = inviterResult.rows[0];
+        if (inviter) {
+          let gateUserId = null;
+          if (gate) {
+            const gateResult = await client.query('SELECT id FROM users WHERE LOWER(invite_code)=LOWER($1) AND id<>$2 LIMIT 1',[gate,created.id]);
+            if (gateResult.rows[0] && Number(gateResult.rows[0].id) !== Number(inviter.id)) gateUserId = gateResult.rows[0].id;
+          }
+          await client.query(`INSERT INTO referral_attributions(inviter_id,invited_user_id,gate_user_id) VALUES($1,$2,$3) ON CONFLICT (invited_user_id) DO NOTHING`,[inviter.id,created.id,gateUserId]);
+          if (gateUserId) await autoCompleteFriendGate(client,inviter.id,gateUserId);
+        }
+      }
+      return created;
+    });
     const emailSent = await sendVerificationEmail(user).catch(err => { console.error('verification email:', err.message); return false; });
-    await securityEvent(req, 'account_registered', user.id, { email_sent:emailSent });
+    await securityEvent(req, 'account_registered', user.id, { email_sent:emailSent, referral:Boolean(referral_code), gate:Boolean(gate_code) });
     if (REQUIRE_EMAIL_VERIFICATION) return res.json({ verification_required:true, email_sent:emailSent });
     res.json({ token: tokenFor(user), user: safeUser(user, true), email_sent:emailSent });
   } catch (err) {
@@ -749,6 +821,8 @@ app.post('/api/posts', auth, asyncRoute(async (req, res) => {
       VALUES ($1, $2, $3, $4, 'native', $5) RETURNING id
     `, [req.user.id, text, mediaId, mediaId ? mediaType : 'none', visibility]);
     await notifyMentions(client, { text, actorId:req.user.id, postId:rows[0].id });
+    const qualifiedReferrals=await client.query('UPDATE referral_attributions SET qualified_at=NOW() WHERE invited_user_id=$1 AND qualified_at IS NULL RETURNING inviter_id,gate_user_id',[req.user.id]);
+    for (const ref of qualifiedReferrals.rows) if (ref.gate_user_id) await autoCompleteFriendGate(client,ref.inviter_id,ref.gate_user_id);
     return rows[0];
   });
   res.json({ id: result.id });
@@ -1102,7 +1176,8 @@ app.get('/api/users/:username', auth, asyncRoute(async (req, res) => {
   const row = rows[0];
   if (row.blocked_me && !row.own) return res.status(404).json({ error:'Perfil no disponible' });
   const canMessage = row.own ? false : await canMessageUser(req.user.id,row.id);
-  res.json({ ...safeUser(row), can_message:canMessage, followers_count: row.followers_count, following_count: row.following_count, posts_count: row.posts_count, friends_count: row.friends_count, following: Boolean(row.following), follow_requested:Boolean(row.follow_requested), muted:Boolean(row.muted), blocked_by_me:Boolean(row.blocked_by_me), friendship_status: row.friendship_status, friend_request_id: row.friend_request_id, own: Boolean(row.own), online: isOnline(row.id), last_seen_at: row.last_seen_at });
+  const friendGate = (!row.own && row.friend_gate_enabled && row.friendship_status !== 'friends') ? await friendGateProgress(req.user.id,row.id) : null;
+  res.json({ ...safeUser(row), can_message:canMessage, followers_count: row.followers_count, following_count: row.following_count, posts_count: row.posts_count, friends_count: row.friends_count, following: Boolean(row.following), follow_requested:Boolean(row.follow_requested), muted:Boolean(row.muted), blocked_by_me:Boolean(row.blocked_by_me), friendship_status: row.friendship_status, friend_request_id: row.friend_request_id, friend_gate:friendGate, own: Boolean(row.own), online: isOnline(row.id), last_seen_at: row.last_seen_at });
 }));
 
 app.get('/api/users/:username/posts', auth, asyncRoute(async (req, res) => {
@@ -1276,6 +1351,36 @@ app.get('/api/friends/requests', auth, asyncRoute(async (req, res) => {
   });
 }));
 
+// --- V1.2.3: invitaciones y retos de amistad ------------------------------
+app.get('/api/invites/me', auth, asyncRoute(async (req,res)=>{
+  const userResult = await pool.query('SELECT invite_code FROM users WHERE id=$1',[req.user.id]);
+  const code = userResult.rows[0]?.invite_code || '';
+  const {rows:summaryRows}=await pool.query(`SELECT COUNT(*)::int AS registered, COUNT(*) FILTER (WHERE qualified_at IS NOT NULL)::int AS qualified FROM referral_attributions WHERE inviter_id=$1`,[req.user.id]);
+  const {rows:recent}=await pool.query(`
+    SELECT ra.id,ra.registered_at,ra.qualified_at,u.id AS user_id,u.username,u.name,u.avatar,
+           gate.username AS gate_username
+      FROM referral_attributions ra
+      JOIN users u ON u.id=ra.invited_user_id
+      LEFT JOIN users gate ON gate.id=ra.gate_user_id
+     WHERE ra.inviter_id=$1 ORDER BY ra.registered_at DESC LIMIT 30
+  `,[req.user.id]);
+  res.json({code,link:`${APP_URL}/?ref=${encodeURIComponent(code)}`,registered:Number(summaryRows[0]?.registered||0),qualified:Number(summaryRows[0]?.qualified||0),recent});
+}));
+
+app.get('/api/friend-gate', auth, asyncRoute(async (req,res)=>{
+  const {rows}=await pool.query(`SELECT friend_gate_enabled,friend_gate_required_referrals,friend_gate_require_post,friend_gate_auto_accept FROM users WHERE id=$1`,[req.user.id]);
+  res.json(rows[0]);
+}));
+
+app.patch('/api/friend-gate', auth, asyncRoute(async (req,res)=>{
+  const enabled=Boolean(req.body.enabled);
+  const required=Math.max(1,Math.min(50,Number(req.body.required_referrals||5)));
+  const requirePost=req.body.require_post !== false;
+  const autoAccept=req.body.auto_accept !== false;
+  const {rows}=await pool.query(`UPDATE users SET friend_gate_enabled=$2,friend_gate_required_referrals=$3,friend_gate_require_post=$4,friend_gate_auto_accept=$5 WHERE id=$1 RETURNING friend_gate_enabled,friend_gate_required_referrals,friend_gate_require_post,friend_gate_auto_accept`,[req.user.id,enabled,required,requirePost,autoAccept]);
+  res.json(rows[0]);
+}));
+
 app.post('/api/friends/request/:userId', auth, asyncRoute(async (req,res)=>{
   const otherId=Number(req.params.userId), myId=Number(req.user.id);
   if(!Number.isInteger(otherId)||otherId===myId) return res.status(400).json({error:'Usuario inválido'});
@@ -1291,6 +1396,17 @@ app.post('/api/friends/request/:userId', auth, asyncRoute(async (req,res)=>{
   if(outgoing.rowCount){
     await pool.query(`UPDATE friend_requests SET status='declined',updated_at=NOW() WHERE id=$1`,[outgoing.rows[0].id]);
     return res.json({status:'none'});
+  }
+  const gate=await friendGateProgress(myId,otherId);
+  if(gate?.enabled && !gate.unlocked){
+    return res.status(403).json({error:`Necesitas completar el reto de acceso (${gate.progress}/${gate.required}) antes de ser amigo de esta cuenta.`,code:'FRIEND_GATE_LOCKED',friend_gate:gate});
+  }
+  if(gate?.enabled && gate.unlocked && gate.auto_accept){
+    await withTransaction(async client=>{
+      await client.query(`INSERT INTO friendships(user1_id,user2_id) VALUES($1,$2) ON CONFLICT DO NOTHING`,[a,b]);
+      await client.query(`UPDATE friend_requests SET status='declined',updated_at=NOW() WHERE status='pending' AND ((from_user_id=$1 AND to_user_id=$2) OR (from_user_id=$2 AND to_user_id=$1))`,[myId,otherId]);
+    });
+    return res.json({status:'friends',auto_accepted:true});
   }
   const result=await withTransaction(async client=>{
     const {rows}=await client.query(`INSERT INTO friend_requests(from_user_id,to_user_id) VALUES($1,$2) RETURNING id`,[myId,otherId]);
@@ -1862,7 +1978,7 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   await initDb();
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.2.0 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.2.3 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {

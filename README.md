@@ -1,26 +1,25 @@
-# Instant Admirers V1.2.2 — Resend API
+# Instant Admirers V1.2.3 — Invitaciones y retos de amistad
 
-Esta versión sustituye el correo SMTP por la API HTTPS de **Resend**, pensada para funcionar también con el plan Free de Render.
+Esta versión añade crecimiento viral nativo a Instant Admirers.
 
-## Funciones de correo
-- Verificación de email.
-- Recuperación de contraseña.
-- Confirmación de cambio de email.
-- Plantillas visuales de Instant Admirers.
-- Timeout de 12 segundos para llamadas a Resend.
-- Registro de eventos de seguridad existente.
+## Invitaciones
 
-## Variables necesarias en Render
+Cada usuario tiene un enlace único que puede compartir por WhatsApp. Si una persona crea una cuenta desde ese enlace, queda registrada como referido del invitador. Cuando el nuevo usuario publica por primera vez, pasa a estado `ya publicó`.
 
-```text
-APP_URL=https://instantadmirers.com
-RESEND_API_KEY=re_xxxxxxxxxxxxxxxxx
-EMAIL_FROM=Instant Admirers <no-reply@vrmatch.es>
-REQUIRE_EMAIL_VERIFICATION=false
-```
+## Retos de amistad
 
-`vrmatch.es` debe permanecer verificado en Resend. No subas `RESEND_API_KEY` a GitHub.
+Cada cuenta puede activar una condición antes de aceptar nuevas amistades. Ejemplo:
 
-Cuando hayas comprobado que recuperación y verificación funcionan, puedes cambiar `REQUIRE_EMAIL_VERIFICATION=true`.
+> Invita a 5 amigos a Instant Admirers. Cuando los 5 se registren desde tu enlace de reto y publiquen al menos 1 post, desbloquearás la amistad con esta cuenta.
 
-La base PostgreSQL y los usuarios existentes se conservan.
+Los referidos quedan asociados al reto de esa cuenta concreta, por lo que los mismos invitados no desbloquean todos los perfiles con condición.
+
+La cuenta puede elegir si al completar el reto la amistad se acepta automáticamente o si simplemente se desbloquea el envío de la solicitud.
+
+## Base técnica
+
+- Node.js / Express
+- PostgreSQL
+- Socket.IO
+- Resend API para correo transaccional
+- Render

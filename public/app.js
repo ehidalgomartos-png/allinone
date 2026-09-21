@@ -1,9 +1,21 @@
+// V1.2.3 · Captura de enlaces de invitación antes del registro.
+(() => {
+  try {
+    const params = new URLSearchParams(location.search);
+    const ref = String(params.get('ref') || '').trim();
+    const gate = String(params.get('gate') || '').trim();
+    if (ref) localStorage.setItem('pendingReferralCode', ref);
+    if (ref && gate) localStorage.setItem('pendingGateCode', gate);
+  } catch (_) {}
+})();
+
 const state = {
   token: localStorage.getItem('token') || '',
   me: null,
   view: 'feed',
   feedMode: localStorage.getItem('feedMode') || 'following',
   profile: null,
+  profileData: null,
   search: '',
   busy: false,
   activeConversation: null,
@@ -204,6 +216,7 @@ window.showAuth = (mode) => {
       <button class="auth-text-link" onclick="openForgotPassword()">¿Has olvidado tu contraseña?</button>
     </div>` : `
     <div class="auth-form">
+      ${localStorage.getItem('pendingReferralCode') ? '<div class="invite-auth-note"><b>💬 Has llegado con una invitación</b><span>Crea tu cuenta desde aquí para que la invitación quede registrada.</span></div>' : ''}
       <label>Nombre</label><input id="regname" placeholder="Tu nombre">
       <label>Usuario</label><input id="reguser" autocomplete="username" placeholder="tuusuario">
       <label>Email</label><input id="regemail" type="email" autocomplete="email" placeholder="tu@email.com">
@@ -233,7 +246,8 @@ window.register = async () => {
   if (!$('#reglegal')?.checked) return toast('Debes confirmar que tienes 18 años y aceptar los Términos de Uso','error');
   try {
     if (btn) { btn.disabled = true; btn.textContent = 'Creando cuenta…'; }
-    const d = await api('/api/auth/register', { method:'POST', body: JSON.stringify({ name: $('#regname').value, username: $('#reguser').value, email: $('#regemail').value, password: $('#regpass').value, age_confirmed:true, terms_accepted:true, terms_version:'2026-09-20' }) });
+    const d = await api('/api/auth/register', { method:'POST', body: JSON.stringify({ name: $('#regname').value, username: $('#reguser').value, email: $('#regemail').value, password: $('#regpass').value, age_confirmed:true, terms_accepted:true, terms_version:'2026-09-20', referral_code:localStorage.getItem('pendingReferralCode') || '', gate_code:localStorage.getItem('pendingGateCode') || '' }) });
+    localStorage.removeItem('pendingReferralCode'); localStorage.removeItem('pendingGateCode');
     if (d.verification_required) {
       modal(`<div class="modal-head"><h3>Confirma tu email</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="account-form"><div class="security-callout"><b>Cuenta creada</b><p>Te hemos enviado un enlace de verificación. Ábrelo antes de iniciar sesión.</p></div><button class="btn primary" onclick="closeModal();showAuth('login')">Volver a entrar</button></div>`);
       return;
@@ -726,6 +740,7 @@ window.openProfile = async (username) => { if (state.messagePoll) { clearInterva
 
 async function renderProfile(username) {
   const u = await api('/api/users/' + encodeURIComponent(username));
+  state.profileData = u;
   let posts = [];
   if (!u.blocked_by_me) posts = await api('/api/users/' + encodeURIComponent(username) + '/posts');
   const website = u.website ? `<a class="profile-link" href="${escapeAttr(normalizeUrl(u.website))}" target="_blank" rel="noopener">↗ ${escapeHtml(u.website)}</a>` : '';
@@ -733,7 +748,7 @@ async function renderProfile(username) {
   const privateLocked = u.account_private && !u.own && !u.following;
   let actions = '';
   if (u.own) {
-    actions = `<div class="profile-desktop-actions"><button class="btn ghost compact" onclick="go('friends')">Amigos</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad</button><button class="btn ghost compact" onclick="openAccountSettings()">Ajustes</button>${state.me?.is_admin ? `<button class="btn ghost compact" onclick="go('admin')">Administración</button>` : ''}<button class="btn ghost compact" onclick="editProfile()">Editar perfil</button></div><div class="profile-mobile-actions"><button class="btn ghost compact profile-edit-mobile" onclick="editProfile()">Editar perfil</button><button class="icon-btn profile-own-more" title="Más opciones" aria-label="Más opciones de perfil" onclick="openOwnProfileMenu()">•••</button></div>`;
+    actions = `<div class="profile-desktop-actions"><button class="btn ghost compact" onclick="go('friends')">Amigos</button><button class="btn ghost compact" onclick="openFriendGateSettings()">🔐 Condición</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad</button><button class="btn ghost compact" onclick="openAccountSettings()">Ajustes</button>${state.me?.is_admin ? `<button class="btn ghost compact" onclick="go('admin')">Administración</button>` : ''}<button class="btn ghost compact" onclick="editProfile()">Editar perfil</button></div><div class="profile-mobile-actions"><button class="btn ghost compact profile-edit-mobile" onclick="editProfile()">Editar perfil</button><button class="icon-btn profile-own-more" title="Más opciones" aria-label="Más opciones de perfil" onclick="openOwnProfileMenu()">•••</button></div>`;
   } else if (u.blocked_by_me) {
     actions = `<button class="btn primary compact" onclick="toggleBlock(${u.id},'${escapeAttr(u.username)}')">Desbloquear</button>`;
   } else {
@@ -753,6 +768,7 @@ async function renderProfile(username) {
       <div class="profile-stats"><span><b>${u.posts_count}</b> publicaciones</span><span><b>${u.followers_count}</b> seguidores</span><span><b>${u.following_count}</b> siguiendo</span>${u.own ? `<button onclick="go('friends')"><b>${u.friends_count || 0}</b> amigos</button>` : `<span><b>${u.friends_count || 0}</b> amigos</span>`}</div>
     </div>
   </section>
+  ${friendGateBanner(u)}
   ${privateLocked ? `<div class="card private-profile-lock"><div>🔒</div><h3>Esta cuenta es privada</h3><p>Envía una solicitud para ver sus publicaciones y Stories.</p>${u.follow_requested ? '<span>Solicitud de seguimiento enviada</span>' : followButtonHtml(u)}</div>` : ''}
   ${!u.blocked_by_me && !privateLocked ? `<div class="profile-section-title">Publicaciones</div><div class="post-list">${posts.length ? posts.map(postHtml).join('') : `<div class="card empty profile-empty"><div class="empty-icon">▧</div><h3>Sin publicaciones todavía</h3><p>${u.own ? 'Tu primera publicación aparecerá aquí.' : 'Cuando publique algo, aparecerá aquí.'}</p>${u.own ? '<button class="btn primary compact" onclick="openComposerModal()">Crear publicación</button>' : ''}</div>`}</div>` : ''}`;
 }
@@ -772,8 +788,19 @@ function friendButton(u) {
   if (u.friendship_status === 'friends') return `<button class="btn ghost compact friendship-btn" onclick="removeFriend(${u.id},'${escapeAttr(u.username)}')">✓ Amigos</button>`;
   if (u.friendship_status === 'sent') return `<button class="btn ghost compact friendship-btn" onclick="sendFriendRequest(${u.id},'${escapeAttr(u.username)}')">Solicitud enviada</button>`;
   if (u.friendship_status === 'received') return `<button class="btn primary compact friendship-btn" onclick="acceptFriendRequest(${Number(u.friend_request_id)},'${escapeAttr(u.username)}')">Aceptar amistad</button>`;
+  if (u.friend_gate?.enabled && !u.friend_gate.unlocked) return `<button class="btn ghost compact friendship-btn gate-btn" onclick="openFriendGateChallenge()">🔒 ${Number(u.friend_gate.progress||0)}/${Number(u.friend_gate.required||5)}</button>`;
+  if (u.friend_gate?.enabled && u.friend_gate.unlocked) return `<button class="btn primary compact friendship-btn" onclick="sendFriendRequest(${u.id},'${escapeAttr(u.username)}')">✓ Acceso conseguido</button>`;
   return `<button class="btn ghost compact friendship-btn" onclick="sendFriendRequest(${u.id},'${escapeAttr(u.username)}')">＋ Amigo</button>`;
 }
+
+function friendGateBanner(u) {
+  const g=u?.friend_gate;
+  if(!g?.enabled || u.own || u.friendship_status==='friends') return '';
+  const pct=Math.min(100,Math.round((Number(g.progress||0)/Math.max(1,Number(g.required||1)))*100));
+  const detail=g.require_post ? `Invita a ${g.required} personas. Cada una debe registrarse con tu enlace y publicar al menos 1 post.` : `Invita a ${g.required} personas para que se registren con tu enlace.`;
+  return `<section class="card friend-gate-card ${g.unlocked?'unlocked':''}"><div class="friend-gate-icon">${g.unlocked?'✓':'🔐'}</div><div class="friend-gate-copy"><b>${g.unlocked?'Reto completado':'Desbloquea la amistad con @'+escapeHtml(u.username)}</b><p>${g.unlocked?(g.auto_accept?'Ya puedes convertirte en amigo automáticamente.':'Ya puedes enviar tu solicitud de amistad.'):detail}</p><div class="gate-progress"><span style="width:${pct}%"></span></div><small>${Number(g.progress||0)} de ${Number(g.required||0)} completados</small></div>${g.unlocked?`<button class="btn primary compact" onclick="sendFriendRequest(${u.id},'${escapeAttr(u.username)}')">${g.auto_accept?'Ser amigos':'Enviar solicitud'}</button>`:`<button class="btn primary compact whatsapp-btn" onclick="openFriendGateChallenge()">Invitar por WhatsApp</button>`}</section>`;
+}
+
 
 function normalizeUrl(url) { return /^https?:\/\//i.test(url) ? url : `https://${url}`; }
 
@@ -834,7 +861,7 @@ window.sendFriendRequest = async (userId, username = '') => {
     toast(d.status === 'sent' ? 'Solicitud enviada' : d.status === 'none' ? 'Solicitud cancelada' : d.status === 'friends' ? 'Ya sois amigos' : 'Tienes una solicitud pendiente de esa persona');
     await refreshMe(false);
     if (state.view === 'profile' && username) await renderProfile(username); else await renderView();
-  } catch (e) { toast(e.message,'error'); }
+  } catch (e) { if(e.code==='FRIEND_GATE_LOCKED') return openFriendGateChallenge(); toast(e.message,'error'); }
 };
 
 window.acceptFriendRequest = async (requestId, username = '') => {
@@ -861,6 +888,7 @@ async function renderFriends() {
   const [friends, requests] = await Promise.all([api('/api/friends'), api('/api/friends/requests')]);
   const incoming = requests.incoming || [], outgoing = requests.outgoing || [];
   $('#main').innerHTML = `${pageHeader('Amigos','Solicitudes y personas con las que has conectado')}
+    <section class="card invite-friends-strip"><div><b>Haz crecer tu círculo</b><small>Invita a tus amigos a Instant Admirers con tu enlace personal.</small></div><button class="btn primary compact whatsapp-btn" onclick="openInviteFriends()">Invitar por WhatsApp</button></section>
     ${incoming.length ? `<section class="card friends-section"><div class="section-row"><h3>Solicitudes</h3><span>${incoming.length}</span></div>${incoming.map(friendRequestRow).join('')}</section>` : ''}
     ${outgoing.length ? `<section class="card friends-section"><div class="section-row"><h3>Enviadas</h3></div>${outgoing.map(outgoingFriendRow).join('')}</section>` : ''}
     <section class="card friends-section"><div class="section-row"><h3>Tus amigos</h3><span>${friends.length}</span></div>${friends.length ? friends.map(friendRow).join('') : `<div class="empty compact-empty"><p>Aún no has añadido amigos.</p><button class="btn primary compact" onclick="go('discover')">Descubrir personas</button></div>`}</section>`;
@@ -882,11 +910,79 @@ window.openOwnProfileMenu = () => {
   modal(`<div class="modal-head"><h3>Tu perfil</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
     <div class="post-menu own-profile-menu">
       <button onclick="closeModal();go('friends')"><span>👥</span><div><b>Amigos</b><small>Gestiona amistades y solicitudes</small></div></button>
+      <button onclick="closeModal();openInviteFriends()"><span>💬</span><div><b>Invitar amigos</b><small>Comparte tu enlace por WhatsApp y sigue tus referidos</small></div></button>
+      <button onclick="closeModal();openFriendGateSettings()"><span>🔐</span><div><b>Condición de amistad</b><small>Pide invitaciones antes de aceptar nuevos amigos</small></div></button>
       <button onclick="closeModal();openPrivacySettings()"><span>🔒</span><div><b>Privacidad</b><small>Cuenta privada, mensajes, bloqueos y silencios</small></div></button>
       <button onclick="closeModal();openAccountSettings()"><span>⚙</span><div><b>Ajustes</b><small>Contraseña, legal y cuenta</small></div></button>
       ${state.me?.is_admin ? `<button onclick="closeModal();go('admin')"><span>🛡</span><div><b>Administración</b><small>Moderación y denuncias</small></div></button>` : ''}
       <button class="danger-option" onclick="closeModal();logout()"><span>↪</span><div><b>Cerrar sesión</b><small>Salir de Instant Admirers en este dispositivo</small></div></button>
     </div>`);
+};
+
+window.openInviteFriends = async () => {
+  try {
+    const d=await api('/api/invites/me');
+    const recent=d.recent||[];
+    modal(`<div class="modal-head"><h3>Invitar amigos</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+      <div class="invite-center">
+        <div class="invite-hero"><span>💬</span><div><b>Invita a tus amigos a Instant Admirers</b><p>Cada persona que se registre desde tu enlace quedará asociada a tu invitación.</p></div></div>
+        <div class="invite-link"><input id="personalInviteLink" readonly value="${escapeAttr(d.link)}"><button class="btn ghost compact" onclick="copyInviteLink('${escapeAttr(d.link)}')">Copiar</button></div>
+        <button class="btn primary whatsapp-btn" onclick="shareInviteWhatsApp('${escapeAttr(d.link)}')">Compartir por WhatsApp</button>
+        <div class="referral-stats"><div><b>${Number(d.registered||0)}</b><span>registrados</span></div><div><b>${Number(d.qualified||0)}</b><span>ya publicaron</span></div></div>
+        ${recent.length?`<section class="invite-list"><h4>Tus últimas invitaciones</h4>${recent.map(r=>`<div class="invite-person">${avatar(r,'small')}<span><b>${escapeHtml(r.name)}</b><small>@${escapeHtml(r.username)}${r.gate_username?' · reto @'+escapeHtml(r.gate_username):''}</small></span><i class="${r.qualified_at?'done':''}">${r.qualified_at?'✓ Publicó':'Registrado'}</i></div>`).join('')}</section>`:''}
+      </div>`);
+  } catch(e){toast(e.message,'error');}
+};
+
+window.copyInviteLink = async link => { try{await navigator.clipboard.writeText(link);toast('Enlace copiado');}catch(_){prompt('Copia este enlace:',link);} };
+window.shareInviteWhatsApp = (link,target='') => {
+  const targetText=target?` Quiero desbloquear el acceso a @${target}.`:'';
+  const text=`¡Únete a Instant Admirers!${targetText} Regístrate con mi enlace y comparte tu primer post: ${link}`;
+  window.open(`https://wa.me/?text=${encodeURIComponent(text)}`,'_blank','noopener');
+};
+
+window.openFriendGateChallenge = async () => {
+  const u=state.profileData;
+  const g=u?.friend_gate;
+  if(!u || !g?.enabled) return toast('Este reto ya no está disponible','error');
+  try {
+    const me=await api('/api/invites/me');
+    const link=`${location.origin}/?ref=${encodeURIComponent(me.code)}&gate=${encodeURIComponent(g.gate_code)}`;
+    const pct=Math.min(100,Math.round((Number(g.progress||0)/Math.max(1,Number(g.required||1)))*100));
+    modal(`<div class="modal-head"><h3>Desbloquear @${escapeHtml(u.username)}</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+      <div class="friend-challenge">
+        <div class="challenge-lock">🔐</div>
+        <h3>${g.unlocked?'Reto completado':'Invita a '+g.required+' amigos'}</h3>
+        <p>${g.require_post?`Para desbloquear esta amistad, ${g.required} amigos deben registrarse desde este enlace y publicar al menos 1 post.`:`Para desbloquear esta amistad, ${g.required} amigos deben registrarse desde este enlace.`}</p>
+        <div class="challenge-number"><b>${Number(g.progress||0)}</b><span>/ ${Number(g.required||0)}</span></div>
+        <div class="gate-progress large"><span style="width:${pct}%"></span></div>
+        ${g.unlocked?`<button class="btn primary" onclick="closeModal();sendFriendRequest(${u.id},'${escapeAttr(u.username)}')">${g.auto_accept?'Ser amigos ahora':'Enviar solicitud de amistad'}</button>`:`<button class="btn primary whatsapp-btn" onclick="shareInviteWhatsApp('${escapeAttr(link)}','${escapeAttr(u.username)}')">Invitar por WhatsApp</button><button class="btn ghost" onclick="copyInviteLink('${escapeAttr(link)}')">Copiar enlace del reto</button>`}
+        <small class="challenge-note">Solo cuentan las nuevas cuentas que se registren desde este enlace de reto.${g.require_post?' La publicación puede hacerse después del registro.':''}</small>
+      </div>`);
+  } catch(e){toast(e.message,'error');}
+};
+
+window.openFriendGateSettings = async () => {
+  try{
+    const g=await api('/api/friend-gate');
+    modal(`<div class="modal-head"><h3>Condición de amistad</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+      <div class="gate-settings">
+        <div class="security-callout"><b>Convierte tu perfil en un reto viral</b><p>Las personas tendrán que cumplir la condición antes de poder hacerse amigas tuyas.</p></div>
+        <label class="privacy-section"><span><b>Activar condición</b><small>Si está desactivada, cualquiera podrá enviarte una solicitud normal.</small></span><span class="switch"><input id="gateEnabled" type="checkbox" ${g.friend_gate_enabled?'checked':''}><span></span></span></label>
+        <label>Número de amigos que deben invitar<input id="gateRequired" type="number" min="1" max="50" value="${Number(g.friend_gate_required_referrals||5)}"></label>
+        <label class="legal-check"><input id="gateRequirePost" type="checkbox" ${g.friend_gate_require_post!==false?'checked':''}><span>Los invitados deben publicar al menos 1 post para contar.</span></label>
+        <label class="legal-check"><input id="gateAutoAccept" type="checkbox" ${g.friend_gate_auto_accept!==false?'checked':''}><span>Al completar el reto, aceptar automáticamente la amistad cuando pulse “Ser amigos”.</span></label>
+        <button class="btn primary" onclick="saveFriendGateSettings()">Guardar condición</button>
+      </div>`);
+  }catch(e){toast(e.message,'error');}
+};
+
+window.saveFriendGateSettings = async () => {
+  try{
+    const required=Math.max(1,Math.min(50,Number($('#gateRequired')?.value||5)));
+    await api('/api/friend-gate',{method:'PATCH',body:JSON.stringify({enabled:Boolean($('#gateEnabled')?.checked),required_referrals:required,require_post:Boolean($('#gateRequirePost')?.checked),auto_accept:Boolean($('#gateAutoAccept')?.checked)})});
+    await refreshMe(false);closeModal();toast('Condición de amistad actualizada');
+  }catch(e){toast(e.message,'error');}
 };
 
 window.editProfile = () => {

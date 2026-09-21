@@ -376,3 +376,33 @@ CREATE INDEX IF NOT EXISTS idx_account_tokens_lookup ON account_tokens(type, tok
 CREATE INDEX IF NOT EXISTS idx_account_tokens_user ON account_tokens(user_id, type, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_security_events_created ON security_events(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_security_events_user ON security_events(user_id, created_at DESC);
+
+
+-- V1.2.3: invitaciones, referidos y retos de acceso a amistades.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS invite_code VARCHAR(24);
+UPDATE users
+   SET invite_code = LOWER(SUBSTR(MD5(id::text || ':' || username || ':' || created_at::text), 1, 16))
+ WHERE invite_code IS NULL OR invite_code = '';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite_code ON users(invite_code);
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS friend_gate_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS friend_gate_required_referrals INTEGER NOT NULL DEFAULT 5;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS friend_gate_require_post BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS friend_gate_auto_accept BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_friend_gate_required_check;
+ALTER TABLE users ADD CONSTRAINT users_friend_gate_required_check
+  CHECK (friend_gate_required_referrals BETWEEN 1 AND 50);
+
+CREATE TABLE IF NOT EXISTS referral_attributions (
+  id BIGSERIAL PRIMARY KEY,
+  inviter_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  invited_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  gate_user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  qualified_at TIMESTAMPTZ,
+  UNIQUE (invited_user_id),
+  CHECK (inviter_id <> invited_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_referrals_inviter ON referral_attributions(inviter_id, registered_at DESC);
+CREATE INDEX IF NOT EXISTS idx_referrals_gate ON referral_attributions(inviter_id, gate_user_id, registered_at DESC);
+CREATE INDEX IF NOT EXISTS idx_referrals_qualified ON referral_attributions(inviter_id, qualified_at DESC);
