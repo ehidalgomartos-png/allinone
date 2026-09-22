@@ -16,7 +16,7 @@ Cómo tratamos los datos personales en Instant Admirers.
 
 <div class="meta">
 
-<span class="pill">Versión 1.0</span><span class="pill">20 de septiembre
+<span class="pill">Versión 1.1</span><span class="pill">22 de septiembre
 de 2026</span>
 
 </div>
@@ -51,6 +51,10 @@ Según las funciones utilizadas, podemos tratar:
 - Datos técnicos que puedan constar en registros de infraestructura,
   como dirección IP, tipo de navegador, dispositivo, fecha/hora y datos
   necesarios para prevenir abuso y mantener el servicio.
+- Métricas operativas internas de lanzamiento, como sesiones activas,
+  altas, activación de funciones y errores técnicos. Estas métricas se
+  utilizan para operar y mejorar el servicio y no incorporan publicidad
+  comportamental de terceros.
 
 ## 3. Finalidades y bases jurídicas
 
@@ -58,6 +62,7 @@ Según las funciones utilizadas, podemos tratar:
 |-----------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Crear la cuenta y prestar las funciones sociales, mensajería y privacidad.        | Ejecución de los Términos de Uso y prestación del servicio solicitado.                                                                                                                                 |
 | Seguridad, prevención de fraude, spam, abuso y protección de la comunidad.        | Interés legítimo en proteger el servicio y a sus usuarios; cumplimiento legal cuando corresponda.                                                                                                      |
+| Medir estabilidad, adopción y errores durante el funcionamiento y lanzamiento.     | Interés legítimo en mantener, diagnosticar y mejorar técnicamente el servicio.                                                                                                                          |
 | Moderación, gestión de denuncias y respuesta a requerimientos legales.            | Cumplimiento de obligaciones legales e interés legítimo en aplicar las normas del servicio.                                                                                                            |
 | Personalizar “Para ti” y sugerencias mediante intereses e interacciones internas. | Ejecución de la funcionalidad solicitada e interés legítimo en ofrecer una experiencia relevante. Estas recomendaciones no producen por sí mismas efectos jurídicos ni efectos de importancia similar. |
 | Comunicaciones comerciales futuras, si se incorporan.                             | Solo se realizarán conforme a la base jurídica que resulte aplicable y, cuando sea necesario, con consentimiento separado.                                                                             |
@@ -72,12 +77,13 @@ de esta exposición.
 
 ## 5. Proveedores y transferencias internacionales
 
-Instant Admirers utiliza actualmente **Render Services, Inc.** para
-alojamiento de la aplicación y PostgreSQL. El servicio puede implicar
-tratamiento en Estados Unidos. Render publica un acuerdo de tratamiento
-de datos y mecanismos de transferencia internacional, incluidas
-garantías para transferencias sujetas al RGPD. La lista de proveedores
-se actualizará si se incorporan nuevos encargados relevantes.
+Instant Admirers utiliza actualmente proveedores de infraestructura y
+servicios técnicos, entre ellos **Render** para la aplicación y
+PostgreSQL, **Cloudinary** para almacenamiento y entrega de imágenes y
+vídeos, y **Resend** para correos transaccionales. Estos servicios pueden
+implicar tratamiento o transferencias internacionales conforme a sus
+condiciones y mecanismos aplicables. La lista se actualizará si se
+incorporan nuevos encargados relevantes.
 
 ## 6. Conservación
 

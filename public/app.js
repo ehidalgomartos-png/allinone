@@ -1,4 +1,4 @@
-// V1.5.0 · PWA instalable: service worker, instalación y arranque offline seguro
+// V1.6.0 · Lanzamiento controlado: activación, métricas operativas y observabilidad
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -134,7 +134,9 @@ const state = {
   infiniteObserver: null,
   mediaObserver: null,
   reelObserver: null,
-  rightbarCache: null
+  rightbarCache: null,
+  launchStatus: { registration_mode:'open', invite_required:false, registration_paused:false },
+  authMode: 'login'
 };
 
 const $ = (s, root = document) => root.querySelector(s);
@@ -172,6 +174,7 @@ window.addEventListener('appinstalled', () => {
   deferredInstallPrompt = null;
   updatePwaInstallUi();
   toast('Instant Admirers se ha instalado correctamente.');
+  trackOperationalEvent('pwa_installed',{standalone:true});
 });
 
 window.installInstantAdmirers = async () => {
@@ -296,6 +299,34 @@ function showNetworkState(online, temporary = false) {
   if (online || temporary) showNetworkState.timer = setTimeout(() => box.classList.remove('show'), 2200);
 }
 
+function trackOperationalEvent(type, metadata = {}) {
+  if (!state.token || !navigator.onLine) return;
+  try {
+    fetch('/api/telemetry/event', { method:'POST', headers:{'Authorization':'Bearer '+state.token,'Content-Type':'application/json'}, body:JSON.stringify({type,path:location.pathname,metadata}), keepalive:true }).catch(()=>{});
+  } catch (_) {}
+}
+
+function trackSessionActivity() {
+  if (!state.token || !navigator.onLine) return;
+  const now=Date.now(), last=Number(sessionStorage.getItem('iaLastSessionPing') || 0);
+  if (now-last < 20*60*1000) return;
+  sessionStorage.setItem('iaLastSessionPing',String(now));
+  try {
+    fetch('/api/telemetry/session',{method:'POST',headers:{'Authorization':'Bearer '+state.token,'Content-Type':'application/json'},body:JSON.stringify({path:location.pathname}),keepalive:true}).catch(()=>{});
+  } catch (_) {}
+}
+
+let lastClientErrorKey='';
+function reportClientError(message, stack='') {
+  if(!state.token) return;
+  const key=String(message || '').slice(0,240);
+  if(!key || key===lastClientErrorKey) return;
+  lastClientErrorKey=key; setTimeout(()=>{lastClientErrorKey='';},10000);
+  trackOperationalEvent('client_error',{message:key,stack:String(stack || '').slice(0,1800)});
+}
+window.addEventListener('error',event=>reportClientError(event?.message || 'Error JavaScript',event?.error?.stack || ''));
+window.addEventListener('unhandledrejection',event=>{const reason=event?.reason;reportClientError(reason?.message || String(reason || 'Promesa rechazada'),reason?.stack || '');});
+
 async function api(url, opts = {}) {
   const headers = { ...(opts.headers || {}) };
   if (state.token) headers.Authorization = 'Bearer ' + state.token;
@@ -416,6 +447,17 @@ function legalLinks() {
   </div>`;
 }
 
+async function loadLaunchStatus() {
+  try {
+    const status=await api('/api/launch/status',{timeout:10000});
+    state.launchStatus={...state.launchStatus,...status};
+    if(state.authMode==='register') {
+      const hasTyped=Boolean($('#regname')?.value || $('#reguser')?.value || $('#regemail')?.value || $('#regpass')?.value);
+      if(!hasTyped) showAuth('register');
+    }
+  } catch (_) {}
+}
+
 function authScreen() {
   const directProfile = pendingProfileDestination();
   $('#app').innerHTML = `
@@ -442,12 +484,25 @@ function authScreen() {
       </section>
     </div>`;
   showAuth('login');
+  loadLaunchStatus();
   const authNotice=sessionStorage.getItem('authNotice'); if(authNotice){sessionStorage.removeItem('authNotice');setTimeout(()=>toast(authNotice),80);}
 }
 
 window.showAuth = (mode) => {
+  state.authMode=mode;
   $('#loginTab')?.classList.toggle('active', mode === 'login');
   $('#registerTab')?.classList.toggle('active', mode === 'register');
+  const launchMode=state.launchStatus?.registration_mode || 'open';
+  const hasInvite=Boolean(localStorage.getItem('pendingReferralCode'));
+  if(mode==='register' && launchMode==='paused'){
+    $('#authbox').innerHTML=`<div class="auth-form launch-auth-gate"><div class="invite-auth-note"><b>⏸ Altas pausadas temporalmente</b><span>Estamos incorporando usuarios por fases para cuidar el rendimiento y la comunidad. Si ya tienes cuenta, puedes entrar con normalidad.</span></div><button class="btn ghost large" onclick="showAuth('login')">Ya tengo cuenta</button></div>`;
+    return;
+  }
+  if(mode==='register' && launchMode==='invite_only' && !hasInvite){
+    $('#authbox').innerHTML=`<div class="auth-form launch-auth-gate"><div class="invite-auth-note"><b>✦ Acceso por invitación</b><span>Instant Admirers está en lanzamiento controlado. Para crear una cuenta necesitas abrir un enlace de invitación de un miembro.</span></div><button class="btn ghost large" onclick="showAuth('login')">Ya tengo cuenta</button></div>`;
+    return;
+  }
+  const launchInviteNote = mode==='register' && launchMode==='invite_only' ? `<div class="invite-auth-note launch-invite-ok"><b>✓ Invitación detectada</b><span>Puedes crear tu cuenta dentro de esta fase de lanzamiento.</span></div>` : '';
   $('#authbox').innerHTML = mode === 'login' ? `
     <div class="auth-form">
       <label>Email o usuario</label><input id="loginid" autocomplete="username" placeholder="tuusuario">
@@ -456,6 +511,7 @@ window.showAuth = (mode) => {
       <button class="auth-text-link" onclick="openForgotPassword()">¿Has olvidado tu contraseña?</button>
     </div>` : `
     <div class="auth-form">
+      ${launchInviteNote}
       ${pendingProfileDestination()
         ? `<div class="invite-auth-note profile-invite-note"><b>🔐 Te han invitado al perfil de @${escapeHtml(pendingProfileDestination())}</b><span>Crea tu cuenta. Entrarás directamente a ese perfil y podrás usar Instant Admirers con normalidad mientras completas su acceso.</span></div>`
         : (localStorage.getItem('pendingReferralCode') ? '<div class="invite-auth-note"><b>💬 Has llegado con una invitación</b><span>Crea tu perfil en Instant Admirers desde aquí.</span></div>' : '')}
@@ -1000,18 +1056,29 @@ function personalizeHint() {
   return `<div class="personalize-hint"><span>✦</span><div><b>Haz “Para ti” más tuyo</b><small>Añade tus intereses al perfil y las recomendaciones mejorarán.</small></div><button class="text-btn" onclick="editProfile()">Añadir</button></div>`;
 }
 
+function activationChecklistHtml(data) {
+  if(!data || data.completed) return '';
+  const steps=[
+    {done:data.has_avatar,label:'Añade una foto',action:"editProfile()"},
+    {done:data.has_profile,label:'Completa tu perfil',action:"editProfile()"},
+    {done:data.has_post,label:'Haz tu primera publicación',action:"openComposerModal()"},
+    {done:data.follows_someone,label:'Sigue a alguien',action:"go('discover')"}
+  ];
+  return `<section class="card activation-checklist"><div class="activation-head"><div><small>PRIMEROS PASOS</small><h3>Prepara tu cuenta</h3><p>${Number(data.steps || 0)} de ${Number(data.total || 4)} completados</p></div><span>${Number(data.steps || 0)}/${Number(data.total || 4)}</span></div><div class="activation-progress"><i style="width:${Math.round((Number(data.steps||0)/Math.max(1,Number(data.total||4)))*100)}%"></i></div><div class="activation-steps">${steps.map(step=>`<button class="${step.done?'done':''}" onclick="${step.action}"><i>${step.done?'✓':'○'}</i><span>${step.label}</span></button>`).join('')}</div></section>`;
+}
+
 async function renderFeed() {
   resetLazyMediaObserver();
   const mode = state.feedMode;
   const endpoint = mode === 'for-you' ? '/api/for-you' : '/api/feed';
   const firstUrl = `${endpoint}?limit=15${mode === 'for-you' ? '&offset=0' : ''}`;
-  const [rawPage, stories] = await Promise.all([api(firstUrl), api('/api/stories')]);
+  const [rawPage, stories, activation] = await Promise.all([api(firstUrl), api('/api/stories'), api('/api/onboarding/checklist').catch(()=>null)]);
   const page = normalizePagePayload(rawPage);
   const rows = page.items;
   const empty = mode === 'for-you'
     ? `<div class="card empty feed-empty"><div class="empty-icon">✦</div><h3>Estamos preparando tu Para ti</h3><p>Interactúa con publicaciones, sigue perfiles o añade intereses para afinarlo.</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button><button class="btn ghost compact" onclick="editProfile()">Mis intereses</button></div></div>`
     : `<div class="card empty feed-empty"><div class="empty-icon">⌂</div><h3>Tu feed está empezando</h3><p>Sigue personas desde Descubrir o crea tu primera publicación.</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button><button class="btn ghost compact" onclick="openComposerModal()">Publicar</button></div></div>`;
-  $('#main').innerHTML = `<div class="feed-start">${storyStrip(stories)}${composer()}${feedTabs()}${personalizeHint()}</div><div class="post-list" id="feedPostList">${rows.length ? rows.map(postHtml).join('') : empty}</div>${pagerHtml('feed', page.has_more)}`;
+  $('#main').innerHTML = `<div class="feed-start">${activationChecklistHtml(activation)}${storyStrip(stories)}${composer()}${feedTabs()}${personalizeHint()}</div><div class="post-list" id="feedPostList">${rows.length ? rows.map(postHtml).join('') : empty}</div>${pagerHtml('feed', page.has_more)}`;
   setupLazyMedia($('#main'));
   installInfinitePager('feed', page, async pager => {
     if (state.view !== 'feed' || state.feedMode !== mode) return;
@@ -2272,11 +2339,12 @@ async function renderAdmin() {
     $('#main').innerHTML=`<div class="card empty"><h3>Acceso no disponible</h3><p>Este panel está reservado a administración.</p></div>`;
     return;
   }
-  const [stats,reports,actions,security]=await Promise.all([
+  const [stats,reports,actions,security,launch]=await Promise.all([
     api('/api/admin/stats'),
     api('/api/admin/reports?status=all'),
     api('/api/admin/actions'),
-    api('/api/admin/security-events')
+    api('/api/admin/security-events'),
+    api('/api/admin/launch-dashboard')
   ]);
   $('#main').innerHTML=`${pageHeader('Administración','Moderación y estado general de Instant Admirers')}
     <div class="admin-stats">
@@ -2285,6 +2353,20 @@ async function renderAdmin() {
       <div class="card admin-stat"><b>${stats.open_reports}</b><span>Denuncias abiertas</span><small>${stats.reviewing_reports} en revisión</small></div>
       <div class="card admin-stat"><b>${stats.suspended_users}</b><span>Suspendidos</span><small>${stats.closed_reports} denuncias cerradas</small></div>
     </div>
+    <section class="card admin-section launch-dashboard">
+      <div class="section-row"><div><h3>Lanzamiento controlado</h3><p>Altas, activación, actividad y errores reales.</p></div><span class="launch-mode-badge">${escapeHtml(launch.settings.registration_mode)}</span></div>
+      <div class="launch-control-row"><label>Registro<select id="launchRegistrationMode"><option value="open" ${launch.settings.registration_mode==='open'?'selected':''}>Abierto</option><option value="invite_only" ${launch.settings.registration_mode==='invite_only'?'selected':''}>Solo invitación</option><option value="paused" ${launch.settings.registration_mode==='paused'?'selected':''}>Pausado</option></select></label><button class="btn primary compact" onclick="saveLaunchRegistrationMode()">Aplicar</button></div>
+      <div class="launch-metrics">
+        <div><b>${launch.metrics.active_24h}</b><span>Activos 24 h</span><small>${launch.metrics.active_7d} en 7 días</small></div>
+        <div><b>${launch.metrics.users_new_7d}</b><span>Altas 7 días</span><small>${launch.metrics.users_verified}/${launch.metrics.users_total} verificados</small></div>
+        <div><b>${launch.metrics.users_with_post}</b><span>Con 1er post</span><small>${launch.metrics.users_with_avatar} con foto</small></div>
+        <div><b>${launch.metrics.posts_7d}</b><span>Posts 7 días</span><small>${launch.metrics.posts_24h} hoy</small></div>
+        <div><b>${launch.metrics.referrals_7d}</b><span>Referidos 7 días</span><small>${launch.metrics.referrals_qualified} cualificados</small></div>
+        <div class="${Number(launch.metrics.errors_24h)>0?'has-errors':''}"><b>${launch.metrics.errors_24h}</b><span>Errores 24 h</span><small>${launch.metrics.reports_pending} denuncias pendientes</small></div>
+      </div>
+      <div class="launch-secondary"><span>${launch.metrics.stories_active} Stories activas</span><span>${launch.metrics.reels_total} vídeos/Reels</span><span>${launch.metrics.messages_24h} mensajes hoy</span></div>
+      <div class="launch-errors"><div class="section-row"><h4>Últimos errores técnicos</h4><span>${launch.recent_errors.length}</span></div>${launch.recent_errors.length?launch.recent_errors.slice(0,8).map(e=>`<div class="launch-error"><b>${escapeHtml(e.event_type)}</b><span>${e.username?'@'+escapeHtml(e.username):'sin usuario'} · ${escapeHtml(e.path || '/')}</span><small>${escapeHtml(e.metadata?.message || '')} · ${timeAgo(e.created_at)}</small></div>`).join(''):'<p class="muted">Sin errores registrados.</p>'}</div>
+    </section>
     <section class="card admin-section">
       <div class="section-row"><h3>Denuncias</h3><span>${reports.length}</span></div>
       <div class="admin-report-list">${reports.length?reports.map(adminReportHtml).join(''):'<div class="empty compact-empty">No hay denuncias.</div>'}</div>
@@ -2298,6 +2380,14 @@ async function renderAdmin() {
       <div class="admin-action-list">${security.length?security.slice(0,40).map(e=>`<div class="admin-action"><b>${escapeHtml(e.event_type)}</b><span>${e.username?'@'+escapeHtml(e.username):'sin usuario asociado'}</span><small>${timeAgo(e.created_at)}</small></div>`).join(''):'<p class="muted">Todavía no hay eventos de seguridad.</p>'}</div>
     </section>`;
 }
+
+window.saveLaunchRegistrationMode = async () => {
+  const mode=$('#launchRegistrationMode')?.value || 'open';
+  const labels={open:'registro abierto',invite_only:'solo invitación',paused:'registro pausado'};
+  if(!confirm(`Cambiar el lanzamiento a: ${labels[mode] || mode}?`)) return;
+  try{await api('/api/admin/launch/settings',{method:'PATCH',body:JSON.stringify({registration_mode:mode})});toast('Modo de registro actualizado');await renderAdmin();}
+  catch(e){toast(e.message,'error');}
+};
 
 function adminReportHtml(r){
   const target=r.target_username?`@${escapeHtml(r.target_username)}`:'contenido eliminado';
@@ -2350,6 +2440,7 @@ async function init(options = {}) {
   if (!navigator.onLine) { renderOfflineLaunch(); updatePwaInstallUi(); return; }
   try {
     state.me = await api('/api/me');
+    trackSessionActivity();
     connectRealtime();
     const pendingProfile = String(options.preferredProfile || pendingProfileDestination()).trim();
     if (pendingProfile) {

@@ -431,3 +431,27 @@ CREATE INDEX IF NOT EXISTS idx_bookmarks_user_created_desc ON bookmarks(user_id,
 CREATE INDEX IF NOT EXISTS idx_stories_expires_created_desc ON stories(expires_at, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_messages_conversation_id_desc ON messages(conversation_id, id DESC);
 
+
+
+-- V1.6: lanzamiento controlado, métricas operativas y observabilidad.
+CREATE TABLE IF NOT EXISTS launch_settings (
+  id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  registration_mode VARCHAR(20) NOT NULL DEFAULT 'open' CHECK (registration_mode IN ('open','invite_only','paused')),
+  updated_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO launch_settings(id,registration_mode) VALUES(1,'open') ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS app_events (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  event_type VARCHAR(60) NOT NULL,
+  severity VARCHAR(12) NOT NULL DEFAULT 'info' CHECK (severity IN ('info','warning','error')),
+  path VARCHAR(500) NOT NULL DEFAULT '',
+  user_agent VARCHAR(500) NOT NULL DEFAULT '',
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_app_events_type_created ON app_events(event_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_app_events_user_created ON app_events(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_app_events_severity_created ON app_events(severity, created_at DESC);

@@ -83,6 +83,7 @@ const registerLimiter = limiter({ windowMs: 60*60*1000, max: 6, message: 'Se han
 const recoveryLimiter = limiter({ windowMs: 15*60*1000, max: 6, message: 'Demasiadas solicitudes de recuperación. Espera unos minutos.' });
 const writeLimiter = rateLimit({ windowMs: 60*1000, max: 140, standardHeaders: 'draft-7', legacyHeaders: false, skip: req => ['GET','HEAD','OPTIONS'].includes(req.method), message: { error:'Estás realizando acciones demasiado rápido. Espera un momento.' } });
 const reportLimiter = limiter({ windowMs: 60*60*1000, max: 12, message: 'Has enviado demasiadas denuncias en poco tiempo.' });
+const telemetryLimiter = limiter({ windowMs: 5*60*1000, max: 30, message: 'Demasiados eventos técnicos en poco tiempo.' });
 app.use('/api', writeLimiter);
 app.use('/api/auth/login', loginLimiter);
 app.use('/api/auth/register', registerLimiter);
@@ -90,6 +91,7 @@ app.use('/api/auth/forgot-password', recoveryLimiter);
 app.use('/api/auth/reset-password', recoveryLimiter);
 app.use('/api/auth/verify-email/request', recoveryLimiter);
 app.use('/api/reports', reportLimiter);
+app.use('/api/telemetry', telemetryLimiter);
 
 function normalizeEmail(value='') { return String(value).trim().toLowerCase(); }
 function tokenDigest(raw='') { return crypto.createHash('sha256').update(String(raw)).digest('hex'); }
@@ -103,6 +105,25 @@ async function securityEvent(req, eventType, userId=null, metadata={}) {
       userId || null, String(eventType).slice(0,60), requestIpHash(req), String(req.get('user-agent') || '').slice(0,500), JSON.stringify(metadata || {})
     ]);
   } catch (err) { console.error('securityEvent:', err.message); }
+}
+
+let launchSettingsCache = { value:null, expires:0 };
+async function getLaunchSettings(force=false) {
+  const now = Date.now();
+  if (!force && launchSettingsCache.value && launchSettingsCache.expires > now) return launchSettingsCache.value;
+  const { rows } = await pool.query(`SELECT registration_mode,updated_at FROM launch_settings WHERE id=1 LIMIT 1`);
+  const value = rows[0] || { registration_mode:'open', updated_at:null };
+  launchSettingsCache = { value, expires:now + 15000 };
+  return value;
+}
+async function operationalEvent({ userId=null, eventType, severity='info', path='', userAgent='', metadata={} }) {
+  try {
+    let compact = JSON.stringify(metadata || {});
+    if (compact.length > 8000) compact = JSON.stringify({ truncated:true, preview:compact.slice(0,7000) });
+    await pool.query(`INSERT INTO app_events(user_id,event_type,severity,path,user_agent,metadata) VALUES($1,$2,$3,$4,$5,$6::jsonb)`, [
+      userId || null, String(eventType || 'event').slice(0,60), ['info','warning','error'].includes(severity) ? severity : 'info', String(path || '').slice(0,500), String(userAgent || '').slice(0,500), compact
+    ]);
+  } catch (err) { console.error('operationalEvent:', err.message); }
 }
 async function createAccountToken(userId, type, { minutes=60, newEmail=null }={}) {
   const raw = crypto.randomBytes(32).toString('hex');
@@ -688,7 +709,12 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.5.0', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app'] });
+  res.json({ ok: true, version: '1.6.0', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log'] });
+}));
+
+app.get('/api/launch/status', asyncRoute(async (_req, res) => {
+  const settings = await getLaunchSettings();
+  res.json({ registration_mode:settings.registration_mode, invite_required:settings.registration_mode === 'invite_only', registration_paused:settings.registration_mode === 'paused' });
 }));
 
 const RESERVED_PROFILE_SLUGS = new Set([
@@ -713,6 +739,17 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
   if (RESERVED_PROFILE_SLUGS.has(normalizedUsername)) return res.status(400).json({ error: 'Ese nombre de usuario está reservado. Elige otro.' });
   if (!normalizedEmail.includes('@') || normalizedEmail.length > 255) return res.status(400).json({ error: 'Email inválido' });
   if (plainPassword.length < 8) return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+
+  const launchSettings = await getLaunchSettings();
+  const normalizedReferral = String(referral_code || '').trim().toLowerCase().slice(0,24);
+  if (launchSettings.registration_mode === 'paused') {
+    return res.status(503).json({ error:'Las nuevas altas están pausadas temporalmente durante el lanzamiento controlado.', code:'REGISTRATION_PAUSED' });
+  }
+  if (launchSettings.registration_mode === 'invite_only') {
+    if (!normalizedReferral) return res.status(403).json({ error:'Ahora mismo Instant Admirers está en fase de acceso por invitación.', code:'INVITE_REQUIRED' });
+    const validInvite = await pool.query(`SELECT 1 FROM users WHERE LOWER(invite_code)=LOWER($1) LIMIT 1`, [normalizedReferral]);
+    if (!validInvite.rowCount) return res.status(403).json({ error:'La invitación no es válida o ya no está disponible.', code:'INVITE_INVALID' });
+  }
 
   const passwordHash = await bcrypt.hash(plainPassword, 10);
   try {
@@ -2116,6 +2153,38 @@ app.post('/api/onboarding', auth, asyncRoute(async (req, res) => {
   res.json(safeUser(rows[0], true));
 }));
 
+app.get('/api/onboarding/checklist', auth, asyncRoute(async (req,res) => {
+  const { rows } = await pool.query(`
+    SELECT
+      (COALESCE(NULLIF(TRIM(u.avatar),''),'') <> '') AS has_avatar,
+      ((COALESCE(NULLIF(TRIM(u.bio),''),'') <> '') OR (COALESCE(NULLIF(TRIM(u.headline),''),'') <> '') OR (COALESCE(NULLIF(TRIM(u.interests),''),'') <> '')) AS has_profile,
+      EXISTS(SELECT 1 FROM posts p WHERE p.user_id=u.id) AS has_post,
+      EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=u.id) AS follows_someone
+    FROM users u WHERE u.id=$1
+  `,[req.user.id]);
+  const item = rows[0] || {has_avatar:false,has_profile:false,has_post:false,follows_someone:false};
+  const steps = [item.has_avatar,item.has_profile,item.has_post,item.follows_someone].filter(Boolean).length;
+  res.json({ ...item, completed:steps===4, steps, total:4 });
+}));
+
+app.post('/api/telemetry/session', auth, asyncRoute(async (req,res) => {
+  await pool.query(`
+    INSERT INTO app_events(user_id,event_type,severity,path,user_agent,metadata)
+    SELECT $1,'session_active','info',$2,$3,'{}'::jsonb
+    WHERE NOT EXISTS (SELECT 1 FROM app_events WHERE user_id=$1 AND event_type='session_active' AND created_at > NOW()-INTERVAL '30 minutes')
+  `,[req.user.id,String(req.body?.path || '/').slice(0,500),String(req.get('user-agent') || '').slice(0,500)]);
+  res.json({ok:true});
+}));
+
+app.post('/api/telemetry/event', auth, asyncRoute(async (req,res) => {
+  const type=String(req.body?.type || '').slice(0,60);
+  const allowed=new Set(['client_error','pwa_installed']);
+  if(!allowed.has(type)) return res.status(400).json({error:'Evento no válido'});
+  const metadata = req.body?.metadata && typeof req.body.metadata === 'object' ? req.body.metadata : {};
+  await operationalEvent({userId:req.user.id,eventType:type,severity:type==='client_error'?'error':'info',path:String(req.body?.path || '').slice(0,500),userAgent:req.get('user-agent') || '',metadata});
+  res.json({ok:true});
+}));
+
 app.post('/api/account/accept-terms', auth, asyncRoute(async (req, res) => {
   if (req.body.age_confirmed !== true || req.body.terms_accepted !== true) {
     return res.status(400).json({ error: 'Debes confirmar que tienes 18 años y aceptar los Términos de Uso' });
@@ -2197,6 +2266,47 @@ app.get('/api/admin/stats', auth, adminOnly, asyncRoute(async (_req, res) => {
       (SELECT COUNT(*)::int FROM users WHERE created_at >= NOW()-INTERVAL '7 days') AS new_users_7d,
       (SELECT COUNT(*)::int FROM posts WHERE created_at >= NOW()-INTERVAL '7 days') AS new_posts_7d
   `);
+  res.json(rows[0]);
+}));
+
+app.get('/api/admin/launch-dashboard', auth, adminOnly, asyncRoute(async (_req,res) => {
+  const settings = await getLaunchSettings();
+  const { rows } = await pool.query(`
+    SELECT
+      (SELECT COUNT(*)::int FROM users) AS users_total,
+      (SELECT COUNT(*)::int FROM users WHERE email_verified_at IS NOT NULL) AS users_verified,
+      (SELECT COUNT(*)::int FROM users WHERE created_at >= NOW()-INTERVAL '24 hours') AS users_new_24h,
+      (SELECT COUNT(*)::int FROM users WHERE created_at >= NOW()-INTERVAL '7 days') AS users_new_7d,
+      (SELECT COUNT(DISTINCT user_id)::int FROM app_events WHERE event_type='session_active' AND user_id IS NOT NULL AND created_at >= NOW()-INTERVAL '24 hours') AS active_24h,
+      (SELECT COUNT(DISTINCT user_id)::int FROM app_events WHERE event_type='session_active' AND user_id IS NOT NULL AND created_at >= NOW()-INTERVAL '7 days') AS active_7d,
+      (SELECT COUNT(*)::int FROM users WHERE COALESCE(NULLIF(TRIM(avatar),''),'') <> '') AS users_with_avatar,
+      (SELECT COUNT(DISTINCT user_id)::int FROM posts) AS users_with_post,
+      (SELECT COUNT(*)::int FROM posts) AS posts_total,
+      (SELECT COUNT(*)::int FROM posts WHERE created_at >= NOW()-INTERVAL '24 hours') AS posts_24h,
+      (SELECT COUNT(*)::int FROM posts WHERE created_at >= NOW()-INTERVAL '7 days') AS posts_7d,
+      (SELECT COUNT(*)::int FROM stories WHERE expires_at > NOW()) AS stories_active,
+      (SELECT COUNT(*)::int FROM posts WHERE media_type='video') AS reels_total,
+      (SELECT COUNT(*)::int FROM messages WHERE created_at >= NOW()-INTERVAL '24 hours') AS messages_24h,
+      (SELECT COUNT(*)::int FROM referral_attributions) AS referrals_total,
+      (SELECT COUNT(*)::int FROM referral_attributions WHERE registered_at >= NOW()-INTERVAL '7 days') AS referrals_7d,
+      (SELECT COUNT(*)::int FROM referral_attributions WHERE qualified_at IS NOT NULL) AS referrals_qualified,
+      (SELECT COUNT(*)::int FROM reports WHERE status IN ('open','reviewing')) AS reports_pending,
+      (SELECT COUNT(*)::int FROM app_events WHERE severity='error' AND created_at >= NOW()-INTERVAL '24 hours') AS errors_24h
+  `);
+  const recentErrors = await pool.query(`
+    SELECT ae.id,ae.event_type,ae.path,ae.metadata,ae.created_at,u.username
+    FROM app_events ae LEFT JOIN users u ON u.id=ae.user_id
+    WHERE ae.severity='error' ORDER BY ae.created_at DESC LIMIT 20
+  `);
+  res.json({ settings, metrics:rows[0], recent_errors:recentErrors.rows });
+}));
+
+app.patch('/api/admin/launch/settings', auth, adminOnly, asyncRoute(async (req,res) => {
+  const mode=String(req.body?.registration_mode || '');
+  if(!['open','invite_only','paused'].includes(mode)) return res.status(400).json({error:'Modo de registro no válido'});
+  const {rows}=await pool.query(`UPDATE launch_settings SET registration_mode=$1,updated_by=$2,updated_at=NOW() WHERE id=1 RETURNING registration_mode,updated_at`,[mode,req.user.id]);
+  launchSettingsCache={value:rows[0],expires:Date.now()+15000};
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'launch_registration_mode',$2)`,[req.user.id,mode]);
   res.json(rows[0]);
 }));
 
@@ -2299,16 +2409,18 @@ app.get('/api/admin/security-events', auth, adminOnly, asyncRoute(async (_req,re
 
 app.get('*', (_req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 
-app.use((err, _req, res, _next) => {
+app.use((err, req, res, _next) => {
   console.error(err);
   if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'El archivo supera el límite máximo de 100 MB.', code:'MEDIA_TOO_LARGE' });
   const status = err.status || 500;
+  if (status >= 500) void operationalEvent({ userId:req.user?.id || null, eventType:'server_error', severity:'error', path:req.originalUrl || req.path || '', userAgent:req.get('user-agent') || '', metadata:{ message:String(err?.message || 'Error interno').slice(0,1000) } });
   res.status(status).json({ error: status >= 500 ? 'Error interno del servidor' : err.message });
 });
 
 async function start() {
   await initDb();
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.5.0 en http://localhost:${PORT}`));
+  await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.6.0 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {
