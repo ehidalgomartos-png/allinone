@@ -1,4 +1,4 @@
-// V1.7.0 · Preparación de lanzamiento sobre V1.6.1
+// V1.7.1 · Preparación de lanzamiento sobre V1.6.1
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
