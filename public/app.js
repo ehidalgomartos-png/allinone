@@ -1,10 +1,30 @@
-// V1.8.0 · Comunidad inicial real sobre V1.7.1
+// V1.9.0 · Growth Engine sobre V1.8.0
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
   'feed','reels','discover','search','messages','notifications','bookmarks','friends','settings','profile',
   'invite','invites','help','support','about'
 ]);
+
+
+const landingGrowthCampaign = (() => {
+  try {
+    const raw=String(new URLSearchParams(location.search).get('campaign') || '').trim().toLowerCase();
+    return /^[a-z0-9_-]{1,60}$/.test(raw) ? raw : '';
+  } catch (_) { return ''; }
+})();
+let growthLandingTracked = false;
+
+function currentGrowthCampaign() { return landingGrowthCampaign; }
+
+function trackGrowthCampaignLanding() {
+  const campaign=currentGrowthCampaign();
+  if(!campaign || growthLandingTracked || !navigator.onLine) return;
+  growthLandingTracked=true;
+  try {
+    fetch('/api/growth/campaign/visit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({campaign}),keepalive:true}).catch(()=>{});
+  } catch (_) {}
+}
 
 function profileUsernameFromPath(pathname = location.pathname) {
   try {
@@ -558,7 +578,7 @@ window.register = async () => {
   try {
     if (btn) { btn.disabled = true; btn.textContent = 'Creando cuenta…'; }
     if (directProfile) { try { directProfile = await resolveDirectProfileUsername(directProfile); } catch (_) {} }
-    const d = await api('/api/auth/register', { method:'POST', body: JSON.stringify({ name: $('#regname').value, username: $('#reguser').value, email: $('#regemail').value, password: $('#regpass').value, age_confirmed:true, terms_accepted:true, terms_version:'2026-09-20', referral_code:localStorage.getItem('pendingReferralCode') || '', gate_code:localStorage.getItem('pendingGateCode') || '' }) });
+    const d = await api('/api/auth/register', { method:'POST', body: JSON.stringify({ name: $('#regname').value, username: $('#reguser').value, email: $('#regemail').value, password: $('#regpass').value, age_confirmed:true, terms_accepted:true, terms_version:'2026-09-20', referral_code:localStorage.getItem('pendingReferralCode') || '', gate_code:localStorage.getItem('pendingGateCode') || '', campaign_code:currentGrowthCampaign() }) });
     localStorage.removeItem('pendingReferralCode'); localStorage.removeItem('pendingGateCode');
     if (d.verification_required) {
       modal(`<div class="modal-head"><h3>Confirma tu email</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="account-form"><div class="security-callout"><b>Cuenta creada</b><p>Te hemos enviado un enlace de verificación. Ábrelo antes de iniciar sesión.</p></div><button class="btn primary" onclick="closeModal();showAuth('login')">Volver a entrar</button></div>`);
@@ -1287,7 +1307,8 @@ window.openProfile = async (username, opts = {}) => { if (state.messagePoll) { c
 
 async function renderProfile(username) {
   resetLazyMediaObserver();
-  const u = await api('/api/users/' + encodeURIComponent(username));
+  const campaign=currentGrowthCampaign();
+  const u = await api('/api/users/' + encodeURIComponent(username) + (campaign ? '?campaign=' + encodeURIComponent(campaign) : ''));
   state.profileData = u;
   document.title = `${u.name || u.username} (@${u.username}) · Instant Admirers`;
   const canonical = document.querySelector('link[rel="canonical"]'); if (canonical) canonical.href = profileUrl(u.username);
@@ -1371,30 +1392,31 @@ function friendGateBanner(u) {
   const pct=Math.min(100,Math.round((progress/required)*100));
   if(g.unlocked) return `<section class="card access-gate-card access-gate-unlocked">
     <div class="access-gate-icon">✓</div>
-    <div class="access-gate-copy"><span class="access-gate-kicker">Acceso especial</span><h3>Perfil desbloqueado</h3><p>Ya puedes ver todo el contenido de @${escapeHtml(u.username)}.</p></div>
+    <div class="access-gate-copy"><span class="access-gate-kicker">Perfil exclusivo</span><h3>Perfil desbloqueado</h3><p>Has completado el reto. Ya puedes ver todo el contenido de @${escapeHtml(u.username)}.</p></div>
     <button class="btn primary compact" onclick="renderProfile('${escapeAttr(u.username)}')">Ver perfil</button>
   </section>`;
   const detail=g.require_post
-    ? `Invita a ${required} personas. Cada una debe crear su perfil y publicar al menos 1 post.`
-    : `Invita a ${required} personas para que creen su perfil en Instant Admirers.`;
-  return `<section class="card access-gate-card">
+    ? `${required} personas nuevas deben crear su cuenta desde tu enlace y publicar al menos 1 post.`
+    : `${required} personas nuevas deben crear su cuenta desde tu enlace.`;
+  const headline=progress>0 ? `🔥 Ya tienes ${progress}. Te ${remaining===1?'queda':'quedan'} ${remaining}` : `Estás a ${required} invitaciones de entrar`;
+  return `<section class="card access-gate-card growth-access-gate">
     <div class="access-gate-top">
       <div class="access-gate-icon">🔐</div>
       <div class="access-gate-copy">
-        <span class="access-gate-kicker">Acceso especial</span>
-        <h3>Te faltan ${remaining} ${remaining===1?'persona':'personas'}</h3>
+        <span class="access-gate-kicker">Perfil exclusivo</span>
+        <h3>${headline}</h3>
         <p>${detail}</p>
       </div>
       <div class="access-gate-count"><strong>${progress}</strong><span>/${required}</span></div>
     </div>
     <div class="access-gate-progress-wrap">
       <div class="gate-progress access-gate-progress"><span style="width:${pct}%"></span></div>
-      <small>${progress} de ${required} completados</small>
+      <small>${pct}% completado</small>
     </div>
     <div class="access-gate-bottom">
-      <div class="access-gate-note"><span>✓</span><span>Puedes seguir usando tu cuenta con normalidad mientras completas el acceso.</span></div>
+      <div class="access-gate-note"><span>✓</span><span>Tu cuenta funciona con normalidad mientras completas el reto.</span></div>
       <div class="access-gate-actions">
-        <button class="btn primary compact whatsapp-btn" onclick="openFriendGateChallenge()">Invitar por WhatsApp</button>
+        <button class="btn primary compact" onclick="openFriendGateChallenge()">Desbloquear perfil</button>
         <button class="btn ghost compact access-gate-skip" onclick="go('feed')">Ahora no</button>
       </div>
     </div>
@@ -1545,6 +1567,7 @@ window.openInviteFriends = async () => {
         </section>
         ${profileBlock}
         <div class="referral-stats"><div><b>${Number(d.registered||0)}</b><span>registrados</span></div><div><b>${Number(d.qualified||0)}</b><span>ya publicaron</span></div></div>
+        ${d.friend_gate?.enabled ? `<section class="growth-mini-funnel"><small>TU EMBUDO DE ACCESO</small><div><span><b>${Number(d.growth?.challenge_starts||0)}</b> retos iniciados</span><span><b>${Number(d.growth?.share_actions||0)}</b> comparticiones</span><span><b>${Number(d.growth?.referred_signups||0)}</b> altas para el reto</span><span><b>${Number(d.growth?.completed||0)}</b> desbloqueos</span></div></section>` : ''}
         ${recent.length?`<section class="invite-list"><h4>Tus últimas invitaciones</h4>${recent.map(r=>`<div class="invite-person">${avatar(r,'small')}<span><b>${escapeHtml(r.name)}</b><small>@${escapeHtml(r.username)}${r.gate_username?' · ayudó a desbloquear @'+escapeHtml(r.gate_username):''}</small></span><i class="${r.qualified_at?'done':''}">${r.qualified_at?'✓ Publicó':'Registrado'}</i></div>`).join('')}</section>`:''}
       </div>`);
   } catch(e){toast(e.message,'error');}
@@ -1571,9 +1594,34 @@ window.shareProfileInviteWhatsApp = (link,username,required=5) => {
   window.open(`https://wa.me/?text=${encodeURIComponent(text)}`,'_blank','noopener');
 };
 
-window.shareChallengeInviteWhatsApp = (link,target='',requirePost=true) => {
+function trackGateShare(target='',method='share',campaign='') {
+  if(!state.token || !target) return;
+  try {
+    fetch(`/api/growth/gate/${encodeURIComponent(target)}/share`,{method:'POST',headers:{'Authorization':'Bearer '+state.token,'Content-Type':'application/json'},body:JSON.stringify({method,campaign:campaign || currentGrowthCampaign()}),keepalive:true}).catch(()=>{});
+  } catch (_) {}
+}
+
+window.shareChallengeInviteWhatsApp = (link,target='',requirePost=true,campaign='') => {
+  trackGateShare(target,'whatsapp',campaign);
   const text=`¿Me ayudas a desbloquear el perfil de @${target} en Instant Admirers? Crea tu perfil con este enlace${requirePost?' y publica al menos 1 post':''}. A mí me contará para conseguir el acceso: ${link}`;
   window.open(`https://wa.me/?text=${encodeURIComponent(text)}`,'_blank','noopener');
+};
+
+window.shareChallengeInviteNative = async (link,target='',requirePost=true,campaign='') => {
+  const text=`¿Me ayudas a desbloquear el perfil de @${target} en Instant Admirers?${requirePost?' Crea tu cuenta y publica al menos 1 post.':''}`;
+  try {
+    if(navigator.share){
+      await navigator.share({title:`Desbloquear @${target} · Instant Admirers`,text,url:link});
+      trackGateShare(target,'native',campaign);
+      return;
+    }
+  } catch(err){ if(err?.name==='AbortError') return; }
+  await copyChallengeInvite(link,target,campaign);
+};
+
+window.copyChallengeInvite = async (link,target='',campaign='') => {
+  try { await navigator.clipboard.writeText(link); trackGateShare(target,'copy',campaign); toast('Enlace copiado'); }
+  catch (_) { prompt('Copia este enlace:',link); trackGateShare(target,'copy',campaign); }
 };
 
 window.openFriendGateChallenge = async () => {
@@ -1582,17 +1630,23 @@ window.openFriendGateChallenge = async () => {
   if(!u || !g?.enabled) return toast('Este reto ya no está disponible','error');
   try {
     const me=await api('/api/invites/me');
-    const link=`${location.origin}/?ref=${encodeURIComponent(me.code)}&gate=${encodeURIComponent(g.gate_code)}`;
-    const pct=Math.min(100,Math.round((Number(g.progress||0)/Math.max(1,Number(g.required||1)))*100));
-    modal(`<div class="modal-head"><h3>Desbloquear @${escapeHtml(u.username)}</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
-      <div class="friend-challenge">
+    const campaign=String(me?.attributed_campaign?.slug || currentGrowthCampaign() || '');
+    const params=new URLSearchParams({ref:String(me.code||''),gate:String(g.gate_code||'')});
+    if(campaign) params.set('campaign',campaign);
+    const link=`${location.origin}/?${params.toString()}`;
+    const progress=Number(g.progress||0),required=Math.max(1,Number(g.required||1));
+    const remaining=Math.max(0,required-progress);
+    const pct=Math.min(100,Math.round((progress/required)*100));
+    const headline=progress>0 ? `🔥 ¡Ya tienes ${progress}!` : `Desbloquea @${escapeHtml(u.username)}`;
+    modal(`<div class="modal-head"><h3>Perfil exclusivo</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+      <div class="friend-challenge growth-challenge">
         <div class="challenge-lock">🔐</div>
-        <h3>${g.unlocked?'Acceso conseguido':'Te faltan '+Math.max(0,Number(g.required||0)-Number(g.progress||0))}</h3>
-        <p>${g.require_post?`Para ver este perfil, ${g.required} personas nuevas deben crear su perfil desde tu enlace y publicar al menos 1 post.`:`Para ver este perfil, ${g.required} personas nuevas deben crear su perfil desde tu enlace.`}</p>
-        <div class="challenge-number"><b>${Number(g.progress||0)}</b><span>/ ${Number(g.required||0)}</span></div>
+        <h3>${g.unlocked?'Acceso conseguido':headline}</h3>
+        <p>${g.unlocked?`Ya puedes entrar en el perfil completo.`:`Te ${remaining===1?'queda':'quedan'} <b>${remaining}</b> ${remaining===1?'persona':'personas'}. ${g.require_post?'Cada nueva cuenta debe publicar al menos 1 post para contar.':'Cada nueva cuenta registrada desde tu enlace cuenta.'}`}</p>
+        <div class="challenge-number"><b>${progress}</b><span>/ ${required}</span></div>
         <div class="gate-progress large"><span style="width:${pct}%"></span></div>
-        ${g.unlocked?`<button class="btn primary" onclick="closeModal();renderProfile('${escapeAttr(u.username)}')">Ver perfil</button>`:`<button class="btn primary whatsapp-btn" onclick="shareChallengeInviteWhatsApp('${escapeAttr(link)}','${escapeAttr(u.username)}',${g.require_post?'true':'false'})">Invitar por WhatsApp</button><button class="btn ghost" onclick="copyInviteLink('${escapeAttr(link)}')">Copiar enlace para mis amigos</button>`}
-        <small class="challenge-note">Tus amigos irán a crear su propia cuenta. No quedan bloqueados en este perfil. Solo las nuevas cuentas registradas desde este enlace cuentan para tu progreso.${g.require_post?' La publicación puede hacerse después del registro.':''}</small>
+        ${g.unlocked?`<button class="btn primary" onclick="closeModal();renderProfile('${escapeAttr(u.username)}')">Ver perfil</button>`:`<div class="growth-share-grid"><button class="btn primary whatsapp-btn" onclick="shareChallengeInviteWhatsApp('${escapeAttr(link)}','${escapeAttr(u.username)}',${g.require_post?'true':'false'},'${escapeAttr(campaign)}')">WhatsApp</button><button class="btn ghost" onclick="shareChallengeInviteNative('${escapeAttr(link)}','${escapeAttr(u.username)}',${g.require_post?'true':'false'},'${escapeAttr(campaign)}')">Compartir</button><button class="btn ghost growth-copy" onclick="copyChallengeInvite('${escapeAttr(link)}','${escapeAttr(u.username)}','${escapeAttr(campaign)}')">Copiar enlace</button></div>`}
+        <small class="challenge-note">Las personas invitadas crean su propia cuenta y pueden usar Instant Admirers con normalidad. Solo las nuevas altas hechas desde tu enlace cuentan para tu progreso.${g.require_post?' La publicación puede hacerse después del registro.':''}</small>
         <button class="btn ghost" onclick="closeModal();go('feed')">Seguir usando Instant Admirers</button>
       </div>`);
   } catch(e){toast(e.message,'error');}
@@ -2381,7 +2435,7 @@ async function renderAdmin() {
     $('#main').innerHTML=`<div class="card empty"><h3>Acceso no disponible</h3><p>Este panel está reservado a administración.</p></div>`;
     return;
   }
-  const [stats,reports,actions,security,launch,demo,readiness,communityLaunch]=await Promise.all([
+  const [stats,reports,actions,security,launch,demo,readiness,communityLaunch,growth]=await Promise.all([
     api('/api/admin/stats'),
     api('/api/admin/reports?status=all'),
     api('/api/admin/actions'),
@@ -2389,7 +2443,8 @@ async function renderAdmin() {
     api('/api/admin/launch-dashboard'),
     api('/api/admin/demo/status'),
     api('/api/admin/launch-readiness'),
-    api('/api/admin/community-launch')
+    api('/api/admin/community-launch'),
+    api('/api/admin/growth-engine')
   ]);
   $('#main').innerHTML=`${pageHeader('Administración','Moderación y estado general de Instant Admirers')}
     <div class="admin-stats">
@@ -2437,6 +2492,17 @@ async function renderAdmin() {
       <div class="community-admin-prompts"><small>${communityLaunch.prompt_count} ideas disponibles</small>${communityLaunch.prompts.slice(0,3).map(p=>`<span>${escapeHtml(p.emoji)} ${escapeHtml(p.text)}</span>`).join('')}</div>
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
+    <section class="card admin-section growth-engine-admin">
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y crecimiento por invitaciones.</p></div><span class="growth-version-badge">V1.9</span></div>
+      <div class="growth-create-grid">
+        <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
+        <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="other">Otro</option></select></label>
+        <label>Perfil destino<input id="growthCampaignTarget" maxlength="30" value="${escapeAttr(state.me?.username || '')}" placeholder="usuario"></label>
+        <button class="btn primary compact" onclick="createGrowthCampaign()">Crear campaña</button>
+      </div>
+      ${growth.profiles?.length?`<div class="growth-profile-funnels"><small>EMBUDO DE PERFILES EXCLUSIVOS</small>${growth.profiles.map(p=>`<div class="growth-profile-row"><div><b>@${escapeHtml(p.username)}</b><span>Reto: ${Number(p.required||0)} invitaciones${p.require_post?' + 1 post':''}</span></div><div><span><b>${Number(p.challenge_starts||0)}</b> iniciados</span><span><b>${Number(p.share_actions||0)}</b> compartidos</span><span><b>${Number(p.referred_signups||0)}</b> altas</span><span><b>${Number(p.completed||0)}</b> desbloqueos</span></div></div>`).join('')}</div>`:`<div class="growth-empty"><b>Aún no hay perfiles con acceso especial activo</b><span>Activa “Acceso a mi perfil” para usar el embudo viral.</span></div>`}
+      <div class="growth-campaign-list">${growth.campaigns?.length?growth.campaigns.map(c=>`<article class="growth-campaign-card ${c.active?'':'inactive'}"><div class="growth-campaign-head"><div><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.channel)} · @${escapeHtml(c.target_username)}</span></div><em>${c.active?'ACTIVA':'PAUSADA'}</em></div>${!c.target_gate_enabled?`<div class="growth-warning">⚠ El perfil destino no tiene activo el acceso especial.</div>`:''}<div class="growth-funnel"><span><b>${Number(c.metrics?.visits||0)}</b> visitas</span><span><b>${Number(c.metrics?.registrations||0)}</b> registros</span><span><b>${Number(c.metrics?.challenge_starts||0)}</b> retos</span><span><b>${Number(c.metrics?.share_actions||0)}</b> comparticiones</span><span><b>${Number(c.metrics?.referred_signups||0)}</b> referidos</span><span><b>${Number(c.metrics?.completed||0)}</b> desbloqueos</span></div><div class="growth-link-row"><input readonly value="${escapeAttr(c.link||'')}"><button class="btn ghost compact" onclick="copyGrowthLink('${escapeAttr(c.link||'')}')">Copiar</button><button class="btn ${c.active?'danger':'primary'} compact" onclick="toggleGrowthCampaign(${c.id},${c.active?'false':'true'})">${c.active?'Pausar':'Activar'}</button></div></article>`).join(''):`<div class="growth-empty"><b>Crea tu primera campaña</b><span>Por ejemplo: “Página 16K” con canal Facebook y tu perfil como destino.</span></div>`}</div>
+    </section>
     <section class="card admin-section demo-lab">
       <div class="section-row"><div><h3>Laboratorio de pruebas</h3><p>Datos sintéticos, claramente marcados y eliminables. No son usuarios reales.</p></div><span class="demo-lab-badge ${demo.active?'active':''}">${demo.active?'ACTIVO':'VACÍO'}</span></div>
       ${demo.active ? `
@@ -2461,6 +2527,14 @@ async function renderAdmin() {
     </section>`;
 }
 
+
+
+window.copyGrowthLink=async(url)=>{try{await navigator.clipboard.writeText(url);toast('Enlace de campaña copiado');}catch(_){prompt('Copia este enlace:',url);}};
+window.createGrowthCampaign=async()=>{
+  const payload={name:String($('#growthCampaignName')?.value||'').trim(),channel:String($('#growthCampaignChannel')?.value||'facebook'),target_username:String($('#growthCampaignTarget')?.value||'').trim().replace(/^@/,'')};
+  try{const created=await api('/api/admin/growth-campaigns',{method:'POST',body:JSON.stringify(payload)});toast('Campaña creada');if(created.link) await window.copyGrowthLink(created.link);await renderAdmin();}catch(e){toast(e.message,'error');}
+};
+window.toggleGrowthCampaign=async(id,active)=>{try{await api(`/api/admin/growth-campaigns/${id}`,{method:'PATCH',body:JSON.stringify({active:Boolean(active)})});toast(active?'Campaña activada':'Campaña pausada');await renderAdmin();}catch(e){toast(e.message,'error');}};
 
 window.saveCommunityLaunchSettings=async()=>{
   const payload={
@@ -2572,6 +2646,7 @@ window.adminToggleUser = async (userId,status,reportId) => {
 };
 
 async function init(options = {}) {
+  trackGrowthCampaignLanding();
   if (await handleAuthLink()) return;
   if (!state.token) { authScreen(); updatePwaInstallUi(); return; }
   if (!navigator.onLine) { renderOfflineLaunch(); updatePwaInstallUi(); return; }

@@ -481,3 +481,50 @@ ALTER TABLE launch_settings ADD COLUMN IF NOT EXISTS newcomer_spotlight_enabled 
 ALTER TABLE launch_settings ADD COLUMN IF NOT EXISTS founding_member_limit INTEGER NOT NULL DEFAULT 100;
 ALTER TABLE launch_settings DROP CONSTRAINT IF EXISTS launch_settings_founding_member_limit_check;
 ALTER TABLE launch_settings ADD CONSTRAINT launch_settings_founding_member_limit_check CHECK (founding_member_limit BETWEEN 10 AND 10000);
+
+
+-- V1.9: Growth Engine — campañas, atribución y embudo de acceso especial.
+CREATE TABLE IF NOT EXISTS growth_campaigns (
+  id BIGSERIAL PRIMARY KEY,
+  created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  target_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name VARCHAR(120) NOT NULL,
+  slug VARCHAR(60) NOT NULL UNIQUE,
+  channel VARCHAR(30) NOT NULL DEFAULT 'other',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_growth_campaigns_target ON growth_campaigns(target_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_growth_campaigns_active ON growth_campaigns(active, created_at DESC);
+
+CREATE TABLE IF NOT EXISTS growth_campaign_daily (
+  campaign_id BIGINT NOT NULL REFERENCES growth_campaigns(id) ON DELETE CASCADE,
+  day DATE NOT NULL DEFAULT CURRENT_DATE,
+  visits INTEGER NOT NULL DEFAULT 0,
+  challenge_views INTEGER NOT NULL DEFAULT 0,
+  share_actions INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (campaign_id, day)
+);
+
+CREATE TABLE IF NOT EXISTS growth_campaign_attributions (
+  user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  campaign_id BIGINT NOT NULL REFERENCES growth_campaigns(id) ON DELETE CASCADE,
+  registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_growth_attributions_campaign ON growth_campaign_attributions(campaign_id, registered_at DESC);
+
+CREATE TABLE IF NOT EXISTS friend_gate_sessions (
+  viewer_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  gate_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  campaign_id BIGINT REFERENCES growth_campaigns(id) ON DELETE SET NULL,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  share_actions INTEGER NOT NULL DEFAULT 0,
+  completed_at TIMESTAMPTZ,
+  PRIMARY KEY (viewer_user_id, gate_user_id),
+  CHECK (viewer_user_id <> gate_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_friend_gate_sessions_gate ON friend_gate_sessions(gate_user_id, first_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_friend_gate_sessions_campaign ON friend_gate_sessions(campaign_id, first_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_friend_gate_sessions_completed ON friend_gate_sessions(gate_user_id, completed_at DESC) WHERE completed_at IS NOT NULL;

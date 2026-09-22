@@ -55,6 +55,10 @@ Según las funciones utilizadas, podemos tratar:
   altas, activación de funciones y errores técnicos. Estas métricas se
   utilizan para operar y mejorar el servicio y no incorporan publicidad
   comportamental de terceros.
+- Atribución de campañas propias: cuando una persona entra mediante un
+  enlace de campaña, podemos registrar la campaña asociada a su alta y
+  agregar visitas, inicios de retos y acciones de compartir para medir el
+  funcionamiento del lanzamiento. No usamos cookies publicitarias de terceros para esta medición.
 
 ## 3. Finalidades y bases jurídicas
 
@@ -62,7 +66,7 @@ Según las funciones utilizadas, podemos tratar:
 |-----------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | Crear la cuenta y prestar las funciones sociales, mensajería y privacidad.        | Ejecución de los Términos de Uso y prestación del servicio solicitado.                                                                                                                                 |
 | Seguridad, prevención de fraude, spam, abuso y protección de la comunidad.        | Interés legítimo en proteger el servicio y a sus usuarios; cumplimiento legal cuando corresponda.                                                                                                      |
-| Medir estabilidad, adopción y errores durante el funcionamiento y lanzamiento.     | Interés legítimo en mantener, diagnosticar y mejorar técnicamente el servicio.                                                                                                                          |
+| Medir estabilidad, adopción, errores y rendimiento de campañas propias durante el lanzamiento. | Interés legítimo en mantener, diagnosticar, mejorar el servicio y conocer qué canales propios generan altas y participación. |
 | Moderación, gestión de denuncias y respuesta a requerimientos legales.            | Cumplimiento de obligaciones legales e interés legítimo en aplicar las normas del servicio.                                                                                                            |
 | Personalizar “Para ti” y sugerencias mediante intereses e interacciones internas. | Ejecución de la funcionalidad solicitada e interés legítimo en ofrecer una experiencia relevante. Estas recomendaciones no producen por sí mismas efectos jurídicos ni efectos de importancia similar. |
 | Comunicaciones comerciales futuras, si se incorporan.                             | Solo se realizarán conforme a la base jurídica que resulte aplicable y, cuando sea necesario, con consentimiento separado.                                                                             |
