@@ -1,4 +1,4 @@
-// V1.6.1 · Laboratorio de pruebas controlado sobre lanzamiento V1.6
+// V1.7.0 · Preparación de lanzamiento sobre V1.6.1
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -135,7 +135,7 @@ const state = {
   mediaObserver: null,
   reelObserver: null,
   rightbarCache: null,
-  launchStatus: { registration_mode:'open', invite_required:false, registration_paused:false },
+  launchStatus: { registration_mode:'open', invite_required:false, registration_paused:false, launch_phase:'prelaunch', cohort_target:100, banner_enabled:true, banner_text:'' },
   authMode: 'login'
 };
 
@@ -451,7 +451,7 @@ async function loadLaunchStatus() {
   try {
     const status=await api('/api/launch/status',{timeout:10000});
     state.launchStatus={...state.launchStatus,...status};
-    if(state.authMode==='register') {
+    if(!state.token && state.authMode==='register' && $('#authbox')) {
       const hasTyped=Boolean($('#regname')?.value || $('#reguser')?.value || $('#regemail')?.value || $('#regpass')?.value);
       if(!hasTyped) showAuth('register');
     }
@@ -663,6 +663,14 @@ function navButton(view, icon, label) {
   return `<button class="nav-item ${active}" data-nav-view="${view}" onclick="go('${view}')"><span class="nav-icon">${icon}</span><span>${label}</span>${badge}</button>`;
 }
 
+function launchBannerHtml() {
+  const l=state.launchStatus || {};
+  if(!l.banner_enabled || l.launch_phase==='public') return '';
+  const phase=l.launch_phase==='pilot'?'Lanzamiento inicial':'Preparando lanzamiento';
+  const text=String(l.banner_text || (l.launch_phase==='pilot'?'Estás entre los primeros miembros de Instant Admirers.':'Estamos abriendo Instant Admirers por fases.'));
+  return `<div class="launch-public-banner phase-${escapeAttr(l.launch_phase || 'prelaunch')}"><b>✦ ${escapeHtml(phase)}</b><span>${escapeHtml(text)}</span></div>`;
+}
+
 function layout() {
   $('#app').innerHTML = `
     <header class="topbar">
@@ -673,6 +681,7 @@ function layout() {
         <button class="top-avatar" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me, 'small')}</button>
       </div>
     </header>
+    ${launchBannerHtml()}
     <div class="shell">
       <aside class="left-col">
         <div class="left-sticky">
@@ -2339,13 +2348,14 @@ async function renderAdmin() {
     $('#main').innerHTML=`<div class="card empty"><h3>Acceso no disponible</h3><p>Este panel está reservado a administración.</p></div>`;
     return;
   }
-  const [stats,reports,actions,security,launch,demo]=await Promise.all([
+  const [stats,reports,actions,security,launch,demo,readiness]=await Promise.all([
     api('/api/admin/stats'),
     api('/api/admin/reports?status=all'),
     api('/api/admin/actions'),
     api('/api/admin/security-events'),
     api('/api/admin/launch-dashboard'),
-    api('/api/admin/demo/status')
+    api('/api/admin/demo/status'),
+    api('/api/admin/launch-readiness')
   ]);
   $('#main').innerHTML=`${pageHeader('Administración','Moderación y estado general de Instant Admirers')}
     <div class="admin-stats">
@@ -2367,6 +2377,20 @@ async function renderAdmin() {
       </div>
       <div class="launch-secondary"><span>${launch.metrics.stories_active} Stories activas</span><span>${launch.metrics.reels_total} vídeos/Reels</span><span>${launch.metrics.messages_24h} mensajes hoy</span></div>
       <div class="launch-errors"><div class="section-row"><h4>Últimos errores técnicos</h4><span>${launch.recent_errors.length}</span></div>${launch.recent_errors.length?launch.recent_errors.slice(0,8).map(e=>`<div class="launch-error"><b>${escapeHtml(e.event_type)}</b><span>${e.username?'@'+escapeHtml(e.username):'sin usuario'} · ${escapeHtml(e.path || '/')}</span><small>${escapeHtml(e.metadata?.message || '')} · ${timeAgo(e.created_at)}</small></div>`).join(''):'<p class="muted">Sin errores registrados.</p>'}</div>
+    </section>
+    <section class="card admin-section launch-center">
+      <div class="section-row"><div><h3>Centro de lanzamiento</h3><p>Checklist técnico, primera cohorte y configuración pública.</p></div><span class="launch-readiness-badge ${readiness.technical_ready?'ready':'pending'}">${readiness.score}%</span></div>
+      <div class="launch-readiness-summary ${readiness.technical_ready?'ready':'pending'}"><div><b>${readiness.technical_ready?'Base técnica preparada':'Aún hay bloqueos antes de abrir'}</b><span>${readiness.technical_ready?'Puedes avanzar a una cohorte real cuando quieras.':'Revisa los puntos marcados como obligatorios.'}</span></div><strong>${readiness.score}%</strong></div>
+      <div class="launch-check-grid">${readiness.checks.map(c=>`<div class="launch-check ${c.ok?'ok':'pending'} ${c.level==='blocker'?'blocker':''}"><i>${c.ok?'✓':'!'}</i><span><b>${escapeHtml(c.label)}</b><small>${escapeHtml(c.detail)}</small></span><em>${c.level==='blocker'?'Obligatorio':'Recomendado'}</em></div>`).join('')}</div>
+      <div class="launch-cohort-card"><div><small>PRIMERA COHORTE</small><b>${readiness.target.current} / ${readiness.target.value}</b><span>usuarios reales</span></div><div class="launch-cohort-progress"><i style="width:${Math.min(100,Math.round((Number(readiness.target.current||0)/Math.max(1,Number(readiness.target.value||100)))*100))}%"></i></div></div>
+      <div class="launch-funnel"><span><b>${readiness.funnel.users_total}</b> registrados</span><span><b>${readiness.funnel.users_verified}</b> verificados</span><span><b>${readiness.funnel.users_with_avatar}</b> con foto</span><span><b>${readiness.funnel.users_profile_complete}</b> perfil completo</span><span><b>${readiness.funnel.users_with_post}</b> publicaron</span><span><b>${readiness.funnel.users_following}</b> siguen a alguien</span><span><b>${readiness.funnel.active_7d}</b> activos 7 d</span></div>
+      <div class="launch-settings-grid">
+        <label>Fase<select id="launchPhase"><option value="prelaunch" ${readiness.settings.launch_phase==='prelaunch'?'selected':''}>Prelanzamiento</option><option value="pilot" ${readiness.settings.launch_phase==='pilot'?'selected':''}>Cohorte inicial</option><option value="public" ${readiness.settings.launch_phase==='public'?'selected':''}>Público</option></select></label>
+        <label>Objetivo primera cohorte<input id="launchCohortTarget" type="number" min="10" max="100000" value="${Number(readiness.settings.cohort_target||100)}"></label>
+        <label class="launch-banner-toggle"><span>Mostrar aviso de fase</span><input id="launchBannerEnabled" type="checkbox" ${readiness.settings.banner_enabled?'checked':''}></label>
+        <label class="launch-banner-text">Texto del aviso<input id="launchBannerText" maxlength="240" value="${escapeAttr(readiness.settings.banner_text || '')}" placeholder="Estamos abriendo Instant Admirers por fases."></label>
+      </div>
+      <div class="launch-center-actions"><button class="btn primary compact" onclick="saveLaunchPreparation()">Guardar preparación</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación inicial</button>`:''}${demo.active?`<button class="btn danger compact" onclick="clearDemoLab()">Eliminar datos TEST</button>`:''}</div>
     </section>
     <section class="card admin-section demo-lab">
       <div class="section-row"><div><h3>Laboratorio de pruebas</h3><p>Datos sintéticos, claramente marcados y eliminables. No son usuarios reales.</p></div><span class="demo-lab-badge ${demo.active?'active':''}">${demo.active?'ACTIVO':'VACÍO'}</span></div>
@@ -2417,6 +2441,29 @@ window.saveLaunchRegistrationMode = async () => {
   if(!confirm(`Cambiar el lanzamiento a: ${labels[mode] || mode}?`)) return;
   try{await api('/api/admin/launch/settings',{method:'PATCH',body:JSON.stringify({registration_mode:mode})});toast('Modo de registro actualizado');await renderAdmin();}
   catch(e){toast(e.message,'error');}
+};
+
+
+window.saveLaunchPreparation = async () => {
+  const payload={
+    registration_mode:$('#launchRegistrationMode')?.value || 'open',
+    launch_phase:$('#launchPhase')?.value || 'prelaunch',
+    cohort_target:Number($('#launchCohortTarget')?.value || 100),
+    banner_enabled:Boolean($('#launchBannerEnabled')?.checked),
+    banner_text:String($('#launchBannerText')?.value || '').trim()
+  };
+  if(payload.launch_phase==='public' && !confirm('Vas a marcar la fase como PÚBLICA. Esto no cambia por sí solo el modo de registro. ¿Continuar?')) return;
+  try{
+    const updated=await api('/api/admin/launch/settings',{method:'PATCH',body:JSON.stringify(payload)});
+    state.launchStatus={...state.launchStatus,...updated};
+    toast('Preparación de lanzamiento guardada');
+    await renderAdmin();
+  }catch(e){toast(e.message,'error');}
+};
+
+window.copyLaunchInvite = async (url) => {
+  try{await navigator.clipboard.writeText(url);toast('Invitación inicial copiada');}
+  catch(_){prompt('Copia este enlace de invitación:',url);}
 };
 
 function adminReportHtml(r){
@@ -2470,6 +2517,7 @@ async function init(options = {}) {
   if (!navigator.onLine) { renderOfflineLaunch(); updatePwaInstallUi(); return; }
   try {
     state.me = await api('/api/me');
+    await loadLaunchStatus();
     trackSessionActivity();
     connectRealtime();
     const pendingProfile = String(options.preferredProfile || pendingProfileDestination()).trim();

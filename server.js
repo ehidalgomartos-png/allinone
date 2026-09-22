@@ -1,4 +1,5 @@
 const express = require('express');
+const fs = require('fs');
 const cors = require('cors');
 const path = require('path');
 const bcrypt = require('bcryptjs');
@@ -112,8 +113,8 @@ let launchSettingsCache = { value:null, expires:0 };
 async function getLaunchSettings(force=false) {
   const now = Date.now();
   if (!force && launchSettingsCache.value && launchSettingsCache.expires > now) return launchSettingsCache.value;
-  const { rows } = await pool.query(`SELECT registration_mode,updated_at FROM launch_settings WHERE id=1 LIMIT 1`);
-  const value = rows[0] || { registration_mode:'open', updated_at:null };
+  const { rows } = await pool.query(`SELECT registration_mode,launch_phase,cohort_target,banner_enabled,banner_text,public_launched_at,updated_at FROM launch_settings WHERE id=1 LIMIT 1`);
+  const value = rows[0] || { registration_mode:'open', launch_phase:'prelaunch', cohort_target:100, banner_enabled:true, banner_text:'Estamos abriendo Instant Admirers por fases.', public_launched_at:null, updated_at:null };
   launchSettingsCache = { value, expires:now + 15000 };
   return value;
 }
@@ -710,12 +711,21 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.6.1', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup'] });
+  res.json({ ok: true, version: '1.7.0', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
   const settings = await getLaunchSettings();
-  res.json({ registration_mode:settings.registration_mode, invite_required:settings.registration_mode === 'invite_only', registration_paused:settings.registration_mode === 'paused' });
+  res.json({
+    registration_mode:settings.registration_mode,
+    invite_required:settings.registration_mode === 'invite_only',
+    registration_paused:settings.registration_mode === 'paused',
+    launch_phase:settings.launch_phase || 'prelaunch',
+    cohort_target:Number(settings.cohort_target || 100),
+    banner_enabled:Boolean(settings.banner_enabled),
+    banner_text:String(settings.banner_text || ''),
+    public_launched_at:settings.public_launched_at || null
+  });
 }));
 
 const RESERVED_PROFILE_SLUGS = new Set([
@@ -2306,6 +2316,57 @@ app.get('/api/admin/demo/status', auth, adminOnly, asyncRoute(async (_req,res) =
   res.json(await demoStatus(pool));
 }));
 
+
+app.get('/api/admin/launch-readiness', auth, adminOnly, asyncRoute(async (req,res) => {
+  const settings = await getLaunchSettings(true);
+  const { rows } = await pool.query(`
+    SELECT
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE) AS users_total,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=TRUE) AS demo_profiles,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND email_verified_at IS NOT NULL) AS users_verified,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(NULLIF(TRIM(avatar),''),'') <> '') AS users_with_avatar,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND ((COALESCE(NULLIF(TRIM(bio),''),'') <> '') OR (COALESCE(NULLIF(TRIM(headline),''),'') <> '') OR (COALESCE(NULLIF(TRIM(interests),''),'') <> ''))) AS users_profile_complete,
+      (SELECT COUNT(DISTINCT p.user_id)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE) AS users_with_post,
+      (SELECT COUNT(DISTINCT f.follower_id)::int FROM follows f JOIN users u ON u.id=f.follower_id WHERE u.is_demo=FALSE) AS users_following,
+      (SELECT COUNT(DISTINCT ae.user_id)::int FROM app_events ae JOIN users u ON u.id=ae.user_id WHERE u.is_demo=FALSE AND ae.event_type='session_active' AND ae.created_at >= NOW()-INTERVAL '7 days') AS active_7d,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE) AS posts_total,
+      (SELECT COUNT(*)::int FROM reports WHERE status IN ('open','reviewing')) AS reports_pending,
+      (SELECT COUNT(*)::int FROM app_events WHERE severity='error' AND created_at >= NOW()-INTERVAL '24 hours') AS errors_24h,
+      (SELECT COUNT(*)::int FROM users WHERE role='admin' OR LOWER(email)=ANY($1::text[])) AS admins_total
+  `,[Array.from(configuredAdminEmails())]);
+  const m = rows[0] || {};
+  const pwaReady = ['manifest.webmanifest','sw.js','offline.html'].every(file => fs.existsSync(path.join(publicDir,file)));
+  const legalReady = ['legal','privacy','cookies','terms','community-guidelines'].every(dir => fs.existsSync(path.join(publicDir,dir,'index.html')));
+  const checks = [
+    { id:'database', label:'PostgreSQL operativo', ok:true, level:'blocker', detail:'La base de datos responde correctamente.' },
+    { id:'email', label:'Email transaccional', ok:emailConfigured(), level:'blocker', detail:emailConfigured()?'Resend está configurado.':'Falta configurar Resend.' },
+    { id:'media', label:'Multimedia externa', ok:cloudinaryConfigured(), level:'blocker', detail:cloudinaryConfigured()?'Cloudinary está activo.':'Cloudinary no está configurado.' },
+    { id:'pwa', label:'PWA instalable', ok:pwaReady, level:'blocker', detail:pwaReady?'Manifest, Service Worker y modo offline presentes.':'Faltan archivos de la PWA.' },
+    { id:'legal', label:'Páginas legales', ok:legalReady, level:'blocker', detail:legalReady?'Aviso legal, privacidad, cookies, términos y normas presentes.':'Falta alguna página legal.' },
+    { id:'demo', label:'Laboratorio limpio', ok:Number(m.demo_profiles||0)===0, level:'blocker', detail:Number(m.demo_profiles||0)===0?'No quedan perfiles TEST.':`${m.demo_profiles} perfiles TEST siguen activos.` },
+    { id:'errors', label:'Sin errores recientes', ok:Number(m.errors_24h||0)===0, level:'blocker', detail:Number(m.errors_24h||0)===0?'0 errores en las últimas 24 h.':`${m.errors_24h} errores técnicos en las últimas 24 h.` },
+    { id:'admin', label:'Administración disponible', ok:Number(m.admins_total||0)>0, level:'blocker', detail:`${m.admins_total||0} cuenta(s) administradora(s).` },
+    { id:'reports', label:'Moderación al día', ok:Number(m.reports_pending||0)===0, level:'recommended', detail:Number(m.reports_pending||0)===0?'No hay denuncias pendientes.':`${m.reports_pending} denuncia(s) pendiente(s).` },
+    { id:'content', label:'Contenido inicial real', ok:Number(m.posts_total||0)>0, level:'recommended', detail:Number(m.posts_total||0)>0?`${m.posts_total} publicación(es) reales.`:'Todavía no hay publicaciones reales.' }
+  ];
+  const blockers = checks.filter(c => c.level==='blocker');
+  const score = Math.round((checks.filter(c=>c.ok).length / checks.length) * 100);
+  const invite = await pool.query(`SELECT invite_code FROM users WHERE id=$1 LIMIT 1`,[req.user.id]);
+  const code = String(invite.rows[0]?.invite_code || '');
+  res.json({
+    settings,
+    technical_ready:blockers.every(c=>c.ok),
+    score,
+    checks,
+    funnel:{
+      users_total:Number(m.users_total||0), users_verified:Number(m.users_verified||0), users_with_avatar:Number(m.users_with_avatar||0),
+      users_profile_complete:Number(m.users_profile_complete||0), users_with_post:Number(m.users_with_post||0), users_following:Number(m.users_following||0), active_7d:Number(m.active_7d||0)
+    },
+    target:{ value:Number(settings.cohort_target||100), current:Number(m.users_total||0) },
+    invite_url:code ? `${APP_URL}/?ref=${encodeURIComponent(code)}` : ''
+  });
+}));
+
 app.post('/api/admin/demo/generate', auth, adminOnly, asyncRoute(async (req,res) => {
   const result = await withTransaction(async (client) => createDemoEnvironment(client, req.user.id));
   await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'demo_lab_generate',$2)`, [req.user.id, JSON.stringify(result).slice(0,1000)]);
@@ -2319,11 +2380,22 @@ app.delete('/api/admin/demo', auth, adminOnly, asyncRoute(async (req,res) => {
 }));
 
 app.patch('/api/admin/launch/settings', auth, adminOnly, asyncRoute(async (req,res) => {
-  const mode=String(req.body?.registration_mode || '');
+  const current = await getLaunchSettings(true);
+  const mode=String(req.body?.registration_mode ?? current.registration_mode ?? 'open');
+  const phase=String(req.body?.launch_phase ?? current.launch_phase ?? 'prelaunch');
+  const target=Math.max(10,Math.min(100000,Number(req.body?.cohort_target ?? current.cohort_target ?? 100) || 100));
+  const bannerEnabled=req.body?.banner_enabled === undefined ? Boolean(current.banner_enabled) : Boolean(req.body.banner_enabled);
+  const bannerText=String(req.body?.banner_text ?? current.banner_text ?? '').trim().slice(0,240);
   if(!['open','invite_only','paused'].includes(mode)) return res.status(400).json({error:'Modo de registro no válido'});
-  const {rows}=await pool.query(`UPDATE launch_settings SET registration_mode=$1,updated_by=$2,updated_at=NOW() WHERE id=1 RETURNING registration_mode,updated_at`,[mode,req.user.id]);
+  if(!['prelaunch','pilot','public'].includes(phase)) return res.status(400).json({error:'Fase de lanzamiento no válida'});
+  const {rows}=await pool.query(`
+    UPDATE launch_settings SET registration_mode=$1,launch_phase=$2,cohort_target=$3,banner_enabled=$4,banner_text=$5,
+      public_launched_at=CASE WHEN $2='public' AND public_launched_at IS NULL THEN NOW() ELSE public_launched_at END,
+      updated_by=$6,updated_at=NOW() WHERE id=1
+    RETURNING registration_mode,launch_phase,cohort_target,banner_enabled,banner_text,public_launched_at,updated_at
+  `,[mode,phase,target,bannerEnabled,bannerText,req.user.id]);
   launchSettingsCache={value:rows[0],expires:Date.now()+15000};
-  await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'launch_registration_mode',$2)`,[req.user.id,mode]);
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'launch_settings',$2)`,[req.user.id,JSON.stringify({mode,phase,target,bannerEnabled}).slice(0,1000)]);
   res.json(rows[0]);
 }));
 
@@ -2437,7 +2509,7 @@ app.use((err, req, res, _next) => {
 async function start() {
   await initDb();
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.6.1 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.7.0 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {

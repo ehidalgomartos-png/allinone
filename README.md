@@ -1,4 +1,8 @@
-# Instant Admirers V1.6.1
+# Instant Admirers V1.7.0
+
+## V1.7
+
+Centro de lanzamiento, checklist de salida, fases, cohorte inicial y banner controlado.
 
 ## URLs públicas de perfil
 

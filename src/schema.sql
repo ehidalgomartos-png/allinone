@@ -461,3 +461,15 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALS
 ALTER TABLE users ADD COLUMN IF NOT EXISTS demo_batch VARCHAR(80) NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_users_demo ON users(is_demo, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_users_demo_batch ON users(demo_batch) WHERE demo_batch <> '';
+
+
+-- V1.7: centro de preparación de lanzamiento, fases y primera cohorte.
+ALTER TABLE launch_settings ADD COLUMN IF NOT EXISTS launch_phase VARCHAR(20) NOT NULL DEFAULT 'prelaunch';
+ALTER TABLE launch_settings DROP CONSTRAINT IF EXISTS launch_settings_phase_check;
+ALTER TABLE launch_settings ADD CONSTRAINT launch_settings_phase_check CHECK (launch_phase IN ('prelaunch','pilot','public'));
+ALTER TABLE launch_settings ADD COLUMN IF NOT EXISTS cohort_target INTEGER NOT NULL DEFAULT 100;
+ALTER TABLE launch_settings DROP CONSTRAINT IF EXISTS launch_settings_cohort_target_check;
+ALTER TABLE launch_settings ADD CONSTRAINT launch_settings_cohort_target_check CHECK (cohort_target BETWEEN 10 AND 100000);
+ALTER TABLE launch_settings ADD COLUMN IF NOT EXISTS banner_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE launch_settings ADD COLUMN IF NOT EXISTS banner_text VARCHAR(240) NOT NULL DEFAULT 'Estamos abriendo Instant Admirers por fases.';
+ALTER TABLE launch_settings ADD COLUMN IF NOT EXISTS public_launched_at TIMESTAMPTZ;
