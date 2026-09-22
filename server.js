@@ -45,7 +45,9 @@ app.use(express.static(publicDir, {
   etag: true,
   lastModified: true,
   setHeaders: (res, filePath) => {
-    if (/\.(?:js|css|svg|png|jpg|jpeg|webp|ico|woff2?)$/i.test(filePath)) {
+    if (/[/\\]sw\.js$/i.test(filePath) || /manifest\.webmanifest$/i.test(filePath)) {
+      res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+    } else if (/\.(?:js|css|svg|png|jpg|jpeg|webp|ico|woff2?)$/i.test(filePath)) {
       res.set('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
     } else if (/\.(?:html?)$/i.test(filePath)) {
       res.set('Cache-Control', 'no-cache');
@@ -686,12 +688,12 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.4.0', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache'] });
+  res.json({ ok: true, version: '1.5.0', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app'] });
 }));
 
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
-  'favicon.ico','manifest.webmanifest','robots.txt','sitemap.xml','login','register','logout','admin',
+  'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
   'feed','reels','discover','search','messages','notifications','bookmarks','friends','settings','profile',
   'invite','invites','help','support','about'
 ]);
@@ -2306,7 +2308,7 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   await initDb();
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.4.0 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.5.0 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {

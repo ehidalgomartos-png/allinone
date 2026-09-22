@@ -1,4 +1,4 @@
-# Instant Admirers V1.4.0
+# Instant Admirers V1.5.0
 
 ## URLs públicas de perfil
 
@@ -49,3 +49,12 @@ Portada móvil más expresiva y premium sin alterar el escritorio ni la base de 
 - Caché de assets y panel lateral.
 - Consulta `ACTUALIZAR-A-V1.4.md`.
 
+
+
+## V1.5 — PWA instalable
+- Instalación desde Android, iPhone/iPad y navegadores de escritorio compatibles.
+- Service Worker y app shell público.
+- Arranque offline sin borrar la sesión.
+- Botón Instalar app en acceso y Ajustes.
+- Iconos maskable para Android.
+- Consulta `ACTUALIZAR-A-V1.5.md`.

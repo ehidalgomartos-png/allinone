@@ -700,3 +700,13 @@ body{
 @media(prefers-reduced-motion:reduce){.pager-spinner{animation:none}}
 @supports not (content-visibility:auto){.post-list>.post{contain-intrinsic-size:auto}}
 
+
+
+/* V1.5 · PWA instalable */
+.pwa-install-entry{display:none;margin:11px auto 0;gap:7px;align-items:center;justify-content:center}
+.pwa-install-available .pwa-install-entry{display:flex}
+.pwa-standalone .pwa-install-entry{display:none!important}
+.pwa-settings-block button:disabled{opacity:.58;cursor:default}
+.pwa-install-help{text-align:center;padding:4px 2px 10px}.pwa-install-help p{line-height:1.55}.pwa-install-help ol{text-align:left;display:grid;gap:10px;margin:20px auto;max-width:330px;color:#dfe1ea}.pwa-install-help small{display:block;color:var(--muted);line-height:1.45}.pwa-app-mark{width:76px;height:76px;margin:2px auto 14px;border-radius:20px;overflow:hidden;box-shadow:0 12px 35px rgba(166,48,230,.24)}.pwa-app-mark img{width:100%;height:100%;display:block}
+.offline-launch{min-height:100dvh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 18% 5%,rgba(124,60,255,.13),transparent 28%),radial-gradient(circle at 88% 8%,rgba(255,42,161,.09),transparent 26%),#090a0f}.offline-launch-card{width:min(430px,100%);padding:34px 28px;text-align:center}.offline-launch-card .brand-lockup{justify-content:center}.offline-launch-icon{width:54px;height:54px;margin:24px auto 10px;border-radius:18px;display:grid;place-items:center;font-size:25px;background:rgba(255,255,255,.045);border:1px solid var(--border);color:#c0a1ff}.offline-launch-card h2{margin:10px 0 8px}.offline-launch-card p{color:var(--muted);line-height:1.55;margin:0 auto 20px;max-width:350px}.offline-launch-card small{display:block;margin-top:14px;color:#7f8496}.offline-launch-card .btn{min-width:150px}
+@media(max-width:520px){.pwa-install-entry{width:max-content}.offline-launch{padding:16px}.offline-launch-card{padding:28px 20px;border-radius:20px}}

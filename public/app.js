@@ -1,7 +1,7 @@
-// V1.4.0 · rendimiento: paginación, scroll infinito y multimedia lazy
+// V1.5.0 · PWA instalable: service worker, instalación y arranque offline seguro
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
-  'favicon.ico','manifest.webmanifest','robots.txt','sitemap.xml','login','register','logout','admin',
+  'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
   'feed','reels','discover','search','messages','notifications','bookmarks','friends','settings','profile',
   'invite','invites','help','support','about'
 ]);
@@ -139,6 +139,84 @@ const state = {
 
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
+
+// V1.5 · Instalación PWA
+let deferredInstallPrompt = null;
+
+function isStandaloneApp() {
+  return window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+function isIosDevice() {
+  return /iphone|ipad|ipod/i.test(navigator.userAgent || '') || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function updatePwaInstallUi() {
+  const installed = isStandaloneApp();
+  const available = !installed && (Boolean(deferredInstallPrompt) || isIosDevice());
+  document.documentElement.classList.toggle('pwa-standalone', installed);
+  document.body?.classList.toggle('pwa-install-available', available);
+  document.querySelectorAll('[data-pwa-install-label]').forEach(el => {
+    el.textContent = installed ? 'Instalada' : 'Instalar app';
+    if ('disabled' in el) el.disabled = installed;
+  });
+}
+
+window.addEventListener('beforeinstallprompt', (event) => {
+  event.preventDefault();
+  deferredInstallPrompt = event;
+  updatePwaInstallUi();
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  updatePwaInstallUi();
+  toast('Instant Admirers se ha instalado correctamente.');
+});
+
+window.installInstantAdmirers = async () => {
+  if (isStandaloneApp()) { toast('Instant Admirers ya está instalada en este dispositivo.'); return; }
+  if (deferredInstallPrompt) {
+    const prompt = deferredInstallPrompt;
+    deferredInstallPrompt = null;
+    try {
+      await prompt.prompt();
+      const choice = await prompt.userChoice;
+      if (choice?.outcome === 'accepted') toast('Instalando Instant Admirers…');
+      updatePwaInstallUi();
+      return;
+    } catch (_) { updatePwaInstallUi(); }
+  }
+  if (isIosDevice()) {
+    modal(`<div class="modal-head"><h3>Instalar Instant Admirers</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+      <div class="pwa-install-help"><div class="pwa-app-mark"><img src="/assets/brand/icon-192.png" alt=""></div><p>En iPhone o iPad puedes instalarla como una app.</p><ol><li>Pulsa <b>Compartir</b> en Safari.</li><li>Elige <b>Añadir a pantalla de inicio</b>.</li><li>Pulsa <b>Añadir</b>.</li></ol><small>Después se abrirá a pantalla completa desde su icono.</small></div>`);
+    return;
+  }
+  modal(`<div class="modal-head"><h3>Instalar Instant Admirers</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <div class="pwa-install-help"><div class="pwa-app-mark"><img src="/assets/brand/icon-192.png" alt=""></div><p>Tu navegador puede instalar Instant Admirers como aplicación.</p><p class="muted">Abre el menú del navegador y busca <b>Instalar aplicación</b> o <b>Añadir a pantalla de inicio</b>.</p></div>`);
+};
+
+function registerInstantAdmirersPwa() {
+  updatePwaInstallUi();
+  if (!('serviceWorker' in navigator)) return;
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost') return;
+  window.addEventListener('load', async () => {
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js', { scope:'/', updateViaCache:'none' });
+      registration.update().catch(() => {});
+    } catch (error) {
+      console.warn('No se pudo registrar el service worker', error);
+    }
+  }, { once:true });
+}
+
+function renderOfflineLaunch() {
+  $('#app').innerHTML = `<div class="offline-launch"><div class="offline-launch-card card">${brandLockup('big')}<div class="offline-launch-icon">⌁</div><h2>Estás sin conexión</h2><p>Instant Admirers está instalada y tu sesión se conserva. Conéctate a Internet para cargar perfiles, publicaciones y mensajes.</p><button class="btn primary" onclick="retryOfflineLaunch()">Reintentar</button><small>No hemos cerrado tu sesión.</small></div></div>`;
+}
+window.retryOfflineLaunch = () => {
+  if (!navigator.onLine) return toast('Sigues sin conexión a Internet.', 'error');
+  init();
+};
 
 const MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
 const MAX_VIDEO_UPLOAD_BYTES = 100 * 1024 * 1024;
@@ -359,6 +437,7 @@ function authScreen() {
           <div id="authbox"></div>
         </section>
         ${legalLinks()}
+        <button class="btn ghost compact pwa-install-entry" type="button" onclick="installInstantAdmirers()"><span>⬇</span><span data-pwa-install-label>Instalar app</span></button>
         <div class="auth-mobile-footer-note">18+ · Comunidad privada · Instant Admirers</div>
       </section>
     </div>`;
@@ -2103,6 +2182,10 @@ window.openAccountSettings = () => {
         <button class="btn ghost compact" onclick="closeModal();openPrivacySettings()">Abrir privacidad</button>
       </section>
       ${state.me?.is_admin ? `<section class="settings-block"><div><b>Administración</b><small>Revisa denuncias y actividad de moderación.</small></div><button class="btn ghost compact" onclick="closeModal();go('admin')">Abrir panel</button></section>` : ''}
+      <section class="settings-block pwa-settings-block">
+        <div><b>Aplicación</b><small>${isStandaloneApp() ? 'Instant Admirers está instalada en este dispositivo.' : 'Instala Instant Admirers y ábrela desde tu pantalla de inicio.'}</small></div>
+        <button class="btn ghost compact" data-pwa-install-label onclick="installInstantAdmirers()" ${isStandaloneApp()?'disabled':''}>${isStandaloneApp()?'Instalada':'Instalar app'}</button>
+      </section>
       <section class="settings-block">
         <div><b>Legal y privacidad</b><small>Aviso legal, privacidad, cookies, términos y normas de la comunidad.</small></div>
         <a class="btn ghost compact legal-settings-link" href="/legal/" target="_blank" rel="noopener">Ver documentos</a>
@@ -2263,7 +2346,8 @@ window.adminToggleUser = async (userId,status,reportId) => {
 
 async function init(options = {}) {
   if (await handleAuthLink()) return;
-  if (!state.token) return authScreen();
+  if (!state.token) { authScreen(); updatePwaInstallUi(); return; }
+  if (!navigator.onLine) { renderOfflineLaunch(); updatePwaInstallUi(); return; }
   try {
     state.me = await api('/api/me');
     connectRealtime();
@@ -2298,7 +2382,12 @@ async function init(options = {}) {
     } else if (state.me && state.me.onboarding_completed === false) {
       setTimeout(openOnboarding, 150);
     }
-  } catch {
+  } catch (error) {
+    if (!navigator.onLine || /conexión|conectar/i.test(String(error?.message || ''))) {
+      renderOfflineLaunch();
+      showNetworkState(false);
+      return;
+    }
     logout();
   }
 }
@@ -2329,4 +2418,5 @@ window.addEventListener('keydown', (event) => {
 });
 if (!navigator.onLine) setTimeout(() => showNetworkState(false), 200);
 
+registerInstantAdmirersPwa();
 init();
