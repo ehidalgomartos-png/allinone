@@ -670,3 +670,25 @@ body{
 .edit-cover-preview .image-preview-status{position:absolute;left:10px;bottom:10px}
 .profile-photo-actions .avatar-status{display:inline-flex;align-items:center;background:transparent;border:0;padding:0;color:#9ff3bd}
 @media(max-width:560px){.edit-cover-preview .image-preview-status{left:8px;bottom:8px}.profile-photo-actions .avatar-status{width:100%;font-size:10px}}
+
+/* V1.3.2 · cámara directa en móvil */
+.mobile-capture-actions,.mobile-capture-only{display:none}
+.capture-btn{border:1px solid var(--border);background:rgba(255,255,255,.035);color:#e7e9ef;border-radius:10px;padding:8px 10px;font:inherit;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap}
+.capture-btn:active{transform:scale(.98)}
+@media(max-width:860px){
+  .mobile-capture-actions{display:flex;align-items:center;gap:7px}
+  .mobile-capture-only{display:inline-flex!important;align-items:center;justify-content:center}
+  .composer-modal-tools{flex-wrap:wrap}
+  .composer-capture-actions{order:2;width:100%}
+  .composer-capture-actions .capture-btn{flex:1;min-height:40px}
+  .composer-modal-tools select{margin-left:auto}
+  .story-capture-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:-3px}
+  .story-capture-actions .capture-btn{min-height:42px}
+  .message-compose .capture-icon{width:38px;min-width:38px;padding:0;font-size:17px;border:0}
+}
+@media(max-width:430px){
+  .message-compose{gap:5px}
+  .message-compose .attach-btn{width:34px;min-width:34px;height:36px;border-radius:10px}
+  .message-compose .capture-icon{font-size:15px}
+  .message-compose .btn{padding-left:10px;padding-right:10px}
+}

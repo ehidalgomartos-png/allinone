@@ -1,4 +1,4 @@
-// V1.3.1 · multimedia externa + vídeos hasta 100 MB + recuperación de errores de subida
+// V1.3.2 · captura directa desde cámara móvil + multimedia externa
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -158,6 +158,23 @@ function validateMediaFile(file, input = null) {
   if (input) input.value = '';
   return false;
 }
+
+function prepareGalleryInput(inputId, allowVideo = true) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  input.removeAttribute('capture');
+  input.accept = allowVideo ? 'image/*,video/*' : 'image/*';
+}
+window.prepareGalleryInput = prepareGalleryInput;
+
+window.captureFromDevice = (inputId, kind = 'photo', facing = 'environment') => {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  input.value = '';
+  input.accept = kind === 'video' ? 'video/*' : 'image/*';
+  input.setAttribute('capture', facing === 'user' ? 'user' : 'environment');
+  input.click();
+};
 
 async function uploadMediaFile(file) {
   const error = mediaValidationError(file);
@@ -623,7 +640,11 @@ window.openComposerModal = (pickMedia = false) => {
       <div class="composer-hint">Puedes usar <b>@usuario</b> para mencionar y <b>#tema</b> para crear una tendencia.</div>
       <div id="mediaPreview"></div>
       <div class="composer-modal-tools">
-        <label id="modalMediaPicker" class="media-picker modal-media-picker" tabindex="0">▧ Foto / vídeo<input type="file" id="media" accept="image/*,video/*" onchange="previewMedia(this)"></label>
+        <label id="modalMediaPicker" class="media-picker modal-media-picker" tabindex="0" onclick="prepareGalleryInput('media',true)">▧ Galería<input type="file" id="media" accept="image/*,video/*" onchange="previewMedia(this)"></label>
+        <div class="mobile-capture-actions composer-capture-actions" aria-label="Cámara del móvil">
+          <button type="button" class="capture-btn" onclick="captureFromDevice('media','photo','environment')">📷 Foto</button>
+          <button type="button" class="capture-btn" onclick="captureFromDevice('media','video','environment')">🎥 Vídeo</button>
+        </div>
         <select id="visibility" title="Visibilidad"><option value="public">🌍 Público</option><option value="followers">👥 Seguidores</option></select>
       </div>
       <small class="composer-hint">Fotos hasta 10 MB · Vídeos hasta 100 MB.</small>
@@ -1244,8 +1265,8 @@ window.editProfile = () => {
   const u = state.me;
   modal(`<div class="modal-head"><h3>Editar perfil</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
     <div class="edit-profile">
-      <div class="edit-cover-preview ${u.cover?'has-cover':''}" id="editCoverPreview">${u.cover?`<img src="${escapeAttr(u.cover)}" alt="Portada actual" id="editCoverPreviewImg">`:''}<div class="profile-photo-actions cover-actions"><label class="btn ghost compact">Cambiar portada<input type="file" id="coverFile" accept="image/*" hidden></label>${u.cover?`<button class="btn danger compact" type="button" onclick="removeProfileCover()">Eliminar portada</button>`:''}</div><div class="image-preview-status" id="coverPreviewStatus" aria-live="polite"></div></div>
-      <div class="edit-avatar-row"><div id="editAvatarPreview" class="edit-avatar-preview">${avatar(u, 'large')}</div><div class="profile-photo-actions"><label class="btn ghost compact">Cambiar foto<input type="file" id="avatarFile" accept="image/*" hidden></label>${u.avatar?`<button class="btn danger compact" type="button" onclick="removeProfileAvatar()">Eliminar foto</button>`:''}<small class="image-preview-status avatar-status" id="avatarPreviewStatus" aria-live="polite"></small></div></div>
+      <div class="edit-cover-preview ${u.cover?'has-cover':''}" id="editCoverPreview">${u.cover?`<img src="${escapeAttr(u.cover)}" alt="Portada actual" id="editCoverPreviewImg">`:''}<div class="profile-photo-actions cover-actions"><label class="btn ghost compact" onclick="prepareGalleryInput('coverFile',false)">Galería<input type="file" id="coverFile" accept="image/*" hidden></label><button class="btn ghost compact mobile-capture-only" type="button" onclick="captureFromDevice('coverFile','photo','environment')">📷 Cámara</button>${u.cover?`<button class="btn danger compact" type="button" onclick="removeProfileCover()">Eliminar portada</button>`:''}</div><div class="image-preview-status" id="coverPreviewStatus" aria-live="polite"></div></div>
+      <div class="edit-avatar-row"><div id="editAvatarPreview" class="edit-avatar-preview">${avatar(u, 'large')}</div><div class="profile-photo-actions"><label class="btn ghost compact" onclick="prepareGalleryInput('avatarFile',false)">Galería<input type="file" id="avatarFile" accept="image/*" hidden></label><button class="btn ghost compact mobile-capture-only" type="button" onclick="captureFromDevice('avatarFile','photo','user')">🤳 Cámara</button>${u.avatar?`<button class="btn danger compact" type="button" onclick="removeProfileAvatar()">Eliminar foto</button>`:''}<small class="image-preview-status avatar-status" id="avatarPreviewStatus" aria-live="polite"></small></div></div>
       <label>Nombre<input id="editName" value="${escapeAttr(u.name)}" maxlength="100"></label>
       <label>Frase de perfil<input id="editHeadline" value="${escapeAttr(u.headline || '')}" maxlength="140" placeholder="Diseñador, creador, viajero…"></label>
       <label>Biografía<textarea id="editBio" maxlength="500" rows="4">${escapeHtml(u.bio || '')}</textarea></label>
@@ -1402,7 +1423,11 @@ function storyStrip(stories = []) {
 window.createStoryModal = () => {
   modal(`<div class="modal-head"><h3>Nueva Story</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
     <div class="story-create">
-      <label class="story-drop" id="storyDrop">📸<b>Elige una foto o vídeo</b><span>Se eliminará automáticamente en 24 horas. Fotos hasta 10 MB · Vídeos hasta 100 MB.</span><input id="storyFile" type="file" accept="image/*,video/*" onchange="previewStoryFile(this)" hidden></label>
+      <label class="story-drop" id="storyDrop" onclick="prepareGalleryInput('storyFile',true)">🖼️<b>Elegir de la galería</b><span>Se eliminará automáticamente en 24 horas. Fotos hasta 10 MB · Vídeos hasta 100 MB.</span><input id="storyFile" type="file" accept="image/*,video/*" onchange="previewStoryFile(this)" hidden></label>
+      <div class="mobile-capture-actions story-capture-actions">
+        <button type="button" class="capture-btn" onclick="captureFromDevice('storyFile','photo','environment')">📷 Hacer foto</button>
+        <button type="button" class="capture-btn" onclick="captureFromDevice('storyFile','video','environment')">🎥 Grabar vídeo</button>
+      </div>
       <div id="storyPreview"></div>
       <label>Texto opcional<textarea id="storyText" rows="3" maxlength="500" placeholder="Añade algo a tu story…"></textarea></label>
       <label>Quién puede verla<select id="storyVisibility"><option value="public">🌍 Toda la comunidad</option><option value="followers">👥 Solo seguidores</option></select></label>
@@ -1638,7 +1663,7 @@ function chatPanelHtml(c, messages, isMobile) {
     <div class="typing-indicator" id="typingIndicator"></div>
     ${reply}
     <div id="messageMediaPreview"></div>
-    <div class="message-compose"><label class="attach-btn">＋<input id="messageFile" type="file" accept="image/*,video/*" onchange="previewMessageFile(this)" hidden></label><textarea id="messageText" rows="1" maxlength="4000" placeholder="Escribe un mensaje…" oninput="handleTyping(${c.id})" onblur="stopTyping(${c.id})" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage(${c.id})}"></textarea><button id="messageSendBtn" class="btn primary compact" onclick="sendMessage(${c.id})">Enviar</button></div>`;
+    <div class="message-compose"><label class="attach-btn" title="Galería" onclick="prepareGalleryInput('messageFile',true)">＋<input id="messageFile" type="file" accept="image/*,video/*" onchange="previewMessageFile(this)" hidden></label><button type="button" class="attach-btn capture-icon mobile-capture-only" title="Hacer foto" onclick="captureFromDevice('messageFile','photo','environment')">📷</button><button type="button" class="attach-btn capture-icon mobile-capture-only" title="Grabar vídeo" onclick="captureFromDevice('messageFile','video','environment')">🎥</button><textarea id="messageText" rows="1" maxlength="4000" placeholder="Escribe un mensaje…" oninput="handleTyping(${c.id})" onblur="stopTyping(${c.id})" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage(${c.id})}"></textarea><button id="messageSendBtn" class="btn primary compact" onclick="sendMessage(${c.id})">Enviar</button></div>`;
 }
 
 function messageHtml(m) {
