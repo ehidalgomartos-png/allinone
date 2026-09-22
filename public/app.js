@@ -1,4 +1,4 @@
-// V1.7.1 · Preparación de lanzamiento sobre V1.6.1
+// V1.8.0 · Comunidad inicial real sobre V1.7.1
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -136,6 +136,7 @@ const state = {
   reelObserver: null,
   rightbarCache: null,
   launchStatus: { registration_mode:'open', invite_required:false, registration_paused:false, launch_phase:'prelaunch', cohort_target:100, banner_enabled:true, banner_text:'' },
+  community: null,
   authMode: 'login'
 };
 
@@ -889,7 +890,7 @@ function composer() {
   </section>`;
 }
 
-window.openComposerModal = (pickMedia = false) => {
+window.openComposerModal = (pickMedia = false, prefill = '') => {
   modal(`<div class="modal-head composer-modal-head"><h3>Crear publicación</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
     <div class="composer-modal">
       <div class="composer-author">${avatar(state.me)}<div><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></div></div>
@@ -908,8 +909,10 @@ window.openComposerModal = (pickMedia = false) => {
       <button class="btn primary large composer-publish" id="publishBtn" onclick="createPost()">Publicar</button>
     </div>`);
   setTimeout(() => {
+    const postText=$('#posttext');
+    if (postText && prefill) { postText.value=String(prefill).slice(0,5000); postText.setSelectionRange(postText.value.length,postText.value.length); }
     if (!pickMedia) {
-      $('#posttext')?.focus();
+      postText?.focus();
       return;
     }
     const picker = $('#modalMediaPicker');
@@ -1076,18 +1079,40 @@ function activationChecklistHtml(data) {
   return `<section class="card activation-checklist"><div class="activation-head"><div><small>PRIMEROS PASOS</small><h3>Prepara tu cuenta</h3><p>${Number(data.steps || 0)} de ${Number(data.total || 4)} completados</p></div><span>${Number(data.steps || 0)}/${Number(data.total || 4)}</span></div><div class="activation-progress"><i style="width:${Math.round((Number(data.steps||0)/Math.max(1,Number(data.total||4)))*100)}%"></i></div><div class="activation-steps">${steps.map(step=>`<button class="${step.done?'done':''}" onclick="${step.action}"><i>${step.done?'✓':'○'}</i><span>${step.label}</span></button>`).join('')}</div></section>`;
 }
 
+
+function communityPromptCard(community, compact=false){
+  if(!community?.prompts?.length) return '';
+  const prompts=community.prompts.slice(0,compact?3:4);
+  return `<section class="card community-starter ${compact?'compact':''}"><div class="community-starter-head"><div><small>ROMPE EL HIELO</small><h3>Empieza una conversación</h3><p>Ideas rápidas para que la comunidad te conozca de verdad.</p></div><span>✦</span></div><div class="community-prompt-list">${prompts.map(p=>`<button onclick="startCommunityPrompt('${safeEncode(p.text)}')"><i>${escapeHtml(p.emoji||'✦')}</i><span>${escapeHtml(p.text)}</span></button>`).join('')}</div></section>`;
+}
+
+function communityPulseHtml(community){
+  if(!community || !['pilot','public'].includes(community.phase)) return '';
+  const m=community.metrics||{};
+  const founder=community.viewer?.founding_member ? `<span class="founding-member-chip">✦ Miembro fundador #${Number(community.viewer.cohort_rank||0)}</span>` : '';
+  return `<div class="community-pulse">${founder}<span><b>${Number(m.members_total||0)}</b> miembros reales</span><span><b>${Number(m.posts_7d||0)}</b> posts esta semana</span><span><b>${Number(m.active_7d||0)}</b> activos 7 d</span></div>`;
+}
+
+window.startCommunityPrompt=(encoded)=>{
+  let text='';
+  try{text=decodeURIComponent(encoded||'');}catch(_){text=String(encoded||'');}
+  openComposerModal(false,text);
+};
+
 async function renderFeed() {
   resetLazyMediaObserver();
   const mode = state.feedMode;
   const endpoint = mode === 'for-you' ? '/api/for-you' : '/api/feed';
   const firstUrl = `${endpoint}?limit=15${mode === 'for-you' ? '&offset=0' : ''}`;
-  const [rawPage, stories, activation] = await Promise.all([api(firstUrl), api('/api/stories'), api('/api/onboarding/checklist').catch(()=>null)]);
+  const [rawPage, stories, activation, community] = await Promise.all([api(firstUrl), api('/api/stories'), api('/api/onboarding/checklist').catch(()=>null), api('/api/community/bootstrap').catch(()=>null)]);
+  state.community=community || state.community;
   const page = normalizePagePayload(rawPage);
   const rows = page.items;
   const empty = mode === 'for-you'
     ? `<div class="card empty feed-empty"><div class="empty-icon">✦</div><h3>Estamos preparando tu Para ti</h3><p>Interactúa con publicaciones, sigue perfiles o añade intereses para afinarlo.</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button><button class="btn ghost compact" onclick="editProfile()">Mis intereses</button></div></div>`
     : `<div class="card empty feed-empty"><div class="empty-icon">⌂</div><h3>Tu feed está empezando</h3><p>Sigue personas desde Descubrir o crea tu primera publicación.</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button><button class="btn ghost compact" onclick="openComposerModal()">Publicar</button></div></div>`;
-  $('#main').innerHTML = `<div class="feed-start">${activationChecklistHtml(activation)}${storyStrip(stories)}${composer()}${feedTabs()}${personalizeHint()}</div><div class="post-list" id="feedPostList">${rows.length ? rows.map(postHtml).join('') : empty}</div>${pagerHtml('feed', page.has_more)}`;
+  const warmStart = rows.length < 6 ? communityPromptCard(community) : '';
+  $('#main').innerHTML = `<div class="feed-start">${activationChecklistHtml(activation)}${communityPulseHtml(community)}${storyStrip(stories)}${composer()}${feedTabs()}${personalizeHint()}${warmStart}</div><div class="post-list" id="feedPostList">${rows.length ? rows.map(postHtml).join('') : empty}</div>${pagerHtml('feed', page.has_more)}`;
   setupLazyMedia($('#main'));
   installInfinitePager('feed', page, async pager => {
     if (state.view !== 'feed' || state.feedMode !== mode) return;
@@ -1118,14 +1143,22 @@ function suggestionCard(u) {
   </article>`;
 }
 
+
+function newcomerCard(u){
+  return `<article class="suggestion-card newcomer-card"><span class="newcomer-badge">NUEVO</span><button class="suggestion-person" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'large')}<b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small></button>${u.headline?`<p>${escapeHtml(u.headline).slice(0,90)}</p>`:''}<div class="suggestion-reason">✦ Recién llegado</div>${followButtonHtml(u)}</article>`;
+}
+
 async function renderDiscover() {
   resetLazyMediaObserver();
-  const [rawPage,trends,suggestions] = await Promise.all([api('/api/discover?limit=15&offset=0'),api('/api/trending'),api('/api/suggestions?limit=8')]);
+  const [rawPage,trends,suggestions,community] = await Promise.all([api('/api/discover?limit=15&offset=0'),api('/api/trending'),api('/api/suggestions?limit=8'),api('/api/community/bootstrap').catch(()=>null)]);
+  state.community=community || state.community;
   const page = normalizePagePayload(rawPage);
   const rows = page.items;
   const trendStrip = trends.length ? `<div class="trend-strip">${trends.slice(0,8).map(t=>`<button onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} posts · ${t.authors} personas</small></button>`).join('')}</div>` : '';
+  const newcomers = community?.settings?.newcomer_spotlight_enabled && community?.newcomers?.length ? `<section class="discover-people newcomer-spotlight"><div class="section-heading"><div><h3>Recién llegados</h3><p>Da la bienvenida a personas que acaban de unirse.</p></div></div><div class="suggestion-scroll">${community.newcomers.map(newcomerCard).join('')}</div></section>` : '';
   const people = suggestions.length ? `<section class="discover-people"><div class="section-heading"><div><h3>Personas para ti</h3><p>Perfiles recomendados según tu actividad e intereses.</p></div></div><div class="suggestion-scroll">${suggestions.map(suggestionCard).join('')}</div></section>` : '';
-  $('#main').innerHTML = `${pageHeader('Descubrir','Encuentra personas, temas y contenido nuevo')}${people}${trendStrip}<div class="section-heading post-discover-heading"><div><h3>Popular ahora</h3><p>Publicaciones públicas con más conversación reciente.</p></div></div><div class="post-list" id="discoverPostList">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty"><div class="empty-icon">✦</div><h3>Aún no hay contenido público</h3><p>Cuando la comunidad publique contenido público, aparecerá aquí.</p></div>`}</div>${pagerHtml('discover', page.has_more)}`;
+  const prompts = rows.length < 8 ? communityPromptCard(community,true) : '';
+  $('#main').innerHTML = `${pageHeader('Descubrir','Encuentra personas, temas y contenido nuevo')}${communityPulseHtml(community)}${newcomers}${people}${prompts}${trendStrip}<div class="section-heading post-discover-heading"><div><h3>Popular ahora</h3><p>Publicaciones públicas con más conversación reciente.</p></div></div><div class="post-list" id="discoverPostList">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty"><div class="empty-icon">✦</div><h3>Aún no hay contenido público</h3><p>Cuando la comunidad publique contenido público, aparecerá aquí.</p><button class="btn primary compact" onclick="openComposerModal()">Publicar primero</button></div>`}</div>${pagerHtml('discover', page.has_more)}`;
   setupLazyMedia($('#main'));
   installInfinitePager('discover', page, async pager => {
     if (state.view !== 'discover') return;
@@ -2348,14 +2381,15 @@ async function renderAdmin() {
     $('#main').innerHTML=`<div class="card empty"><h3>Acceso no disponible</h3><p>Este panel está reservado a administración.</p></div>`;
     return;
   }
-  const [stats,reports,actions,security,launch,demo,readiness]=await Promise.all([
+  const [stats,reports,actions,security,launch,demo,readiness,communityLaunch]=await Promise.all([
     api('/api/admin/stats'),
     api('/api/admin/reports?status=all'),
     api('/api/admin/actions'),
     api('/api/admin/security-events'),
     api('/api/admin/launch-dashboard'),
     api('/api/admin/demo/status'),
-    api('/api/admin/launch-readiness')
+    api('/api/admin/launch-readiness'),
+    api('/api/admin/community-launch')
   ]);
   $('#main').innerHTML=`${pageHeader('Administración','Moderación y estado general de Instant Admirers')}
     <div class="admin-stats">
@@ -2392,6 +2426,17 @@ async function renderAdmin() {
       </div>
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveLaunchPreparation()">Guardar preparación</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación inicial</button>`:''}${demo.active?`<button class="btn danger compact" onclick="clearDemoLab()">Eliminar datos TEST</button>`:''}</div>
     </section>
+    <section class="card admin-section community-launch-admin">
+      <div class="section-row"><div><h3>Comunidad inicial</h3><p>Warm-start para que los primeros usuarios encuentren gente y motivos para publicar sin contenido ficticio.</p></div><span class="community-ready-badge">V1.8</span></div>
+      <div class="community-admin-metrics"><span><b>${communityLaunch.metrics.members_total||0}</b> miembros reales</span><span><b>${communityLaunch.metrics.members_7d||0}</b> altas 7 d</span><span><b>${communityLaunch.metrics.activated_members||0}</b> activados</span><span><b>${communityLaunch.metrics.posts_7d||0}</b> posts 7 d</span><span><b>${communityLaunch.metrics.active_7d||0}</b> activos 7 d</span></div>
+      <div class="community-admin-settings">
+        <label><span><b>Ideas para publicar</b><small>Muestra prompts cuando el feed todavía tiene poco contenido.</small></span><input id="communityPromptsEnabled" type="checkbox" ${communityLaunch.settings.starter_prompts_enabled?'checked':''}></label>
+        <label><span><b>Recién llegados</b><small>Destaca nuevos miembros verificados en Descubrir.</small></span><input id="communityNewcomersEnabled" type="checkbox" ${communityLaunch.settings.newcomer_spotlight_enabled?'checked':''}></label>
+        <label class="community-limit"><span><b>Miembros fundadores</b><small>Primeras cuentas reales que reciben el distintivo de cohorte.</small></span><input id="communityFoundingLimit" type="number" min="10" max="10000" value="${Number(communityLaunch.settings.founding_member_limit||100)}"></label>
+      </div>
+      <div class="community-admin-prompts"><small>${communityLaunch.prompt_count} ideas disponibles</small>${communityLaunch.prompts.slice(0,3).map(p=>`<span>${escapeHtml(p.emoji)} ${escapeHtml(p.text)}</span>`).join('')}</div>
+      <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
+    </section>
     <section class="card admin-section demo-lab">
       <div class="section-row"><div><h3>Laboratorio de pruebas</h3><p>Datos sintéticos, claramente marcados y eliminables. No son usuarios reales.</p></div><span class="demo-lab-badge ${demo.active?'active':''}">${demo.active?'ACTIVO':'VACÍO'}</span></div>
       ${demo.active ? `
@@ -2415,6 +2460,21 @@ async function renderAdmin() {
       <div class="admin-action-list">${security.length?security.slice(0,40).map(e=>`<div class="admin-action"><b>${escapeHtml(e.event_type)}</b><span>${e.username?'@'+escapeHtml(e.username):'sin usuario asociado'}</span><small>${timeAgo(e.created_at)}</small></div>`).join(''):'<p class="muted">Todavía no hay eventos de seguridad.</p>'}</div>
     </section>`;
 }
+
+
+window.saveCommunityLaunchSettings=async()=>{
+  const payload={
+    starter_prompts_enabled:Boolean($('#communityPromptsEnabled')?.checked),
+    newcomer_spotlight_enabled:Boolean($('#communityNewcomersEnabled')?.checked),
+    founding_member_limit:Number($('#communityFoundingLimit')?.value||100)
+  };
+  try{
+    await api('/api/admin/community-launch',{method:'PATCH',body:JSON.stringify(payload)});
+    state.community=null;
+    toast('Comunidad inicial actualizada');
+    await renderAdmin();
+  }catch(e){toast(e.message,'error');}
+};
 
 window.generateDemoLab = async () => {
   if(!confirm('Se crearán 24 perfiles TEST y contenido sintético para probar la plataforma. No son usuarios reales. ¿Continuar?')) return;

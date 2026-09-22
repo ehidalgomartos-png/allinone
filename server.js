@@ -109,12 +109,27 @@ async function securityEvent(req, eventType, userId=null, metadata={}) {
   } catch (err) { console.error('securityEvent:', err.message); }
 }
 
+const COMMUNITY_PROMPTS = [
+  { id:'hello', emoji:'👋', text:'Me presento: tres cosas que me definen son…' },
+  { id:'today', emoji:'✨', text:'Algo bueno que me ha pasado hoy es…' },
+  { id:'weekend', emoji:'📍', text:'Mi plan perfecto para este fin de semana sería…' },
+  { id:'music', emoji:'🎧', text:'Una canción que no paro de escuchar últimamente es…' },
+  { id:'food', emoji:'🍜', text:'Un sitio o comida que recomendaría sin pensarlo es…' },
+  { id:'travel', emoji:'✈️', text:'Si pudiera escaparme mañana, me iría a…' },
+  { id:'hobby', emoji:'🎯', text:'Últimamente estoy dedicando tiempo a…' },
+  { id:'question', emoji:'💬', text:'Pregunta para la comunidad: ¿qué consejo os habría gustado recibir antes?' },
+  { id:'photo', emoji:'📸', text:'Una foto que resume bien mi semana y por qué…' },
+  { id:'meet', emoji:'🤝', text:'Me gustaría conocer gente a la que también le guste…' },
+  { id:'goal', emoji:'🚀', text:'Un objetivo que quiero cumplir este año es…' },
+  { id:'truth', emoji:'🎲', text:'Para romper el hielo: una verdad curiosa sobre mí es…' }
+];
+
 let launchSettingsCache = { value:null, expires:0 };
 async function getLaunchSettings(force=false) {
   const now = Date.now();
   if (!force && launchSettingsCache.value && launchSettingsCache.expires > now) return launchSettingsCache.value;
-  const { rows } = await pool.query(`SELECT registration_mode,launch_phase,cohort_target,banner_enabled,banner_text,public_launched_at,updated_at FROM launch_settings WHERE id=1 LIMIT 1`);
-  const value = rows[0] || { registration_mode:'open', launch_phase:'prelaunch', cohort_target:100, banner_enabled:true, banner_text:'Estamos abriendo Instant Admirers por fases.', public_launched_at:null, updated_at:null };
+  const { rows } = await pool.query(`SELECT registration_mode,launch_phase,cohort_target,banner_enabled,banner_text,public_launched_at,starter_prompts_enabled,newcomer_spotlight_enabled,founding_member_limit,updated_at FROM launch_settings WHERE id=1 LIMIT 1`);
+  const value = rows[0] || { registration_mode:'open', launch_phase:'prelaunch', cohort_target:100, banner_enabled:true, banner_text:'Estamos abriendo Instant Admirers por fases.', public_launched_at:null, starter_prompts_enabled:true, newcomer_spotlight_enabled:true, founding_member_limit:100, updated_at:null };
   launchSettingsCache = { value, expires:now + 15000 };
   return value;
 }
@@ -711,7 +726,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.7.1', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix'] });
+  res.json({ ok: true, version: '1.8.0', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','starter-prompts','newcomer-spotlight','founding-cohort','community-launch-dashboard'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -725,6 +740,49 @@ app.get('/api/launch/status', asyncRoute(async (_req, res) => {
     banner_enabled:Boolean(settings.banner_enabled),
     banner_text:String(settings.banner_text || ''),
     public_launched_at:settings.public_launched_at || null
+  });
+}));
+
+
+// V1.8 · Warm-start de comunidad real. Sin perfiles ni publicaciones ficticias.
+app.get('/api/community/bootstrap', auth, asyncRoute(async (req,res) => {
+  const settings = await getLaunchSettings();
+  const metricsResult = await pool.query(`
+    SELECT
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND account_status='active') AS members_total,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND account_status='active' AND created_at >= NOW()-INTERVAL '7 days') AS members_7d,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND p.visibility='public' AND p.created_at >= NOW()-INTERVAL '7 days') AS posts_7d,
+      (SELECT COUNT(DISTINCT ae.user_id)::int FROM app_events ae JOIN users u ON u.id=ae.user_id WHERE u.is_demo=FALSE AND ae.event_type='session_active' AND ae.created_at >= NOW()-INTERVAL '7 days') AS active_7d
+  `);
+  const recentResult = settings.newcomer_spotlight_enabled ? await pool.query(`
+    SELECT u.id,u.username,u.name,u.bio,u.avatar,u.location,u.headline,u.interests,u.created_at,u.last_seen_at,u.account_private,
+      EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=$1 AND f.followed_id=u.id) AS following,
+      EXISTS(SELECT 1 FROM follow_requests frq WHERE frq.follower_id=$1 AND frq.followed_id=u.id) AS follow_requested,
+      (SELECT COUNT(*)::int FROM follows f WHERE f.followed_id=u.id) AS followers_count
+    FROM users u
+    WHERE u.id<>$1 AND u.is_demo=FALSE AND u.account_status='active' AND u.email_verified_at IS NOT NULL
+      AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=u.id) OR (bl.blocker_id=u.id AND bl.blocked_id=$1))
+      AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=u.id)
+    ORDER BY u.created_at DESC,u.id DESC LIMIT 8
+  `,[req.user.id]) : {rows:[]};
+  const rankResult = await pool.query(`
+    SELECT cohort_rank FROM (
+      SELECT id,ROW_NUMBER() OVER(ORDER BY created_at ASC,id ASC)::int AS cohort_rank
+      FROM users WHERE is_demo=FALSE AND account_status='active'
+    ) q WHERE id=$1 LIMIT 1
+  `,[req.user.id]);
+  const cohortRank=Number(rankResult.rows[0]?.cohort_rank || 0);
+  const foundingLimit=Math.max(10,Number(settings.founding_member_limit || 100));
+  const prompts = settings.starter_prompts_enabled
+    ? COMMUNITY_PROMPTS.map((p,i)=>COMMUNITY_PROMPTS[(i + (Number(req.user.id)||0)) % COMMUNITY_PROMPTS.length]).slice(0,6)
+    : [];
+  res.json({
+    phase:settings.launch_phase || 'prelaunch',
+    metrics:metricsResult.rows[0] || {members_total:0,members_7d:0,posts_7d:0,active_7d:0},
+    prompts,
+    newcomers:recentResult.rows.map(r=>({...r,online:isOnline(r.id),recommendation_reason:'Recién llegado a Instant Admirers'})),
+    viewer:{ founding_member:cohortRank>0 && cohortRank<=foundingLimit, cohort_rank:cohortRank, founding_member_limit:foundingLimit },
+    settings:{ starter_prompts_enabled:Boolean(settings.starter_prompts_enabled), newcomer_spotlight_enabled:Boolean(settings.newcomer_spotlight_enabled) }
   });
 }));
 
@@ -2392,10 +2450,46 @@ app.patch('/api/admin/launch/settings', auth, adminOnly, asyncRoute(async (req,r
     UPDATE launch_settings SET registration_mode=$1,launch_phase=$2,cohort_target=$3,banner_enabled=$4,banner_text=$5,
       public_launched_at=CASE WHEN $7='public' AND public_launched_at IS NULL THEN NOW() ELSE public_launched_at END,
       updated_by=$6,updated_at=NOW() WHERE id=1
-    RETURNING registration_mode,launch_phase,cohort_target,banner_enabled,banner_text,public_launched_at,updated_at
+    RETURNING registration_mode,launch_phase,cohort_target,banner_enabled,banner_text,public_launched_at,starter_prompts_enabled,newcomer_spotlight_enabled,founding_member_limit,updated_at
   `,[mode,phase,target,bannerEnabled,bannerText,req.user.id,phase]);
   launchSettingsCache={value:rows[0],expires:Date.now()+15000};
   await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'launch_settings',$2)`,[req.user.id,JSON.stringify({mode,phase,target,bannerEnabled}).slice(0,1000)]);
+  res.json(rows[0]);
+}));
+
+
+app.get('/api/admin/community-launch', auth, adminOnly, asyncRoute(async (_req,res) => {
+  const settings = await getLaunchSettings(true);
+  const {rows}=await pool.query(`
+    SELECT
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND account_status='active') AS members_total,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND account_status='active' AND created_at>=NOW()-INTERVAL '7 days') AS members_7d,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND p.created_at>=NOW()-INTERVAL '7 days') AS posts_7d,
+      (SELECT COUNT(DISTINCT p.user_id)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE) AS authors_total,
+      (SELECT COUNT(*)::int FROM users u WHERE u.is_demo=FALSE AND u.account_status='active' AND COALESCE(NULLIF(TRIM(u.avatar),''),'')<>'' AND ((COALESCE(NULLIF(TRIM(u.bio),''),'')<>'') OR (COALESCE(NULLIF(TRIM(u.headline),''),'')<>'') OR (COALESCE(NULLIF(TRIM(u.interests),''),'')<>'')) AND EXISTS(SELECT 1 FROM posts p WHERE p.user_id=u.id) AND EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=u.id)) AS activated_members,
+      (SELECT COUNT(DISTINCT ae.user_id)::int FROM app_events ae JOIN users u ON u.id=ae.user_id WHERE u.is_demo=FALSE AND ae.event_type='session_active' AND ae.created_at>=NOW()-INTERVAL '7 days') AS active_7d,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=TRUE) AS demo_profiles
+  `);
+  res.json({
+    settings:{starter_prompts_enabled:Boolean(settings.starter_prompts_enabled),newcomer_spotlight_enabled:Boolean(settings.newcomer_spotlight_enabled),founding_member_limit:Number(settings.founding_member_limit||100)},
+    metrics:rows[0] || {},
+    prompt_count:COMMUNITY_PROMPTS.length,
+    prompts:COMMUNITY_PROMPTS.slice(0,6)
+  });
+}));
+
+app.patch('/api/admin/community-launch', auth, adminOnly, asyncRoute(async (req,res) => {
+  const current=await getLaunchSettings(true);
+  const promptsEnabled=req.body?.starter_prompts_enabled===undefined ? Boolean(current.starter_prompts_enabled) : Boolean(req.body.starter_prompts_enabled);
+  const newcomersEnabled=req.body?.newcomer_spotlight_enabled===undefined ? Boolean(current.newcomer_spotlight_enabled) : Boolean(req.body.newcomer_spotlight_enabled);
+  const foundingLimit=Math.max(10,Math.min(10000,Number(req.body?.founding_member_limit ?? current.founding_member_limit ?? 100)||100));
+  const {rows}=await pool.query(`
+    UPDATE launch_settings SET starter_prompts_enabled=$1,newcomer_spotlight_enabled=$2,founding_member_limit=$3,updated_by=$4,updated_at=NOW()
+    WHERE id=1
+    RETURNING registration_mode,launch_phase,cohort_target,banner_enabled,banner_text,public_launched_at,starter_prompts_enabled,newcomer_spotlight_enabled,founding_member_limit,updated_at
+  `,[promptsEnabled,newcomersEnabled,foundingLimit,req.user.id]);
+  launchSettingsCache={value:rows[0],expires:Date.now()+15000};
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'community_launch_settings',$2)`,[req.user.id,JSON.stringify({promptsEnabled,newcomersEnabled,foundingLimit}).slice(0,1000)]);
   res.json(rows[0]);
 }));
 

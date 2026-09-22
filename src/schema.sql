@@ -473,3 +473,11 @@ ALTER TABLE launch_settings ADD CONSTRAINT launch_settings_cohort_target_check C
 ALTER TABLE launch_settings ADD COLUMN IF NOT EXISTS banner_enabled BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE launch_settings ADD COLUMN IF NOT EXISTS banner_text VARCHAR(240) NOT NULL DEFAULT 'Estamos abriendo Instant Admirers por fases.';
 ALTER TABLE launch_settings ADD COLUMN IF NOT EXISTS public_launched_at TIMESTAMPTZ;
+
+
+-- V1.8: comunidad inicial real y warm-start de la primera cohorte.
+ALTER TABLE launch_settings ADD COLUMN IF NOT EXISTS starter_prompts_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE launch_settings ADD COLUMN IF NOT EXISTS newcomer_spotlight_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE launch_settings ADD COLUMN IF NOT EXISTS founding_member_limit INTEGER NOT NULL DEFAULT 100;
+ALTER TABLE launch_settings DROP CONSTRAINT IF EXISTS launch_settings_founding_member_limit_check;
+ALTER TABLE launch_settings ADD CONSTRAINT launch_settings_founding_member_limit_check CHECK (founding_member_limit BETWEEN 10 AND 10000);
