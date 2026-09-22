@@ -1,4 +1,4 @@
-// V1.6.0 · Lanzamiento controlado: activación, métricas operativas y observabilidad
+// V1.6.1 · Laboratorio de pruebas controlado sobre lanzamiento V1.6
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -2339,12 +2339,13 @@ async function renderAdmin() {
     $('#main').innerHTML=`<div class="card empty"><h3>Acceso no disponible</h3><p>Este panel está reservado a administración.</p></div>`;
     return;
   }
-  const [stats,reports,actions,security,launch]=await Promise.all([
+  const [stats,reports,actions,security,launch,demo]=await Promise.all([
     api('/api/admin/stats'),
     api('/api/admin/reports?status=all'),
     api('/api/admin/actions'),
     api('/api/admin/security-events'),
-    api('/api/admin/launch-dashboard')
+    api('/api/admin/launch-dashboard'),
+    api('/api/admin/demo/status')
   ]);
   $('#main').innerHTML=`${pageHeader('Administración','Moderación y estado general de Instant Admirers')}
     <div class="admin-stats">
@@ -2367,6 +2368,16 @@ async function renderAdmin() {
       <div class="launch-secondary"><span>${launch.metrics.stories_active} Stories activas</span><span>${launch.metrics.reels_total} vídeos/Reels</span><span>${launch.metrics.messages_24h} mensajes hoy</span></div>
       <div class="launch-errors"><div class="section-row"><h4>Últimos errores técnicos</h4><span>${launch.recent_errors.length}</span></div>${launch.recent_errors.length?launch.recent_errors.slice(0,8).map(e=>`<div class="launch-error"><b>${escapeHtml(e.event_type)}</b><span>${e.username?'@'+escapeHtml(e.username):'sin usuario'} · ${escapeHtml(e.path || '/')}</span><small>${escapeHtml(e.metadata?.message || '')} · ${timeAgo(e.created_at)}</small></div>`).join(''):'<p class="muted">Sin errores registrados.</p>'}</div>
     </section>
+    <section class="card admin-section demo-lab">
+      <div class="section-row"><div><h3>Laboratorio de pruebas</h3><p>Datos sintéticos, claramente marcados y eliminables. No son usuarios reales.</p></div><span class="demo-lab-badge ${demo.active?'active':''}">${demo.active?'ACTIVO':'VACÍO'}</span></div>
+      ${demo.active ? `
+        <div class="demo-lab-metrics"><span><b>${demo.profiles}</b> perfiles TEST</span><span><b>${demo.posts}</b> posts</span><span><b>${demo.reels}</b> Reels</span><span><b>${demo.stories}</b> Stories</span><span><b>${demo.comments}</b> comentarios</span><span><b>${demo.likes}</b> likes</span></div>
+        <p class="demo-lab-note">Tu cuenta de administrador sigue automáticamente varias cuentas TEST para que puedas comprobar Inicio, scroll infinito y recomendaciones. Las métricas de lanzamiento de arriba excluyen estos datos.</p>
+        <div class="demo-lab-actions"><button class="btn ghost compact" onclick="go('feed')">Probar Inicio</button><button class="btn ghost compact" onclick="go('discover')">Probar Descubrir</button><button class="btn ghost compact" onclick="go('reels')">Probar Reels</button><button class="btn danger compact" onclick="clearDemoLab()">Eliminar datos de prueba</button></div>
+      ` : `
+        <div class="demo-lab-empty"><b>Generar entorno temporal</b><p>Crea 24 perfiles TEST, 144 publicaciones, Reels, Stories, comentarios, likes y algunos mensajes de prueba. Todo se elimina después con un solo botón.</p><button class="btn primary" onclick="generateDemoLab()">Generar datos de prueba</button></div>
+      `}
+    </section>
     <section class="card admin-section">
       <div class="section-row"><h3>Denuncias</h3><span>${reports.length}</span></div>
       <div class="admin-report-list">${reports.length?reports.map(adminReportHtml).join(''):'<div class="empty compact-empty">No hay denuncias.</div>'}</div>
@@ -2380,6 +2391,25 @@ async function renderAdmin() {
       <div class="admin-action-list">${security.length?security.slice(0,40).map(e=>`<div class="admin-action"><b>${escapeHtml(e.event_type)}</b><span>${e.username?'@'+escapeHtml(e.username):'sin usuario asociado'}</span><small>${timeAgo(e.created_at)}</small></div>`).join(''):'<p class="muted">Todavía no hay eventos de seguridad.</p>'}</div>
     </section>`;
 }
+
+window.generateDemoLab = async () => {
+  if(!confirm('Se crearán 24 perfiles TEST y contenido sintético para probar la plataforma. No son usuarios reales. ¿Continuar?')) return;
+  try{
+    toast('Generando entorno de prueba…');
+    const result=await api('/api/admin/demo/generate',{method:'POST',body:'{}',timeout:120000});
+    toast(`Entorno creado: ${result.profiles} perfiles y ${result.posts} posts`);
+    await renderAdmin();
+  }catch(e){toast(e.message,'error');}
+};
+
+window.clearDemoLab = async () => {
+  if(!confirm('¿Eliminar TODOS los perfiles y contenidos TEST? Los usuarios reales y sus publicaciones no se tocarán.')) return;
+  try{
+    const result=await api('/api/admin/demo',{method:'DELETE',timeout:120000});
+    toast(`Datos de prueba eliminados (${result.deleted_profiles} perfiles)`);
+    await renderAdmin();
+  }catch(e){toast(e.message,'error');}
+};
 
 window.saveLaunchRegistrationMode = async () => {
   const mode=$('#launchRegistrationMode')?.value || 'open';

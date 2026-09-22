@@ -1,4 +1,4 @@
-# Instant Admirers V1.6.0
+# Instant Admirers V1.6.1
 
 ## URLs públicas de perfil
 

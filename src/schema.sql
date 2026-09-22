@@ -455,3 +455,9 @@ CREATE TABLE IF NOT EXISTS app_events (
 CREATE INDEX IF NOT EXISTS idx_app_events_type_created ON app_events(event_type, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_app_events_user_created ON app_events(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_app_events_severity_created ON app_events(severity, created_at DESC);
+
+-- V1.6.1: laboratorio de pruebas controlado y eliminable.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS demo_batch VARCHAR(80) NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_users_demo ON users(is_demo, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_users_demo_batch ON users(demo_batch) WHERE demo_batch <> '';

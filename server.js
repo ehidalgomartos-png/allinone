@@ -12,6 +12,7 @@ require('dotenv').config();
 
 const { pool, initDb, withTransaction } = require('./src/db');
 const { configured: cloudinaryConfigured, uploadBuffer: uploadMediaBuffer, destroyAsset: destroyRemoteAsset } = require('./src/mediaStorage');
+const { createDemoEnvironment, clearDemoEnvironment, demoStatus } = require('./src/demoLab');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -709,7 +710,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.6.0', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log'] });
+  res.json({ ok: true, version: '1.6.1', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -2256,15 +2257,15 @@ app.delete('/api/account', auth, asyncRoute(async (req, res) => {
 app.get('/api/admin/stats', auth, adminOnly, asyncRoute(async (_req, res) => {
   const { rows } = await pool.query(`
     SELECT
-      (SELECT COUNT(*)::int FROM users) AS users,
-      (SELECT COUNT(*)::int FROM users WHERE account_status='suspended') AS suspended_users,
-      (SELECT COUNT(*)::int FROM posts) AS posts,
-      (SELECT COUNT(*)::int FROM comments) AS comments,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE) AS users,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND account_status='suspended') AS suspended_users,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE) AS posts,
+      (SELECT COUNT(*)::int FROM comments c JOIN users u ON u.id=c.user_id WHERE u.is_demo=FALSE) AS comments,
       (SELECT COUNT(*)::int FROM reports WHERE status='open') AS open_reports,
       (SELECT COUNT(*)::int FROM reports WHERE status='reviewing') AS reviewing_reports,
       (SELECT COUNT(*)::int FROM reports WHERE status='closed') AS closed_reports,
-      (SELECT COUNT(*)::int FROM users WHERE created_at >= NOW()-INTERVAL '7 days') AS new_users_7d,
-      (SELECT COUNT(*)::int FROM posts WHERE created_at >= NOW()-INTERVAL '7 days') AS new_posts_7d
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND created_at >= NOW()-INTERVAL '7 days') AS new_users_7d,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND p.created_at >= NOW()-INTERVAL '7 days') AS new_posts_7d
   `);
   res.json(rows[0]);
 }));
@@ -2273,23 +2274,23 @@ app.get('/api/admin/launch-dashboard', auth, adminOnly, asyncRoute(async (_req,r
   const settings = await getLaunchSettings();
   const { rows } = await pool.query(`
     SELECT
-      (SELECT COUNT(*)::int FROM users) AS users_total,
-      (SELECT COUNT(*)::int FROM users WHERE email_verified_at IS NOT NULL) AS users_verified,
-      (SELECT COUNT(*)::int FROM users WHERE created_at >= NOW()-INTERVAL '24 hours') AS users_new_24h,
-      (SELECT COUNT(*)::int FROM users WHERE created_at >= NOW()-INTERVAL '7 days') AS users_new_7d,
-      (SELECT COUNT(DISTINCT user_id)::int FROM app_events WHERE event_type='session_active' AND user_id IS NOT NULL AND created_at >= NOW()-INTERVAL '24 hours') AS active_24h,
-      (SELECT COUNT(DISTINCT user_id)::int FROM app_events WHERE event_type='session_active' AND user_id IS NOT NULL AND created_at >= NOW()-INTERVAL '7 days') AS active_7d,
-      (SELECT COUNT(*)::int FROM users WHERE COALESCE(NULLIF(TRIM(avatar),''),'') <> '') AS users_with_avatar,
-      (SELECT COUNT(DISTINCT user_id)::int FROM posts) AS users_with_post,
-      (SELECT COUNT(*)::int FROM posts) AS posts_total,
-      (SELECT COUNT(*)::int FROM posts WHERE created_at >= NOW()-INTERVAL '24 hours') AS posts_24h,
-      (SELECT COUNT(*)::int FROM posts WHERE created_at >= NOW()-INTERVAL '7 days') AS posts_7d,
-      (SELECT COUNT(*)::int FROM stories WHERE expires_at > NOW()) AS stories_active,
-      (SELECT COUNT(*)::int FROM posts WHERE media_type='video') AS reels_total,
-      (SELECT COUNT(*)::int FROM messages WHERE created_at >= NOW()-INTERVAL '24 hours') AS messages_24h,
-      (SELECT COUNT(*)::int FROM referral_attributions) AS referrals_total,
-      (SELECT COUNT(*)::int FROM referral_attributions WHERE registered_at >= NOW()-INTERVAL '7 days') AS referrals_7d,
-      (SELECT COUNT(*)::int FROM referral_attributions WHERE qualified_at IS NOT NULL) AS referrals_qualified,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE) AS users_total,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND email_verified_at IS NOT NULL) AS users_verified,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND created_at >= NOW()-INTERVAL '24 hours') AS users_new_24h,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND created_at >= NOW()-INTERVAL '7 days') AS users_new_7d,
+      (SELECT COUNT(DISTINCT ae.user_id)::int FROM app_events ae JOIN users u ON u.id=ae.user_id WHERE u.is_demo=FALSE AND ae.event_type='session_active' AND ae.created_at >= NOW()-INTERVAL '24 hours') AS active_24h,
+      (SELECT COUNT(DISTINCT ae.user_id)::int FROM app_events ae JOIN users u ON u.id=ae.user_id WHERE u.is_demo=FALSE AND ae.event_type='session_active' AND ae.created_at >= NOW()-INTERVAL '7 days') AS active_7d,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(NULLIF(TRIM(avatar),''),'') <> '') AS users_with_avatar,
+      (SELECT COUNT(DISTINCT p.user_id)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE) AS users_with_post,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE) AS posts_total,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND p.created_at >= NOW()-INTERVAL '24 hours') AS posts_24h,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND p.created_at >= NOW()-INTERVAL '7 days') AS posts_7d,
+      (SELECT COUNT(*)::int FROM stories s JOIN users u ON u.id=s.user_id WHERE u.is_demo=FALSE AND s.expires_at > NOW()) AS stories_active,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND p.media_type='video') AS reels_total,
+      (SELECT COUNT(*)::int FROM messages m JOIN users u ON u.id=m.sender_id WHERE u.is_demo=FALSE AND m.created_at >= NOW()-INTERVAL '24 hours') AS messages_24h,
+      (SELECT COUNT(*)::int FROM referral_attributions ra JOIN users u ON u.id=ra.invited_user_id WHERE u.is_demo=FALSE) AS referrals_total,
+      (SELECT COUNT(*)::int FROM referral_attributions ra JOIN users u ON u.id=ra.invited_user_id WHERE u.is_demo=FALSE AND ra.registered_at >= NOW()-INTERVAL '7 days') AS referrals_7d,
+      (SELECT COUNT(*)::int FROM referral_attributions ra JOIN users u ON u.id=ra.invited_user_id WHERE u.is_demo=FALSE AND ra.qualified_at IS NOT NULL) AS referrals_qualified,
       (SELECT COUNT(*)::int FROM reports WHERE status IN ('open','reviewing')) AS reports_pending,
       (SELECT COUNT(*)::int FROM app_events WHERE severity='error' AND created_at >= NOW()-INTERVAL '24 hours') AS errors_24h
   `);
@@ -2299,6 +2300,22 @@ app.get('/api/admin/launch-dashboard', auth, adminOnly, asyncRoute(async (_req,r
     WHERE ae.severity='error' ORDER BY ae.created_at DESC LIMIT 20
   `);
   res.json({ settings, metrics:rows[0], recent_errors:recentErrors.rows });
+}));
+
+app.get('/api/admin/demo/status', auth, adminOnly, asyncRoute(async (_req,res) => {
+  res.json(await demoStatus(pool));
+}));
+
+app.post('/api/admin/demo/generate', auth, adminOnly, asyncRoute(async (req,res) => {
+  const result = await withTransaction(async (client) => createDemoEnvironment(client, req.user.id));
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'demo_lab_generate',$2)`, [req.user.id, JSON.stringify(result).slice(0,1000)]);
+  res.json({ ok:true, ...result });
+}));
+
+app.delete('/api/admin/demo', auth, adminOnly, asyncRoute(async (req,res) => {
+  const result = await withTransaction(async (client) => clearDemoEnvironment(client));
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'demo_lab_cleanup',$2)`, [req.user.id, `Perfiles eliminados: ${result.deleted_profiles}`]);
+  res.json({ ok:true, ...result });
 }));
 
 app.patch('/api/admin/launch/settings', auth, adminOnly, asyncRoute(async (req,res) => {
@@ -2420,7 +2437,7 @@ app.use((err, req, res, _next) => {
 async function start() {
   await initDb();
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.6.0 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.6.1 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {
