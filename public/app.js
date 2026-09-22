@@ -1,4 +1,4 @@
-// V1.3.0 · multimedia externa con compatibilidad transparente
+// V1.3.1 · multimedia externa + vídeos hasta 100 MB + recuperación de errores de subida
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -134,6 +134,38 @@ const state = {
 
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
+
+const MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_UPLOAD_BYTES = 100 * 1024 * 1024;
+const MEDIA_UPLOAD_TIMEOUT_MS = 5 * 60 * 1000;
+
+function mediaValidationError(file) {
+  if (!file) return '';
+  const type = String(file.type || '');
+  if (!type.startsWith('image/') && !type.startsWith('video/')) return 'Solo se permiten imágenes o vídeos.';
+  const isVideo = type.startsWith('video/');
+  const maxBytes = isVideo ? MAX_VIDEO_UPLOAD_BYTES : MAX_IMAGE_UPLOAD_BYTES;
+  if (Number(file.size || 0) > maxBytes) {
+    return isVideo ? 'El vídeo supera el límite de 100 MB.' : 'La imagen supera el límite de 10 MB.';
+  }
+  return '';
+}
+
+function validateMediaFile(file, input = null) {
+  const error = mediaValidationError(file);
+  if (!error) return true;
+  toast(error, 'error');
+  if (input) input.value = '';
+  return false;
+}
+
+async function uploadMediaFile(file) {
+  const error = mediaValidationError(file);
+  if (error) throw new Error(error);
+  const fd = new FormData();
+  fd.append('file', file);
+  return api('/api/upload', { method:'POST', body:fd, timeout:MEDIA_UPLOAD_TIMEOUT_MS });
+}
 
 function setGlobalLoading(active) {
   state.requestCount = Math.max(0, state.requestCount + (active ? 1 : -1));
@@ -594,6 +626,7 @@ window.openComposerModal = (pickMedia = false) => {
         <label id="modalMediaPicker" class="media-picker modal-media-picker" tabindex="0">▧ Foto / vídeo<input type="file" id="media" accept="image/*,video/*" onchange="previewMedia(this)"></label>
         <select id="visibility" title="Visibilidad"><option value="public">🌍 Público</option><option value="followers">👥 Seguidores</option></select>
       </div>
+      <small class="composer-hint">Fotos hasta 10 MB · Vídeos hasta 100 MB.</small>
       <button class="btn primary large composer-publish" id="publishBtn" onclick="createPost()">Publicar</button>
     </div>`);
   setTimeout(() => {
@@ -611,7 +644,11 @@ window.openComposerModal = (pickMedia = false) => {
 window.previewMedia = (input) => {
   const file = input.files?.[0];
   const box = $('#mediaPreview');
-  if (!file || !box) return box.innerHTML = '';
+  if (!file || !box) return box && (box.innerHTML = '');
+  if (!validateMediaFile(file, input)) {
+    box.innerHTML = '';
+    return;
+  }
   const url = URL.createObjectURL(file);
   box.innerHTML = file.type.startsWith('video/')
     ? `<div class="preview-wrap"><video src="${url}" controls></video><button onclick="clearMedia()">×</button></div>`
@@ -621,21 +658,38 @@ window.clearMedia = () => { const input = $('#media'); if (input) input.value = 
 
 window.createPost = async () => {
   if (state.busy) return;
+  const file = $('#media')?.files?.[0];
+  if (file && !validateMediaFile(file, $('#media'))) {
+    const preview = $('#mediaPreview'); if (preview) preview.innerHTML = '';
+    return;
+  }
+  const btn = $('#publishBtn');
   try {
-    state.busy = true; const btn = $('#publishBtn'); if (btn) { btn.disabled = true; btn.textContent = 'Publicando…'; }
+    state.busy = true;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = file?.type?.startsWith('video/') ? 'Subiendo vídeo…' : 'Publicando…';
+    }
     let media_id = null, media_type = 'none';
-    const file = $('#media')?.files?.[0];
     if (file) {
-      const fd = new FormData(); fd.append('file', file);
-      const up = await api('/api/upload', { method:'POST', body:fd });
-      media_id = up.media_id; media_type = up.mime.startsWith('video/') ? 'video' : 'image';
+      const up = await uploadMediaFile(file);
+      media_id = up.media_id;
+      media_type = up.mime.startsWith('video/') ? 'video' : 'image';
+      if (btn?.isConnected) btn.textContent = 'Publicando…';
     }
     await api('/api/posts', { method:'POST', body:JSON.stringify({ text: $('#posttext')?.value || '', media_id, media_type, visibility: $('#visibility')?.value || 'public' }) });
     toast('Publicado');
     closeModal();
     await refreshMe(); await renderFeed();
-  } catch (e) { toast(e.message, 'error'); }
-  finally { state.busy = false; }
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    state.busy = false;
+    if (btn?.isConnected) {
+      btn.disabled = false;
+      btn.textContent = 'Publicar';
+    }
+  }
 };
 
 function repostEmbed(r) {
@@ -1216,6 +1270,7 @@ function previewProfileFile(kind) {
     input.value = '';
     return;
   }
+  if (!validateMediaFile(file, input)) return;
   const url = URL.createObjectURL(file);
   if (kind === 'avatar') {
     const wrap = $('#editAvatarPreview');
@@ -1269,8 +1324,8 @@ window.saveProfile = async () => {
     let coverUrl = state.me.cover || '';
     const file = $('#avatarFile')?.files?.[0];
     const coverFile = $('#coverFile')?.files?.[0];
-    if (file) { const fd = new FormData(); fd.append('file', file); const up = await api('/api/upload', { method:'POST', body:fd }); avatarUrl = up.url; }
-    if (coverFile) { const fd = new FormData(); fd.append('file', coverFile); const up = await api('/api/upload', { method:'POST', body:fd }); coverUrl = up.url; }
+    if (file) { const up = await uploadMediaFile(file); avatarUrl = up.url; }
+    if (coverFile) { const up = await uploadMediaFile(coverFile); coverUrl = up.url; }
     await api('/api/me', { method:'PATCH', body:JSON.stringify({
       name:$('#editName').value, headline:$('#editHeadline').value, bio:$('#editBio').value,
       interests:$('#editInterests').value, location:$('#editLocation').value, website:$('#editWebsite').value,
@@ -1347,7 +1402,7 @@ function storyStrip(stories = []) {
 window.createStoryModal = () => {
   modal(`<div class="modal-head"><h3>Nueva Story</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
     <div class="story-create">
-      <label class="story-drop" id="storyDrop">📸<b>Elige una foto o vídeo</b><span>Se eliminará automáticamente en 24 horas.</span><input id="storyFile" type="file" accept="image/*,video/*" onchange="previewStoryFile(this)" hidden></label>
+      <label class="story-drop" id="storyDrop">📸<b>Elige una foto o vídeo</b><span>Se eliminará automáticamente en 24 horas. Fotos hasta 10 MB · Vídeos hasta 100 MB.</span><input id="storyFile" type="file" accept="image/*,video/*" onchange="previewStoryFile(this)" hidden></label>
       <div id="storyPreview"></div>
       <label>Texto opcional<textarea id="storyText" rows="3" maxlength="500" placeholder="Añade algo a tu story…"></textarea></label>
       <label>Quién puede verla<select id="storyVisibility"><option value="public">🌍 Toda la comunidad</option><option value="followers">👥 Solo seguidores</option></select></label>
@@ -1357,6 +1412,11 @@ window.createStoryModal = () => {
 
 window.previewStoryFile = (input) => {
   const file = input.files?.[0]; if (!file) return;
+  if (!validateMediaFile(file, input)) {
+    const preview = $('#storyPreview'); if (preview) preview.innerHTML = '';
+    $('#storyDrop')?.classList.remove('has-file');
+    return;
+  }
   const url = URL.createObjectURL(file);
   $('#storyPreview').innerHTML = file.type.startsWith('video/') ? `<video class="story-preview" src="${url}" controls></video>` : `<img class="story-preview" src="${url}" alt="">`;
   $('#storyDrop').classList.add('has-file');
@@ -1365,11 +1425,11 @@ window.previewStoryFile = (input) => {
 window.publishStory = async () => {
   const file = $('#storyFile')?.files?.[0];
   if (!file) return toast('Elige una foto o vídeo', 'error');
+  if (!validateMediaFile(file, $('#storyFile'))) return;
   const btn = $('#storyPublish');
   try {
     btn.disabled = true; btn.textContent = 'Publicando…';
-    const fd = new FormData(); fd.append('file', file);
-    const up = await api('/api/upload', { method:'POST', body:fd });
+    const up = await uploadMediaFile(file);
     await api('/api/stories', { method:'POST', body:JSON.stringify({ media_id:up.media_id, text:$('#storyText').value, visibility:$('#storyVisibility').value }) });
     closeModal(); toast('Story publicada · dura 24 h'); await renderView();
   } catch (e) { toast(e.message,'error'); btn.disabled = false; btn.textContent = 'Publicar Story'; }
@@ -1620,6 +1680,7 @@ window.newMessage = async () => {
 
 window.previewMessageFile = (input) => {
   const f=input.files?.[0], box=$('#messageMediaPreview'); if(!f||!box) return;
+  if (!validateMediaFile(f, input)) { box.innerHTML=''; return; }
   const url=URL.createObjectURL(f); box.innerHTML=`<div class="message-preview">${f.type.startsWith('video/')?`<video src="${url}" controls></video>`:`<img src="${url}" alt="">`}<button onclick="clearMessageFile()">×</button></div>`;
 };
 window.clearMessageFile = () => { if($('#messageFile')) $('#messageFile').value=''; if($('#messageMediaPreview')) $('#messageMediaPreview').innerHTML=''; };
@@ -1638,10 +1699,11 @@ window.stopTyping = (conversationId) => {
 window.sendMessage = async (conversationId) => {
   const input=$('#messageText'); const btn=$('#messageSendBtn'); const text=input?.value.trim()||''; const file=$('#messageFile')?.files?.[0];
   if((!text&&!file) || state.messageSending) return;
+  if (file && !validateMediaFile(file, $('#messageFile'))) { clearMessageFile(); return; }
   try {
     state.messageSending=true; if(btn){btn.disabled=true;btn.textContent='…';} if(input) input.disabled=true;
     let media_id=null;
-    if(file){ const fd=new FormData(); fd.append('file',file); const up=await api('/api/upload',{method:'POST',body:fd}); media_id=up.media_id; }
+    if(file){ const up=await uploadMediaFile(file); media_id=up.media_id; }
     await api(`/api/conversations/${conversationId}/messages`,{method:'POST',body:JSON.stringify({text,media_id,reply_to_id:state.replyTo?.id||null})});
     stopTyping(conversationId); state.replyTo=null; if(input) input.value=''; clearMessageFile(); await renderMessages();
   } catch(e){ toast(e.message,'error'); }

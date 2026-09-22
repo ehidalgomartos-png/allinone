@@ -158,9 +158,14 @@ if (REQUIRE_EMAIL_VERIFICATION && !emailConfigured()) {
   throw new Error('REQUIRE_EMAIL_VERIFICATION=true requiere configurar RESEND_API_KEY y EMAIL_FROM.');
 }
 
+const MAX_IMAGE_UPLOAD_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_UPLOAD_BYTES = 100 * 1024 * 1024;
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 25 * 1024 * 1024 },
+  // Multer applies one transport limit. The route below then applies
+  // the Cloudinary limits by media type (10 MB images / 100 MB videos).
+  limits: { fileSize: MAX_VIDEO_UPLOAD_BYTES },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype.startsWith('image/') || file.mimetype.startsWith('video/')) return cb(null, true);
     cb(new Error('Solo se permiten imágenes o vídeos.'));
@@ -598,7 +603,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.3.0', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup'] });
+  res.json({ ok: true, version: '1.3.1', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery'] });
 }));
 
 const RESERVED_PROFILE_SLUGS = new Set([
@@ -817,6 +822,17 @@ app.delete('/api/me/cover', auth, asyncRoute(async (req, res) => {
 
 app.post('/api/upload', auth, upload.single('file'), asyncRoute(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Falta archivo' });
+
+  const isVideo = String(req.file.mimetype || '').startsWith('video/');
+  const maxBytes = isVideo ? MAX_VIDEO_UPLOAD_BYTES : MAX_IMAGE_UPLOAD_BYTES;
+  if (Number(req.file.size || 0) > maxBytes) {
+    return res.status(413).json({
+      error: isVideo
+        ? 'El vídeo supera el límite de 100 MB.'
+        : 'La imagen supera el límite de 10 MB.',
+      code: 'MEDIA_TOO_LARGE'
+    });
+  }
 
   let mediaId;
   let provider = 'postgresql';
@@ -2157,14 +2173,14 @@ app.get('*', (_req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 
 app.use((err, _req, res, _next) => {
   console.error(err);
-  if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'El archivo supera el límite de 25 MB de esta versión' });
+  if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'El archivo supera el límite máximo de 100 MB.', code:'MEDIA_TOO_LARGE' });
   const status = err.status || 500;
   res.status(status).json({ error: status >= 500 ? 'Error interno del servidor' : err.message });
 });
 
 async function start() {
   await initDb();
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.3.0 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.3.1 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {
