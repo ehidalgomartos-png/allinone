@@ -1,4 +1,4 @@
-// V1.2.9 · rutas de perfil validadas y retorno post-login robusto
+// V1.2.10 · previsualización inmediata de foto y portada en editar perfil
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -1190,8 +1190,8 @@ window.editProfile = () => {
   const u = state.me;
   modal(`<div class="modal-head"><h3>Editar perfil</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
     <div class="edit-profile">
-      <div class="edit-cover-preview ${u.cover?'has-cover':''}">${u.cover?`<img src="${escapeAttr(u.cover)}" alt="">`:''}<div class="profile-photo-actions cover-actions"><label class="btn ghost compact">Cambiar portada<input type="file" id="coverFile" accept="image/*" hidden></label>${u.cover?`<button class="btn danger compact" type="button" onclick="removeProfileCover()">Eliminar portada</button>`:''}</div></div>
-      <div class="edit-avatar-row">${avatar(u, 'large')}<div class="profile-photo-actions"><label class="btn ghost compact">Cambiar foto<input type="file" id="avatarFile" accept="image/*" hidden></label>${u.avatar?`<button class="btn danger compact" type="button" onclick="removeProfileAvatar()">Eliminar foto</button>`:''}</div></div>
+      <div class="edit-cover-preview ${u.cover?'has-cover':''}" id="editCoverPreview">${u.cover?`<img src="${escapeAttr(u.cover)}" alt="Portada actual" id="editCoverPreviewImg">`:''}<div class="profile-photo-actions cover-actions"><label class="btn ghost compact">Cambiar portada<input type="file" id="coverFile" accept="image/*" hidden></label>${u.cover?`<button class="btn danger compact" type="button" onclick="removeProfileCover()">Eliminar portada</button>`:''}</div><div class="image-preview-status" id="coverPreviewStatus" aria-live="polite"></div></div>
+      <div class="edit-avatar-row"><div id="editAvatarPreview" class="edit-avatar-preview">${avatar(u, 'large')}</div><div class="profile-photo-actions"><label class="btn ghost compact">Cambiar foto<input type="file" id="avatarFile" accept="image/*" hidden></label>${u.avatar?`<button class="btn danger compact" type="button" onclick="removeProfileAvatar()">Eliminar foto</button>`:''}<small class="image-preview-status avatar-status" id="avatarPreviewStatus" aria-live="polite"></small></div></div>
       <label>Nombre<input id="editName" value="${escapeAttr(u.name)}" maxlength="100"></label>
       <label>Frase de perfil<input id="editHeadline" value="${escapeAttr(u.headline || '')}" maxlength="140" placeholder="Diseñador, creador, viajero…"></label>
       <label>Biografía<textarea id="editBio" maxlength="500" rows="4">${escapeHtml(u.bio || '')}</textarea></label>
@@ -1200,7 +1200,45 @@ window.editProfile = () => {
       <label>Web<input id="editWebsite" value="${escapeAttr(u.website || '')}" maxlength="500" placeholder="tusitio.com"></label>
       <button class="btn primary" onclick="saveProfile()">Guardar cambios</button>
     </div>`);
+
+  const avatarInput = $('#avatarFile');
+  const coverInput = $('#coverFile');
+  avatarInput?.addEventListener('change', () => previewProfileFile('avatar'));
+  coverInput?.addEventListener('change', () => previewProfileFile('cover'));
 };
+
+function previewProfileFile(kind) {
+  const input = kind === 'avatar' ? $('#avatarFile') : $('#coverFile');
+  const file = input?.files?.[0];
+  if (!file) return;
+  if (!file.type?.startsWith('image/')) {
+    toast('Selecciona una imagen válida', 'error');
+    input.value = '';
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  if (kind === 'avatar') {
+    const wrap = $('#editAvatarPreview');
+    if (wrap) wrap.innerHTML = `<div class="avatar large preview-selected"><img src="${escapeAttr(url)}" alt="Vista previa de tu nueva foto"></div>`;
+    const status = $('#avatarPreviewStatus');
+    if (status) status.textContent = '✓ Foto seleccionada';
+  } else {
+    const wrap = $('#editCoverPreview');
+    if (wrap) {
+      let img = $('#editCoverPreviewImg');
+      if (!img) {
+        img = document.createElement('img');
+        img.id = 'editCoverPreviewImg';
+        img.alt = 'Vista previa de tu nueva portada';
+        wrap.prepend(img);
+      }
+      img.src = url;
+      wrap.classList.add('has-cover','preview-selected');
+    }
+    const status = $('#coverPreviewStatus');
+    if (status) status.textContent = '✓ Portada seleccionada';
+  }
+}
 
 
 window.removeProfileAvatar = async () => {

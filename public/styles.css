@@ -661,3 +661,12 @@ body{
   .hero-pills::-webkit-scrollbar{display:none}
   .hero-pills span{flex:0 0 auto;padding:6px 8px;font-size:9px}
 }
+
+/* V1.2.10 · vista previa inmediata en Editar perfil */
+.edit-avatar-preview{display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+.edit-avatar-preview .avatar.preview-selected{box-shadow:0 0 0 3px rgba(255,43,168,.25),0 0 22px rgba(124,60,255,.18)}
+.edit-cover-preview.preview-selected{box-shadow:inset 0 0 0 2px rgba(255,43,168,.28),0 0 22px rgba(124,60,255,.12)}
+.image-preview-status{position:relative;z-index:4;color:#9ff3bd;font-size:10px;font-weight:800;letter-spacing:.01em;background:rgba(8,14,14,.68);border:1px solid rgba(70,220,128,.2);border-radius:999px;padding:5px 8px;min-height:0}
+.edit-cover-preview .image-preview-status{position:absolute;left:10px;bottom:10px}
+.profile-photo-actions .avatar-status{display:inline-flex;align-items:center;background:transparent;border:0;padding:0;color:#9ff3bd}
+@media(max-width:560px){.edit-cover-preview .image-preview-status{left:8px;bottom:8px}.profile-photo-actions .avatar-status{width:100%;font-size:10px}}
