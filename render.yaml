@@ -2,7 +2,7 @@ services:
   - type: web
     name: omnisocial
     runtime: node
-    plan: free
+    plan: starter
     region: frankfurt
     buildCommand: npm install
     startCommand: npm start
@@ -19,7 +19,9 @@ services:
       - key: APP_URL
         value: https://instantadmirers.com
       - key: REQUIRE_EMAIL_VERIFICATION
-        value: "false"
+        value: "true"
+      - key: CLOUDINARY_URL
+        sync: false
 
 databases:
   - name: omnisocial-db

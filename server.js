@@ -11,6 +11,7 @@ const { Server } = require('socket.io');
 require('dotenv').config();
 
 const { pool, initDb, withTransaction } = require('./src/db');
+const { configured: cloudinaryConfigured, uploadBuffer: uploadMediaBuffer, destroyAsset: destroyRemoteAsset } = require('./src/mediaStorage');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -293,25 +294,34 @@ function mediaIdFromStoredUrl(value) {
   return match ? Number(match[1]) : null;
 }
 
+async function cleanupMediaIfUnused(mediaId) {
+  if (!mediaId) return false;
+  const localUrl = `/media/${mediaId}`;
+  const { rows } = await pool.query(`
+    SELECT m.id,m.provider,m.provider_id,m.resource_type
+      FROM media m
+     WHERE m.id=$1
+       AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.media_id=m.id)
+       AND NOT EXISTS (SELECT 1 FROM stories s WHERE s.media_id=m.id)
+       AND NOT EXISTS (SELECT 1 FROM messages msg WHERE msg.media_id=m.id)
+       AND NOT EXISTS (SELECT 1 FROM users u WHERE u.avatar=$2 OR u.cover=$2)
+  `, [mediaId, localUrl]);
+  const item = rows[0];
+  if (!item) return false;
+  await pool.query('DELETE FROM media WHERE id=$1', [mediaId]);
+  if (item.provider === 'cloudinary') await destroyRemoteAsset(item);
+  return true;
+}
+
 async function removeProfileMedia(userId, field) {
   if (!['avatar', 'cover'].includes(field)) throw new Error('Campo de perfil no válido');
-  return withTransaction(async (client) => {
-    const { rows } = await client.query(`SELECT ${field} AS value FROM users WHERE id = $1 FOR UPDATE`, [userId]);
-    if (!rows[0]) throw new Error('Usuario no encontrado');
-    const current = rows[0].value || '';
-    const mediaId = mediaIdFromStoredUrl(current);
-    await client.query(`UPDATE users SET ${field} = '' WHERE id = $1`, [userId]);
-    if (mediaId) {
-      await client.query(`
-        DELETE FROM media m
-         WHERE m.id = $1 AND m.user_id = $2
-           AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.media_id = m.id)
-           AND NOT EXISTS (SELECT 1 FROM stories s WHERE s.media_id = m.id)
-           AND NOT EXISTS (SELECT 1 FROM messages msg WHERE msg.media_id = m.id)
-      `, [mediaId, userId]);
-    }
-    return { ok: true };
-  });
+  const { rows } = await pool.query(`SELECT ${field} AS value FROM users WHERE id = $1`, [userId]);
+  if (!rows[0]) throw new Error('Usuario no encontrado');
+  const current = rows[0].value || '';
+  const mediaId = mediaIdFromStoredUrl(current);
+  await pool.query(`UPDATE users SET ${field} = '' WHERE id = $1`, [userId]);
+  if (mediaId) await cleanupMediaIfUnused(mediaId);
+  return { ok: true };
 }
 
 
@@ -588,7 +598,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.2.10', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview'] });
+  res.json({ ok: true, version: '1.3.0', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup'] });
 }));
 
 const RESERVED_PROFILE_SLUGS = new Set([
@@ -807,20 +817,50 @@ app.delete('/api/me/cover', auth, asyncRoute(async (req, res) => {
 
 app.post('/api/upload', auth, upload.single('file'), asyncRoute(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Falta archivo' });
-  const { rows } = await pool.query(`
-    INSERT INTO media (user_id, mime_type, original_name, size_bytes, data)
-    VALUES ($1, $2, $3, $4, $5) RETURNING id
-  `, [req.user.id, req.file.mimetype, req.file.originalname, req.file.size, req.file.buffer]);
-  const mediaId = rows[0].id;
-  res.json({ media_id: mediaId, url: `/media/${mediaId}`, mime: req.file.mimetype });
+
+  let mediaId;
+  let provider = 'postgresql';
+  if (cloudinaryConfigured()) {
+    const uploaded = await uploadMediaBuffer(req.file.buffer, {
+      mimeType: req.file.mimetype,
+      originalName: req.file.originalname,
+      userId: req.user.id
+    });
+    const { rows } = await pool.query(`
+      INSERT INTO media (
+        user_id,mime_type,original_name,size_bytes,data,provider,provider_id,secure_url,
+        resource_type,width,height,duration_seconds,format,migrated_at
+      ) VALUES ($1,$2,$3,$4,NULL,'cloudinary',$5,$6,$7,$8,$9,$10,$11,NOW()) RETURNING id
+    `, [
+      req.user.id, req.file.mimetype, req.file.originalname, uploaded.sizeBytes || req.file.size,
+      uploaded.providerId, uploaded.secureUrl, uploaded.resourceType, uploaded.width, uploaded.height,
+      uploaded.durationSeconds, uploaded.format
+    ]);
+    mediaId = rows[0].id;
+    provider = 'cloudinary';
+  } else {
+    const { rows } = await pool.query(`
+      INSERT INTO media (user_id, mime_type, original_name, size_bytes, data, provider)
+      VALUES ($1, $2, $3, $4, $5, 'postgresql') RETURNING id
+    `, [req.user.id, req.file.mimetype, req.file.originalname, req.file.size, req.file.buffer]);
+    mediaId = rows[0].id;
+  }
+
+  res.json({ media_id: mediaId, url: `/media/${mediaId}`, mime: req.file.mimetype, provider });
 }));
 
 app.get('/media/:id', asyncRoute(async (req, res) => {
-  const { rows } = await pool.query('SELECT mime_type, data FROM media WHERE id = $1', [req.params.id]);
-  if (!rows[0]) return res.status(404).end();
-  res.set('Content-Type', rows[0].mime_type);
+  const { rows } = await pool.query('SELECT mime_type,data,provider,secure_url FROM media WHERE id = $1', [req.params.id]);
+  const item = rows[0];
+  if (!item) return res.status(404).end();
+  if (item.secure_url) {
+    res.set('Cache-Control', 'public, max-age=3600');
+    return res.redirect(302, item.secure_url);
+  }
+  if (!item.data) return res.status(404).end();
+  res.set('Content-Type', item.mime_type);
   res.set('Cache-Control', 'public, max-age=86400');
-  res.send(rows[0].data);
+  res.send(item.data);
 }));
 
 app.post('/api/posts', auth, asyncRoute(async (req, res) => {
@@ -848,8 +888,9 @@ app.post('/api/posts', auth, asyncRoute(async (req, res) => {
 }));
 
 app.delete('/api/posts/:id', auth, asyncRoute(async (req, res) => {
-  const { rows } = await pool.query('DELETE FROM posts WHERE id = $1 AND user_id = $2 RETURNING id', [req.params.id, req.user.id]);
+  const { rows } = await pool.query('DELETE FROM posts WHERE id = $1 AND user_id = $2 RETURNING id,media_id', [req.params.id, req.user.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Publicación no encontrada' });
+  if (rows[0].media_id) await cleanupMediaIfUnused(rows[0].media_id);
   res.json({ ok: true });
 }));
 
@@ -1701,8 +1742,9 @@ app.get('/api/stories/:id/viewers', auth, asyncRoute(async (req, res) => {
 }));
 
 app.delete('/api/stories/:id', auth, asyncRoute(async (req, res) => {
-  const { rows } = await pool.query('DELETE FROM stories WHERE id = $1 AND user_id = $2 RETURNING id', [req.params.id, req.user.id]);
+  const { rows } = await pool.query('DELETE FROM stories WHERE id = $1 AND user_id = $2 RETURNING id,media_id', [req.params.id, req.user.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Story no encontrada' });
+  if (rows[0].media_id) await cleanupMediaIfUnused(rows[0].media_id);
   res.json({ ok: true });
 }));
 
@@ -1992,7 +2034,9 @@ app.delete('/api/account', auth, asyncRoute(async (req, res) => {
   const { rows } = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.user.id]);
   if (!rows[0] || !(await bcrypt.compare(password, rows[0].password_hash))) return res.status(400).json({ error:'La contraseña no es correcta' });
   await securityEvent(req,'account_deleted',req.user.id);
+  const mediaRows = await pool.query(`SELECT provider,provider_id,resource_type FROM media WHERE user_id=$1 AND provider='cloudinary' AND provider_id<>''`, [req.user.id]);
   await pool.query('DELETE FROM users WHERE id=$1', [req.user.id]);
+  await Promise.allSettled(mediaRows.rows.map(item => destroyRemoteAsset(item)));
   res.json({ ok:true });
 }));
 
@@ -2052,7 +2096,7 @@ app.patch('/api/admin/reports/:id', auth, adminOnly, asyncRoute(async (req, res)
 
 app.delete('/api/admin/posts/:id', auth, adminOnly, asyncRoute(async (req, res) => {
   const result = await withTransaction(async (client) => {
-    const { rows } = await client.query('SELECT id,user_id FROM posts WHERE id=$1 FOR UPDATE', [req.params.id]);
+    const { rows } = await client.query('SELECT id,user_id,media_id FROM posts WHERE id=$1 FOR UPDATE', [req.params.id]);
     if (!rows[0]) return null;
     await client.query(`INSERT INTO moderation_actions(admin_id,action,target_user_id,post_id,note) VALUES($1,'remove_post',$2,$3,$4)`,
       [req.user.id, rows[0].user_id, rows[0].id, String(req.body?.note || '').slice(0,1000)]);
@@ -2060,7 +2104,20 @@ app.delete('/api/admin/posts/:id', auth, adminOnly, asyncRoute(async (req, res) 
     return rows[0];
   });
   if (!result) return res.status(404).json({ error:'Publicación no encontrada' });
+  if (result.media_id) await cleanupMediaIfUnused(result.media_id);
   res.json({ ok:true });
+}));
+
+app.get('/api/admin/media-storage', auth, adminOnly, asyncRoute(async (_req, res) => {
+  const { rows } = await pool.query(`
+    SELECT
+      COUNT(*)::int AS total,
+      COUNT(*) FILTER (WHERE provider='cloudinary')::int AS cloudinary,
+      COUNT(*) FILTER (WHERE data IS NOT NULL)::int AS legacy_in_postgresql,
+      COALESCE(SUM(octet_length(data)) FILTER (WHERE data IS NOT NULL),0)::bigint AS legacy_bytes
+    FROM media
+  `);
+  res.json({ ...rows[0], configured: cloudinaryConfigured(), active_provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' });
 }));
 
 app.post('/api/admin/users/:id/status', auth, adminOnly, asyncRoute(async (req, res) => {
@@ -2107,7 +2164,7 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   await initDb();
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.2.5 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.3.0 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {

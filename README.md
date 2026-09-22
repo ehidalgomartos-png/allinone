@@ -31,3 +31,10 @@ Rediseño responsive del panel de acceso especial por invitaciones.
 ## V1.2.8
 
 Portada móvil más expresiva y premium sin alterar el escritorio ni la base de datos.
+
+## V1.3 — Multimedia fuera de PostgreSQL
+- Cloudinary como proveedor multimedia principal cuando `CLOUDINARY_URL` está configurada.
+- Fotos y vídeos nuevos se guardan fuera de PostgreSQL.
+- Compatibilidad transparente con archivos antiguos.
+- Migración segura mediante `npm run migrate:media`.
+- Consulta `ACTUALIZAR-A-V1.3.md` antes de migrar el histórico.

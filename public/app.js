@@ -1,4 +1,4 @@
-// V1.2.10 · previsualización inmediata de foto y portada en editar perfil
+// V1.3.0 · multimedia externa con compatibilidad transparente
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','robots.txt','sitemap.xml','login','register','logout','admin',

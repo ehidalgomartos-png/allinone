@@ -406,3 +406,17 @@ CREATE TABLE IF NOT EXISTS referral_attributions (
 CREATE INDEX IF NOT EXISTS idx_referrals_inviter ON referral_attributions(inviter_id, registered_at DESC);
 CREATE INDEX IF NOT EXISTS idx_referrals_gate ON referral_attributions(inviter_id, gate_user_id, registered_at DESC);
 CREATE INDEX IF NOT EXISTS idx_referrals_qualified ON referral_attributions(inviter_id, qualified_at DESC);
+
+-- V1.3: multimedia externa (Cloudinary) manteniendo compatibilidad con archivos antiguos.
+ALTER TABLE media ALTER COLUMN data DROP NOT NULL;
+ALTER TABLE media ADD COLUMN IF NOT EXISTS provider VARCHAR(40) NOT NULL DEFAULT 'postgresql';
+ALTER TABLE media ADD COLUMN IF NOT EXISTS provider_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE media ADD COLUMN IF NOT EXISTS secure_url TEXT NOT NULL DEFAULT '';
+ALTER TABLE media ADD COLUMN IF NOT EXISTS resource_type VARCHAR(20) NOT NULL DEFAULT '';
+ALTER TABLE media ADD COLUMN IF NOT EXISTS width INTEGER;
+ALTER TABLE media ADD COLUMN IF NOT EXISTS height INTEGER;
+ALTER TABLE media ADD COLUMN IF NOT EXISTS duration_seconds NUMERIC(12,3);
+ALTER TABLE media ADD COLUMN IF NOT EXISTS format VARCHAR(40) NOT NULL DEFAULT '';
+ALTER TABLE media ADD COLUMN IF NOT EXISTS migrated_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_media_provider ON media(provider);
+CREATE INDEX IF NOT EXISTS idx_media_secure_url ON media(secure_url) WHERE secure_url <> '';
