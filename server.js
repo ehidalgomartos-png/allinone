@@ -588,7 +588,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.2.8', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return'] });
+  res.json({ ok: true, version: '1.2.9', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback'] });
 }));
 
 const RESERVED_PROFILE_SLUGS = new Set([
@@ -1166,6 +1166,18 @@ app.get('/api/users', auth, asyncRoute(async (req, res) => {
     ORDER BY followers_count DESC, u.created_at DESC LIMIT 50
   `, [req.user.id, pattern]);
   res.json(rows.map(r => ({ ...r, online: isOnline(r.id) })));
+}));
+
+// V1.2.9: resolución pública mínima de URLs /usuario. No expone email, bio ni datos privados.
+app.get('/api/public/profile/:username', asyncRoute(async (req, res) => {
+  const username = String(req.params.username || '').trim().replace(/^@/, '');
+  if (!/^[a-zA-Z0-9_.]{3,30}$/.test(username)) return res.status(404).json({ error:'Perfil no encontrado' });
+  const { rows } = await pool.query(
+    `SELECT username, name FROM users WHERE LOWER(username)=LOWER($1) AND account_status='active' LIMIT 1`,
+    [username]
+  );
+  if (!rows[0]) return res.status(404).json({ error:'Perfil no encontrado' });
+  res.json({ exists:true, username:rows[0].username, name:rows[0].name });
 }));
 
 app.get('/api/users/:username', auth, asyncRoute(async (req, res) => {

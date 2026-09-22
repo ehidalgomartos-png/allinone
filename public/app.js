@@ -1,4 +1,4 @@
-// V1.2.5 · URLs limpias de perfil: https://instantadmirers.com/usuario
+// V1.2.9 · rutas de perfil validadas y retorno post-login robusto
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -56,6 +56,39 @@ function clearPendingProfileDestination() {
   localStorage.removeItem('pendingProfileUsername');
   sessionStorage.removeItem('pendingProfileUsername');
 }
+
+async function resolveDirectProfileUsername(username = '') {
+  const clean = String(username || '').trim().replace(/^@/, '');
+  if (!clean) return '';
+  const data = await api('/api/public/profile/' + encodeURIComponent(clean), { timeout: 12000 });
+  const canonical = String(data?.username || '').trim();
+  if (canonical) rememberPendingProfile(canonical);
+  return canonical;
+}
+
+function renderPendingProfileError(username, error) {
+  state.view = 'profile';
+  state.profile = username;
+  layout();
+  const main = $('#main');
+  if (!main) return;
+  const notFound = Number(error?.status || 0) === 404;
+  main.innerHTML = `<div class="card empty direct-profile-error"><div class="empty-icon">${notFound ? '⌕' : '!'}</div><h3>${notFound ? 'Este perfil no existe' : 'No se pudo abrir el perfil'}</h3><p>${notFound ? `No encontramos a @${escapeHtml(username)}. Comprueba que el nombre de usuario del enlace sea correcto.` : escapeHtml(error?.message || 'Inténtalo de nuevo.')}</p><div class="empty-actions"><button class="btn primary compact" onclick="retryPendingProfile('${escapeAttr(username)}')">Reintentar</button><button class="btn ghost compact" onclick="clearPendingProfileDestination();go('feed',{replace:true})">Ir a Inicio</button></div></div>`;
+}
+
+window.retryPendingProfile = async (username) => {
+  rememberPendingProfile(username);
+  try {
+    const canonical = await resolveDirectProfileUsername(username);
+    state.view = 'profile'; state.profile = canonical || username;
+    layout();
+    setProfileBrowserUrl(state.profile, { replace:true });
+    await renderProfile(state.profile);
+    clearPendingProfileDestination();
+  } catch (e) {
+    renderPendingProfileError(username, e);
+  }
+};
 
 (() => {
   try {
@@ -305,12 +338,20 @@ window.showAuth = (mode) => {
 window.login = async () => {
   const btn = $('#loginSubmit');
   if (btn?.disabled) return;
-  const directProfile = pendingProfileDestination();
+  let directProfile = pendingProfileDestination();
   if (directProfile) rememberPendingProfile(directProfile);
   try {
     if (btn) { btn.disabled = true; btn.textContent = 'Entrando…'; }
+    // Valida el destino antes del login. Así no tratamos cualquier /texto como un perfil real.
+    if (directProfile) {
+      try { directProfile = await resolveDirectProfileUsername(directProfile); }
+      catch (profileError) {
+        // Permitimos iniciar sesión, pero conservamos el destino para mostrar un error claro después.
+        profileError.pendingProfile = directProfile;
+      }
+    }
     const d = await api('/api/auth/login', { method:'POST', body: JSON.stringify({ emailOrUsername: $('#loginid').value, password: $('#loginpass').value }) });
-    state.token = d.token; localStorage.setItem('token', d.token); await init({ preferredProfile: directProfile });
+    state.token = d.token; localStorage.setItem('token', d.token); await init({ preferredProfile: directProfile || pendingProfileDestination() });
   } catch (e) {
     if (e.code === 'EMAIL_NOT_VERIFIED') openVerifyEmailPrompt($('#loginid')?.value || '');
     else toast(e.message, 'error');
@@ -322,10 +363,11 @@ window.register = async () => {
   const btn = $('#registerSubmit');
   if (btn?.disabled) return;
   if (!$('#reglegal')?.checked) return toast('Debes confirmar que tienes 18 años y aceptar los Términos de Uso','error');
-  const directProfile = pendingProfileDestination();
+  let directProfile = pendingProfileDestination();
   if (directProfile) rememberPendingProfile(directProfile);
   try {
     if (btn) { btn.disabled = true; btn.textContent = 'Creando cuenta…'; }
+    if (directProfile) { try { directProfile = await resolveDirectProfileUsername(directProfile); } catch (_) {} }
     const d = await api('/api/auth/register', { method:'POST', body: JSON.stringify({ name: $('#regname').value, username: $('#reguser').value, email: $('#regemail').value, password: $('#regpass').value, age_confirmed:true, terms_accepted:true, terms_version:'2026-09-20', referral_code:localStorage.getItem('pendingReferralCode') || '', gate_code:localStorage.getItem('pendingGateCode') || '' }) });
     localStorage.removeItem('pendingReferralCode'); localStorage.removeItem('pendingGateCode');
     if (d.verification_required) {
@@ -1899,16 +1941,19 @@ async function init(options = {}) {
     layout();
     if (pendingProfile) {
       try {
-        setProfileBrowserUrl(pendingProfile, { replace:true });
-        await renderProfile(pendingProfile);
+        const canonical = await resolveDirectProfileUsername(pendingProfile);
+        const target = canonical || pendingProfile;
+        state.view = 'profile';
+        state.profile = target;
+        setProfileBrowserUrl(target, { replace:true });
+        await renderProfile(target);
         clearPendingProfileDestination();
       } catch (profileError) {
         console.error('No se pudo abrir el perfil pendiente', profileError);
-        toast(profileError?.message || 'No se pudo abrir el perfil solicitado.', 'error');
-        state.view='feed';
-        state.profile=null;
-        setHomeBrowserUrl({ replace:true });
-        await renderView();
+        // Importante: NO enviar a Inicio. Conservamos el destino para poder reintentar y diagnosticar.
+        rememberPendingProfile(pendingProfile);
+        setProfileBrowserUrl(pendingProfile, { replace:true });
+        renderPendingProfileError(pendingProfile, profileError);
       }
     } else {
       await renderView();
