@@ -1,4 +1,4 @@
-# Instant Admirers V1.2.8
+# Instant Admirers V1.4.0
 
 ## URLs públicas de perfil
 
@@ -38,3 +38,14 @@ Portada móvil más expresiva y premium sin alterar el escritorio ni la base de 
 - Compatibilidad transparente con archivos antiguos.
 - Migración segura mediante `npm run migrate:media`.
 - Consulta `ACTUALIZAR-A-V1.3.md` antes de migrar el histórico.
+
+## V1.4 — Rendimiento
+- Paginación del feed, perfiles, Descubrir, Reels y Guardados.
+- Scroll infinito.
+- Lazy loading de vídeos e imágenes.
+- Entrega directa desde Cloudinary/CDN para multimedia de posts y Stories.
+- Reels reproducidos únicamente al estar visibles.
+- Consultas SQL e índices optimizados.
+- Caché de assets y panel lateral.
+- Consulta `ACTUALIZAR-A-V1.4.md`.
+

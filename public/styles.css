@@ -692,3 +692,11 @@ body{
   .message-compose .capture-icon{font-size:15px}
   .message-compose .btn{padding-left:10px;padding-right:10px}
 }
+
+/* V1.4 · Rendimiento: scroll infinito y renderizado progresivo */
+.infinite-pager{min-height:74px;display:flex;align-items:center;justify-content:center;gap:10px;color:var(--muted);font-size:12px;padding:12px 0 26px}.pager-spinner{width:18px;height:18px;border:2px solid rgba(255,255,255,.12);border-top-color:var(--brand);border-radius:50%;animation:v14spin .85s linear infinite}.infinite-pager:not(.loading) .pager-spinner{opacity:.35;animation:none}.pager-fallback{display:none}.infinite-pager.manual .pager-spinner,.infinite-pager.manual small{display:none}.infinite-pager.manual .pager-fallback{display:inline-flex}.post-list>.post{content-visibility:auto;contain-intrinsic-size:520px}.post-media,.repost-media,.message-media{background:#090a0f}.reel-video{background:#05060a}
+@keyframes v14spin{to{transform:rotate(360deg)}}
+@media(max-width:860px){.infinite-pager{min-height:62px;padding:8px 0 20px}.post-list>.post{contain-intrinsic-size:600px}}
+@media(prefers-reduced-motion:reduce){.pager-spinner{animation:none}}
+@supports not (content-visibility:auto){.post-list>.post{contain-intrinsic-size:auto}}
+

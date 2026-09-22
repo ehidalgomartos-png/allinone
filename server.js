@@ -41,7 +41,17 @@ app.use((req,res,next) => {
 app.use('/api', (_req,res,next) => { res.set('Cache-Control','no-store'); next(); });
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(express.static(publicDir));
+app.use(express.static(publicDir, {
+  etag: true,
+  lastModified: true,
+  setHeaders: (res, filePath) => {
+    if (/\.(?:js|css|svg|png|jpg|jpeg|webp|ico|woff2?)$/i.test(filePath)) {
+      res.set('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400');
+    } else if (/\.(?:html?)$/i.test(filePath)) {
+      res.set('Cache-Control', 'no-cache');
+    }
+  }
+}));
 
 
 const EMAIL_PROVIDER = 'resend';
@@ -400,6 +410,60 @@ io.on('connection', async (socket) => {
   });
 });
 
+
+const DEFAULT_PAGE_SIZE = 15;
+const MAX_PAGE_SIZE = 30;
+
+function pageLimit(req, fallback = DEFAULT_PAGE_SIZE) {
+  const n = Number(req.query.limit || fallback);
+  return Math.min(MAX_PAGE_SIZE, Math.max(5, Number.isFinite(n) ? Math.floor(n) : fallback));
+}
+
+function pageOffset(req) {
+  const n = Number(req.query.offset || 0);
+  return Math.max(0, Number.isFinite(n) ? Math.floor(n) : 0);
+}
+
+function cursorId(req) {
+  const n = Number(req.query.cursor || 0);
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
+function optimizedCloudinaryUrl(item = {}) {
+  const url = String(item.secure_url || '');
+  if (!url || item.provider !== 'cloudinary') return url;
+  if (!url.includes('/upload/')) return url;
+  if (item.resource_type === 'image') {
+    return url.replace('/upload/', '/upload/f_auto,q_auto:eco,c_limit,w_1600/');
+  }
+  return url;
+}
+
+async function attachDirectMediaUrls(posts = []) {
+  const ids = [...new Set(posts.map(p => Number(p.media_id)).filter(Number.isSafeInteger))];
+  if (!ids.length) return posts;
+  const { rows } = await pool.query(
+    `SELECT id,provider,secure_url,resource_type FROM media WHERE id = ANY($1::bigint[])`,
+    [ids]
+  );
+  const media = new Map(rows.map(row => [Number(row.id), row]));
+  return posts.map(post => {
+    const item = media.get(Number(post.media_id));
+    const direct = item ? optimizedCloudinaryUrl(item) : '';
+    return direct ? { ...post, media_url: direct } : post;
+  });
+}
+
+function offsetPage(items, limit, offset) {
+  const hasMore = items.length > limit;
+  const pageItems = items.slice(0, limit);
+  return {
+    items: pageItems,
+    has_more: hasMore,
+    next_offset: hasMore ? offset + pageItems.length : null
+  };
+}
+
 function normalizePost(row) {
   return {
     ...row,
@@ -418,7 +482,7 @@ async function enrichReposts(userId, posts = []) {
   if (!ids.length) return posts;
   const { rows } = await pool.query(`
     SELECT p.id,p.user_id,p.text,p.media_id,p.media_type,p.visibility,p.created_at,p.edited_at,
-           u.username,u.name,u.avatar,
+           u.username,u.name,u.avatar,m.provider AS media_provider,m.secure_url AS media_secure_url,m.resource_type AS media_resource_type,
            (u.account_status='active' AND (p.user_id=$1 OR (NOT u.account_private) OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
             AND (p.visibility='public' OR p.user_id=$1 OR
              (p.visibility='followers' AND EXISTS(
@@ -428,6 +492,7 @@ async function enrichReposts(userId, posts = []) {
             AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id))) AS can_view
       FROM posts p
       JOIN users u ON u.id=p.user_id
+      LEFT JOIN media m ON m.id=p.media_id
      WHERE p.id = ANY($2::bigint[])
   `,[userId,ids]);
   const map = new Map(rows.map(r => [Number(r.id), r]));
@@ -438,7 +503,7 @@ async function enrichReposts(userId, posts = []) {
     return { ...post, repost: {
       id:Number(original.id), user_id:Number(original.user_id), text:original.text || '',
       media_type:original.media_type || 'none',
-      media_url:original.media_id ? `/media/${original.media_id}` : '',
+      media_url:original.media_id ? (optimizedCloudinaryUrl({ provider:original.media_provider, secure_url:original.media_secure_url, resource_type:original.media_resource_type }) || `/media/${original.media_id}`) : '',
       visibility:original.visibility, created_at:original.created_at, edited_at:original.edited_at,
       username:original.username, name:original.name, avatar:original.avatar || ''
     }};
@@ -463,7 +528,7 @@ async function notifyMentions(client, { text, actorId, postId = null }) {
   }
 }
 
-async function postQuery(userId, { mode = 'following', profileId = null, search = '', limit = 60 } = {}) {
+async function postQuery(userId, { mode = 'following', profileId = null, search = '', limit = 60, cursor = null, paged = false } = {}) {
   const params = [userId];
   const clauses = [];
 
@@ -478,11 +543,13 @@ async function postQuery(userId, { mode = 'following', profileId = null, search 
     params.push(`%${search}%`);
     clauses.push(`(p.text ILIKE $${params.length} OR u.username ILIKE $${params.length} OR u.name ILIKE $${params.length})`);
   }
+  if (cursor) {
+    params.push(Number(cursor));
+    clauses.push(`p.id < $${params.length}`);
+  }
 
-  // Privacidad V0.9: bloqueos, perfiles privados y silencios en feeds automáticos.
   clauses.push(`NOT EXISTS (SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))`);
   clauses.push(`(p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))`);
-  // V1.2.4: un perfil con reto de acceso no filtra sus posts antes del desbloqueo.
   clauses.push(`(
     p.user_id=$1 OR NOT u.friend_gate_enabled OR
     EXISTS(SELECT 1 FROM friendships fgfr WHERE (fgfr.user1_id=$1 AND fgfr.user2_id=p.user_id) OR (fgfr.user1_id=p.user_id AND fgfr.user2_id=$1)) OR
@@ -498,27 +565,43 @@ async function postQuery(userId, { mode = 'following', profileId = null, search 
   clauses.push(`(p.visibility = 'public' OR p.user_id = $1 OR (p.visibility = 'followers' AND EXISTS (SELECT 1 FROM follows vf WHERE vf.follower_id = $1 AND vf.followed_id = p.user_id)))`);
 
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-  params.push(limit);
+  const requestedLimit = Math.min(MAX_PAGE_SIZE, Math.max(1, Number(limit) || DEFAULT_PAGE_SIZE));
+  params.push(paged ? requestedLimit + 1 : requestedLimit);
 
   const { rows } = await pool.query(`
+    WITH candidates AS (
+      SELECT
+        p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
+        u.username, u.name, u.avatar
+      FROM posts p
+      JOIN users u ON u.id = p.user_id
+      ${where}
+      ORDER BY p.id DESC
+      LIMIT $${params.length}
+    )
     SELECT
-      p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
-      u.username, u.name, u.avatar,
-      COUNT(DISTINCT l.user_id)::int AS likes_count,
-      COUNT(DISTINCT c.id)::int AS comments_count,
-      EXISTS(SELECT 1 FROM likes lx WHERE lx.post_id = p.id AND lx.user_id = $1) AS liked,
-      EXISTS(SELECT 1 FROM bookmarks b WHERE b.post_id = p.id AND b.user_id = $1) AS saved,
-      (p.user_id = $1) AS own
-    FROM posts p
-    JOIN users u ON u.id = p.user_id
-    LEFT JOIN likes l ON l.post_id = p.id
-    LEFT JOIN comments c ON c.post_id = p.id
-    ${where}
-    GROUP BY p.id, u.id
-    ORDER BY p.created_at DESC, p.id DESC
-    LIMIT $${params.length}
+      c.*,
+      (SELECT COUNT(*)::int FROM likes l WHERE l.post_id = c.id) AS likes_count,
+      (SELECT COUNT(*)::int FROM comments cm WHERE cm.post_id = c.id) AS comments_count,
+      EXISTS(SELECT 1 FROM likes lx WHERE lx.post_id = c.id AND lx.user_id = $1) AS liked,
+      EXISTS(SELECT 1 FROM bookmarks b WHERE b.post_id = c.id AND b.user_id = $1) AS saved,
+      (c.user_id = $1) AS own
+    FROM candidates c
+    ORDER BY c.id DESC
   `, params);
-  return enrichReposts(userId, rows.map(normalizePost));
+
+  const hasMore = paged && rows.length > requestedLimit;
+  const selected = paged ? rows.slice(0, requestedLimit) : rows;
+  let posts = selected.map(normalizePost);
+  posts = await attachDirectMediaUrls(posts);
+  posts = await enrichReposts(userId, posts);
+
+  if (!paged) return posts;
+  return {
+    items: posts,
+    has_more: hasMore,
+    next_cursor: hasMore && posts.length ? String(posts[posts.length - 1].id) : null
+  };
 }
 
 async function addNotification(client, { userId, actorId, type, postId = null, text = '' }) {
@@ -603,7 +686,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.3.2', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture'] });
+  res.json({ ok: true, version: '1.4.0', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache'] });
 }));
 
 const RESERVED_PROFILE_SLUGS = new Set([
@@ -870,12 +953,12 @@ app.get('/media/:id', asyncRoute(async (req, res) => {
   const item = rows[0];
   if (!item) return res.status(404).end();
   if (item.secure_url) {
-    res.set('Cache-Control', 'public, max-age=3600');
+    res.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
     return res.redirect(302, item.secure_url);
   }
   if (!item.data) return res.status(404).end();
   res.set('Content-Type', item.mime_type);
-  res.set('Cache-Control', 'public, max-age=86400');
+  res.set('Cache-Control', 'public, max-age=604800');
   res.send(item.data);
 }));
 
@@ -945,10 +1028,13 @@ app.post('/api/posts/:id/repost', auth, asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/feed', auth, asyncRoute(async (req, res) => {
-  res.json(await postQuery(req.user.id, { mode: 'following' }));
+  const limit = pageLimit(req, 15);
+  res.json(await postQuery(req.user.id, { mode: 'following', limit, cursor: cursorId(req), paged: true }));
 }));
 
 app.get('/api/for-you', auth, asyncRoute(async (req, res) => {
+  const limit = pageLimit(req, 15);
+  const offset = pageOffset(req);
   const { rows } = await pool.query(`
     WITH viewer AS (
       SELECT LOWER(COALESCE(interests,'')) AS interests FROM users WHERE id = $1
@@ -967,45 +1053,48 @@ app.get('/api/for-you', auth, asyncRoute(async (req, res) => {
         SELECT followed_id, 3::numeric FROM follows WHERE follower_id = $1
       ) signals
       GROUP BY author_id
-    ), scored AS (
+    ), candidates AS (
       SELECT
         p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
-        u.username, u.name, u.avatar,
-        COUNT(DISTINCT l.user_id)::int AS likes_count,
-        COUNT(DISTINCT c.id)::int AS comments_count,
-        EXISTS(SELECT 1 FROM likes lx WHERE lx.post_id = p.id AND lx.user_id = $1) AS liked,
-        EXISTS(SELECT 1 FROM bookmarks b WHERE b.post_id = p.id AND b.user_id = $1) AS saved,
-        (p.user_id = $1) AS own,
+        u.username, u.name, u.avatar, u.interests AS author_interests, u.headline AS author_headline
+      FROM posts p
+      JOIN users u ON u.id = p.user_id
+      WHERE u.account_status='active'
+        AND (p.visibility = 'public' OR p.user_id = $1)
+        AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
+        AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
+        AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)
+      ORDER BY p.id DESC
+      LIMIT 300
+    ), scored AS (
+      SELECT
+        cp.*,
+        (SELECT COUNT(*)::int FROM likes l WHERE l.post_id=cp.id) AS likes_count,
+        (SELECT COUNT(*)::int FROM comments c WHERE c.post_id=cp.id) AS comments_count,
+        EXISTS(SELECT 1 FROM likes lx WHERE lx.post_id = cp.id AND lx.user_id = $1) AS liked,
+        EXISTS(SELECT 1 FROM bookmarks b WHERE b.post_id = cp.id AND b.user_id = $1) AS saved,
+        (cp.user_id = $1) AS own,
         COALESCE(a.score,0)::numeric AS affinity_score,
         CASE WHEN EXISTS (
           SELECT 1
             FROM regexp_split_to_table((SELECT interests FROM viewer), '\s*,\s*') AS term
            WHERE LENGTH(TRIM(term)) >= 2
              AND (
-               LOWER(COALESCE(p.text,'')) LIKE '%' || TRIM(term) || '%'
-               OR LOWER(COALESCE(u.interests,'')) LIKE '%' || TRIM(term) || '%'
-               OR LOWER(COALESCE(u.headline,'')) LIKE '%' || TRIM(term) || '%'
+               LOWER(COALESCE(cp.text,'')) LIKE '%' || TRIM(term) || '%'
+               OR LOWER(COALESCE(cp.author_interests,'')) LIKE '%' || TRIM(term) || '%'
+               OR LOWER(COALESCE(cp.author_headline,'')) LIKE '%' || TRIM(term) || '%'
              )
         ) THEN 1 ELSE 0 END AS interest_match,
         EXISTS (
           SELECT 1
             FROM follows mine
             JOIN follows second_degree ON second_degree.follower_id = mine.followed_id
-           WHERE mine.follower_id = $1 AND second_degree.followed_id = p.user_id
+           WHERE mine.follower_id = $1 AND second_degree.followed_id = cp.user_id
         ) AS mutual_signal,
-        EXISTS(SELECT 1 FROM follows mine WHERE mine.follower_id = $1 AND mine.followed_id = p.user_id) AS following_author,
-        EXTRACT(EPOCH FROM (NOW() - p.created_at)) / 3600.0 AS age_hours
-      FROM posts p
-      JOIN users u ON u.id = p.user_id
-      LEFT JOIN likes l ON l.post_id = p.id
-      LEFT JOIN comments c ON c.post_id = p.id
-      LEFT JOIN affinity a ON a.author_id = p.user_id
-      WHERE u.account_status='active'
-        AND (p.visibility = 'public' OR p.user_id = $1)
-        AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
-        AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
-        AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)
-      GROUP BY p.id, u.id, a.score
+        EXISTS(SELECT 1 FROM follows mine WHERE mine.follower_id = $1 AND mine.followed_id = cp.user_id) AS following_author,
+        EXTRACT(EPOCH FROM (NOW() - cp.created_at)) / 3600.0 AS age_hours
+      FROM candidates cp
+      LEFT JOIN affinity a ON a.author_id = cp.user_id
     )
     SELECT *,
       (
@@ -1019,10 +1108,12 @@ app.get('/api/for-you', auth, asyncRoute(async (req, res) => {
       ) AS recommendation_score
     FROM scored
     ORDER BY recommendation_score DESC, created_at DESC, id DESC
-    LIMIT 80
-  `, [req.user.id]);
-  const posts = rows.map(r => ({ ...normalizePost(r), recommendation_reason: recommendationReason(r) }));
-  res.json(await enrichReposts(req.user.id, posts));
+    LIMIT $2 OFFSET $3
+  `, [req.user.id, limit + 1, offset]);
+  let posts = rows.map(r => ({ ...normalizePost(r), recommendation_reason: recommendationReason(r) }));
+  posts = await attachDirectMediaUrls(posts);
+  posts = await enrichReposts(req.user.id, posts);
+  res.json(offsetPage(posts, limit, offset));
 }));
 
 app.get('/api/suggestions', auth, asyncRoute(async (req, res) => {
@@ -1085,54 +1176,74 @@ app.get('/api/suggestions', auth, asyncRoute(async (req, res) => {
 }));
 
 app.get('/api/discover', auth, asyncRoute(async (req, res) => {
-  // Para ti: publicaciones públicas, con una pequeña priorización por interacción reciente.
+  const limit = pageLimit(req, 15);
+  const offset = pageOffset(req);
   const { rows } = await pool.query(`
-    SELECT
-      p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
-      u.username, u.name, u.avatar,
-      COUNT(DISTINCT l.user_id)::int AS likes_count,
-      COUNT(DISTINCT c.id)::int AS comments_count,
-      EXISTS(SELECT 1 FROM likes lx WHERE lx.post_id = p.id AND lx.user_id = $1) AS liked,
-      EXISTS(SELECT 1 FROM bookmarks b WHERE b.post_id = p.id AND b.user_id = $1) AS saved,
-      (p.user_id = $1) AS own
-    FROM posts p
-    JOIN users u ON u.id = p.user_id
-    LEFT JOIN likes l ON l.post_id = p.id
-    LEFT JOIN comments c ON c.post_id = p.id
-    WHERE u.account_status='active'
-      AND (p.visibility = 'public' OR p.user_id = $1)
-      AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
-      AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
-      AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)
-    GROUP BY p.id, u.id
-    ORDER BY ((COUNT(DISTINCT l.user_id) * 2) + COUNT(DISTINCT c.id)) DESC, p.created_at DESC
-    LIMIT 80
-  `, [req.user.id]);
-  res.json(await enrichReposts(req.user.id, rows.map(normalizePost)));
+    WITH candidates AS (
+      SELECT
+        p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
+        u.username, u.name, u.avatar
+      FROM posts p
+      JOIN users u ON u.id = p.user_id
+      WHERE u.account_status='active'
+        AND (p.visibility = 'public' OR p.user_id = $1)
+        AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
+        AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
+        AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)
+      ORDER BY p.id DESC
+      LIMIT 300
+    ), ranked AS (
+      SELECT
+        c.*,
+        (SELECT COUNT(*)::int FROM likes l WHERE l.post_id=c.id) AS likes_count,
+        (SELECT COUNT(*)::int FROM comments cm WHERE cm.post_id=c.id) AS comments_count,
+        EXISTS(SELECT 1 FROM likes lx WHERE lx.post_id = c.id AND lx.user_id = $1) AS liked,
+        EXISTS(SELECT 1 FROM bookmarks b WHERE b.post_id = c.id AND b.user_id = $1) AS saved,
+        (c.user_id = $1) AS own
+      FROM candidates c
+    )
+    SELECT * FROM ranked
+    ORDER BY ((likes_count * 2) + comments_count) DESC, created_at DESC, id DESC
+    LIMIT $2 OFFSET $3
+  `, [req.user.id, limit + 1, offset]);
+  let posts = rows.map(normalizePost);
+  posts = await attachDirectMediaUrls(posts);
+  posts = await enrichReposts(req.user.id, posts);
+  res.json(offsetPage(posts, limit, offset));
 }));
 
 app.get('/api/bookmarks', auth, asyncRoute(async (req, res) => {
+  const limit = pageLimit(req, 15);
+  const offset = pageOffset(req);
   const { rows } = await pool.query(`
+    WITH candidates AS (
+      SELECT
+        p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
+        u.username, u.name, u.avatar, bk.created_at AS bookmark_created_at
+      FROM bookmarks bk
+      JOIN posts p ON p.id = bk.post_id
+      JOIN users u ON u.id = p.user_id
+      WHERE bk.user_id = $1
+        AND u.account_status='active'
+        AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
+        AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
+      ORDER BY bk.created_at DESC
+      LIMIT $2 OFFSET $3
+    )
     SELECT
-      p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
-      u.username, u.name, u.avatar,
-      COUNT(DISTINCT l.user_id)::int AS likes_count,
-      COUNT(DISTINCT c.id)::int AS comments_count,
-      EXISTS(SELECT 1 FROM likes lx WHERE lx.post_id = p.id AND lx.user_id = $1) AS liked,
+      c.*,
+      (SELECT COUNT(*)::int FROM likes l WHERE l.post_id=c.id) AS likes_count,
+      (SELECT COUNT(*)::int FROM comments cm WHERE cm.post_id=c.id) AS comments_count,
+      EXISTS(SELECT 1 FROM likes lx WHERE lx.post_id = c.id AND lx.user_id = $1) AS liked,
       TRUE AS saved,
-      (p.user_id = $1) AS own
-    FROM bookmarks bk
-    JOIN posts p ON p.id = bk.post_id
-    JOIN users u ON u.id = p.user_id
-    LEFT JOIN likes l ON l.post_id = p.id
-    LEFT JOIN comments c ON c.post_id = p.id
-    WHERE bk.user_id = $1
-      AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
-      AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
-    GROUP BY p.id, u.id, bk.created_at
-    ORDER BY bk.created_at DESC
-  `, [req.user.id]);
-  res.json(await enrichReposts(req.user.id, rows.map(normalizePost)));
+      (c.user_id = $1) AS own
+    FROM candidates c
+    ORDER BY c.bookmark_created_at DESC
+  `, [req.user.id, limit + 1, offset]);
+  let posts = rows.map(normalizePost);
+  posts = await attachDirectMediaUrls(posts);
+  posts = await enrichReposts(req.user.id, posts);
+  res.json(offsetPage(posts, limit, offset));
 }));
 
 app.post('/api/posts/:id/like', auth, asyncRoute(async (req, res) => {
@@ -1309,7 +1420,8 @@ app.get('/api/users/:username/posts', auth, asyncRoute(async (req, res) => {
     const gate = friendship.rowCount ? null : await friendGateProgress(req.user.id,target.id);
     if (gate?.enabled && !gate.unlocked) return res.status(403).json({ error:'Completa el reto para ver este perfil', code:'PROFILE_ACCESS_LOCKED', friend_gate:gate });
   }
-  res.json(await postQuery(req.user.id, { mode: 'all', profileId: target.id }));
+  const limit = pageLimit(req, 15);
+  res.json(await postQuery(req.user.id, { mode: 'all', profileId: target.id, limit, cursor: cursorId(req), paged: true }));
 }));
 
 app.post('/api/users/:id/follow', auth, asyncRoute(async (req, res) => {
@@ -1700,7 +1812,9 @@ app.get('/api/stories', auth, asyncRoute(async (req, res) => {
      ORDER BY (s.user_id = $1) DESC, following DESC, s.created_at ASC
      LIMIT 200
   `, [req.user.id]);
-  res.json(rows.map(r => ({ ...r, media_url: `/media/${r.media_id}`, viewed: Boolean(r.viewed), own: Boolean(r.own), following: Boolean(r.following), views_count: Number(r.views_count || 0) })));
+  let stories = rows.map(r => ({ ...r, media_url: `/media/${r.media_id}`, viewed: Boolean(r.viewed), own: Boolean(r.own), following: Boolean(r.following), views_count: Number(r.views_count || 0) }));
+  stories = await attachDirectMediaUrls(stories);
+  res.json(stories);
 }));
 
 app.post('/api/stories', auth, asyncRoute(async (req, res) => {
@@ -1766,40 +1880,52 @@ app.delete('/api/stories/:id', auth, asyncRoute(async (req, res) => {
 
 // --- V0.5: Reels -----------------------------------------------------------
 app.get('/api/reels', auth, asyncRoute(async (req, res) => {
+  const limit = pageLimit(req, 8);
+  const offset = pageOffset(req);
   const { rows } = await pool.query(`
-    SELECT p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
-           u.username, u.name, u.avatar,
-           COUNT(DISTINCT l.user_id)::int AS likes_count,
-           COUNT(DISTINCT c.id)::int AS comments_count,
-           EXISTS(SELECT 1 FROM likes lx WHERE lx.post_id = p.id AND lx.user_id = $1) AS liked,
-           EXISTS(SELECT 1 FROM bookmarks b WHERE b.post_id = p.id AND b.user_id = $1) AS saved,
-           (p.user_id = $1) AS own
+    WITH candidates AS (
+      SELECT
+        p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
+        u.username, u.name, u.avatar
       FROM posts p
       JOIN users u ON u.id = p.user_id
-      LEFT JOIN likes l ON l.post_id = p.id
-      LEFT JOIN comments c ON c.post_id = p.id
-     WHERE p.media_type = 'video'
-       AND u.account_status='active'
-       AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
-       AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)
-       AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
-       AND (
-         p.user_id=$1 OR NOT u.friend_gate_enabled OR
-         EXISTS(SELECT 1 FROM friendships rgfr WHERE (rgfr.user1_id=$1 AND rgfr.user2_id=p.user_id) OR (rgfr.user1_id=p.user_id AND rgfr.user2_id=$1)) OR
-         (
-           CASE WHEN u.friend_gate_require_post
-             THEN (SELECT COUNT(*) FROM referral_attributions rra WHERE rra.inviter_id=$1 AND rra.gate_user_id=p.user_id AND rra.qualified_at IS NOT NULL)
-             ELSE (SELECT COUNT(*) FROM referral_attributions rra WHERE rra.inviter_id=$1 AND rra.gate_user_id=p.user_id)
-           END
-         ) >= u.friend_gate_required_referrals
-       )
-       AND (p.visibility = 'public' OR p.user_id = $1 OR
-         (p.visibility = 'followers' AND EXISTS(SELECT 1 FROM follows vf WHERE vf.follower_id = $1 AND vf.followed_id = p.user_id)))
-     GROUP BY p.id, u.id
-     ORDER BY ((COUNT(DISTINCT l.user_id) * 2) + COUNT(DISTINCT c.id)) DESC, p.created_at DESC
-     LIMIT 80
-  `, [req.user.id]);
-  res.json(await enrichReposts(req.user.id, rows.map(normalizePost)));
+      WHERE p.media_type = 'video'
+        AND u.account_status='active'
+        AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
+        AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)
+        AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
+        AND (
+          p.user_id=$1 OR NOT u.friend_gate_enabled OR
+          EXISTS(SELECT 1 FROM friendships rgfr WHERE (rgfr.user1_id=$1 AND rgfr.user2_id=p.user_id) OR (rgfr.user1_id=p.user_id AND rgfr.user2_id=$1)) OR
+          (
+            CASE WHEN u.friend_gate_require_post
+              THEN (SELECT COUNT(*) FROM referral_attributions rra WHERE rra.inviter_id=$1 AND rra.gate_user_id=p.user_id AND rra.qualified_at IS NOT NULL)
+              ELSE (SELECT COUNT(*) FROM referral_attributions rra WHERE rra.inviter_id=$1 AND rra.gate_user_id=p.user_id)
+            END
+          ) >= u.friend_gate_required_referrals
+        )
+        AND (p.visibility = 'public' OR p.user_id = $1 OR
+          (p.visibility = 'followers' AND EXISTS(SELECT 1 FROM follows vf WHERE vf.follower_id = $1 AND vf.followed_id = p.user_id)))
+      ORDER BY p.id DESC
+      LIMIT 200
+    ), ranked AS (
+      SELECT
+        c.*,
+        (SELECT COUNT(*)::int FROM likes l WHERE l.post_id=c.id) AS likes_count,
+        (SELECT COUNT(*)::int FROM comments cm WHERE cm.post_id=c.id) AS comments_count,
+        EXISTS(SELECT 1 FROM likes lx WHERE lx.post_id = c.id AND lx.user_id = $1) AS liked,
+        EXISTS(SELECT 1 FROM bookmarks b WHERE b.post_id = c.id AND b.user_id = $1) AS saved,
+        (c.user_id = $1) AS own
+      FROM candidates c
+    )
+    SELECT * FROM ranked
+    ORDER BY ((likes_count * 2) + comments_count) DESC, created_at DESC, id DESC
+    LIMIT $2 OFFSET $3
+  `, [req.user.id, limit + 1, offset]);
+  let posts = rows.map(normalizePost);
+  posts = await attachDirectMediaUrls(posts);
+  posts = await enrichReposts(req.user.id, posts);
+  res.json(offsetPage(posts, limit, offset));
 }));
 
 // --- V0.6: Mensajes privados en tiempo real -------------------------------
@@ -2180,7 +2306,7 @@ app.use((err, _req, res, _next) => {
 
 async function start() {
   await initDb();
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.3.2 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.4.0 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {

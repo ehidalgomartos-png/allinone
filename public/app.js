@@ -1,4 +1,4 @@
-// V1.3.2 · captura directa desde cámara móvil + multimedia externa
+// V1.4.0 · rendimiento: paginación, scroll infinito y multimedia lazy
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -129,7 +129,12 @@ const state = {
   typingTimer: null,
   messageSending: false,
   requestCount: 0,
-  sessionExpiring: false
+  sessionExpiring: false,
+  pagination: {},
+  infiniteObserver: null,
+  mediaObserver: null,
+  reelObserver: null,
+  rightbarCache: null
 };
 
 const $ = (s, root = document) => root.querySelector(s);
@@ -266,7 +271,7 @@ function initials(u = {}) {
 
 function avatar(u = {}, size = '') {
   const klass = size ? ` avatar ${size}` : 'avatar';
-  return `<div class="${klass}">${u.avatar ? `<img src="${escapeAttr(u.avatar)}" alt="">` : `<span>${escapeHtml(initials(u))}</span>`}</div>`;
+  return `<div class="${klass}">${u.avatar ? `<img src="${escapeAttr(u.avatar)}" loading="lazy" decoding="async" alt="">` : `<span>${escapeHtml(initials(u))}</span>`}</div>`;
 }
 
 function timeAgo(date) {
@@ -574,6 +579,7 @@ window.logout = () => {
 
 window.go = async (view, opts = {}) => {
   if (state.messagePoll) { clearInterval(state.messagePoll); state.messagePoll = null; }
+  resetViewObservers();
   state.view = view;
   if (view !== 'profile') {
     document.title = 'Instant Admirers — Conecta. Comparte. Descubre.';
@@ -623,6 +629,113 @@ window.renderView = renderView;
 function pageHeader(title, subtitle = '') {
   return `<div class="page-head"><div><h2>${escapeHtml(title)}</h2>${subtitle ? `<p>${escapeHtml(subtitle)}</p>` : ''}</div></div>`;
 }
+
+function normalizePagePayload(data) {
+  if (Array.isArray(data)) return { items:data, has_more:false, next_cursor:null, next_offset:null };
+  return {
+    items: Array.isArray(data?.items) ? data.items : [],
+    has_more: Boolean(data?.has_more),
+    next_cursor: data?.next_cursor ?? null,
+    next_offset: data?.next_offset ?? null
+  };
+}
+
+function pagerHtml(key, hasMore) {
+  if (!hasMore) return '';
+  return `<div class="infinite-pager" id="pager-${escapeAttr(key)}" data-pager="${escapeAttr(key)}" aria-live="polite"><span class="pager-spinner"></span><small>Cargando más…</small><button class="btn ghost compact pager-fallback" onclick="loadMorePage('${escapeAttr(key)}')">Cargar más</button></div>`;
+}
+
+function updatePager(key) {
+  const page = state.pagination[key];
+  const el = document.getElementById(`pager-${key}`);
+  if (!el) return;
+  if (!page?.hasMore) { el.remove(); return; }
+  el.classList.toggle('loading', Boolean(page.loading));
+  const small = el.querySelector('small');
+  if (small) small.textContent = page.loading ? 'Cargando más…' : 'Desliza para ver más';
+}
+
+function installInfinitePager(key, page, loader, meta = {}) {
+  state.pagination[key] = {
+    hasMore:Boolean(page.has_more),
+    nextCursor:page.next_cursor ?? null,
+    nextOffset:page.next_offset ?? null,
+    loading:false,
+    loader,
+    meta
+  };
+  if (state.infiniteObserver) { state.infiniteObserver.disconnect(); state.infiniteObserver = null; }
+  const target = document.getElementById(`pager-${key}`);
+  if (!target || !page.has_more) return;
+  if (!('IntersectionObserver' in window)) { target.classList.add('manual'); return; }
+  state.infiniteObserver = new IntersectionObserver(entries => {
+    if (entries.some(entry => entry.isIntersecting)) loadMorePage(key);
+  }, { rootMargin:'700px 0px 700px 0px', threshold:0.01 });
+  state.infiniteObserver.observe(target);
+}
+
+window.loadMorePage = async (key) => {
+  const page = state.pagination[key];
+  if (!page || !page.hasMore || page.loading || typeof page.loader !== 'function') return;
+  page.loading = true;
+  updatePager(key);
+  try { await page.loader(page); }
+  catch (e) { toast(e.message, 'error'); }
+  finally { page.loading = false; updatePager(key); }
+};
+
+function pageUrl(base, page, limit = 15) {
+  const url = new URL(base, location.origin);
+  url.searchParams.set('limit', String(limit));
+  if (page?.nextCursor) url.searchParams.set('cursor', String(page.nextCursor));
+  else if (page?.nextOffset !== null && page?.nextOffset !== undefined) url.searchParams.set('offset', String(page.nextOffset));
+  return url.pathname + url.search;
+}
+
+function appendPostItems(containerId, items) {
+  const box = document.getElementById(containerId);
+  if (!box || !items.length) return;
+  box.insertAdjacentHTML('beforeend', items.map(postHtml).join(''));
+  setupLazyMedia(box);
+}
+
+function setupLazyMedia(root = document) {
+  const videos = [...root.querySelectorAll('video[data-lazy-video="1"]')].filter(v => !v.dataset.lazyObserved);
+  if (!videos.length) return;
+  if (!('IntersectionObserver' in window)) {
+    videos.forEach(v => { v.preload = 'metadata'; v.dataset.lazyObserved = '1'; });
+    return;
+  }
+  if (!state.mediaObserver) {
+    state.mediaObserver = new IntersectionObserver(entries => entries.forEach(entry => {
+      const video = entry.target;
+      if (entry.isIntersecting) {
+        if (video.dataset.metadataLoaded !== '1') {
+          video.preload = 'metadata';
+          video.dataset.metadataLoaded = '1';
+          try { video.load(); } catch (_) {}
+        }
+      } else if (!video.paused) {
+        video.pause();
+      }
+    }), { rootMargin:'500px 0px 500px 0px', threshold:0.01 });
+  }
+  videos.forEach(video => {
+    video.dataset.lazyObserved = '1';
+    state.mediaObserver.observe(video);
+  });
+}
+
+function resetLazyMediaObserver() {
+  if (state.mediaObserver) { state.mediaObserver.disconnect(); state.mediaObserver = null; }
+}
+
+function resetViewObservers() {
+  if (state.infiniteObserver) { state.infiniteObserver.disconnect(); state.infiniteObserver = null; }
+  if (state.reelObserver) { state.reelObserver.disconnect(); state.reelObserver = null; }
+  resetLazyMediaObserver();
+}
+
 
 function composer() {
   return `<section class="card composer-compact" id="composer">
@@ -717,8 +830,8 @@ function repostEmbed(r) {
   if (!r) return '';
   if (r.unavailable) return `<div class="repost-embed unavailable">Esta publicación ya no está disponible.</div>`;
   const media = r.media_url ? (r.media_type === 'video'
-    ? `<video class="repost-media" src="${escapeAttr(r.media_url)}" controls preload="metadata"></video>`
-    : `<img class="repost-media" src="${escapeAttr(r.media_url)}" loading="lazy" alt="">`) : '';
+    ? `<video class="repost-media" src="${escapeAttr(r.media_url)}" controls playsinline preload="none" data-lazy-video="1"></video>`
+    : `<img class="repost-media" src="${escapeAttr(r.media_url)}" loading="lazy" decoding="async" alt="">`) : '';
   return `<div class="repost-embed">
     <button class="repost-author" onclick="openProfile('${escapeAttr(r.username)}')">${avatar(r,'small')}<span><b>${escapeHtml(r.name)}</b><small>@${escapeHtml(r.username)} · ${timeAgo(r.created_at)}</small></span></button>
     ${r.text ? `<div class="repost-text">${formatText(r.text)}</div>` : ''}
@@ -728,8 +841,8 @@ function repostEmbed(r) {
 
 function postHtml(p) {
   const media = p.media_url ? (p.media_type === 'video'
-    ? `<video class="post-media" src="${escapeAttr(p.media_url)}" controls preload="metadata"></video>`
-    : `<img class="post-media" src="${escapeAttr(p.media_url)}" loading="lazy" alt="Publicación de ${escapeAttr(p.username)}">`) : '';
+    ? `<video class="post-media" src="${escapeAttr(p.media_url)}" controls playsinline preload="none" data-lazy-video="1"></video>`
+    : `<img class="post-media" src="${escapeAttr(p.media_url)}" loading="lazy" decoding="async" alt="Publicación de ${escapeAttr(p.username)}">`) : '';
   const privacy = p.visibility === 'followers' ? ' · 👥' : '';
   const edited = p.edited_at ? ' · editado' : '';
   const encodedText = safeEncode(p.text || '');
@@ -809,13 +922,29 @@ function personalizeHint() {
 }
 
 async function renderFeed() {
-  const endpoint = state.feedMode === 'for-you' ? '/api/for-you' : '/api/feed';
-  const [rows, stories] = await Promise.all([api(endpoint), api('/api/stories')]);
-  const empty = state.feedMode === 'for-you'
+  resetLazyMediaObserver();
+  const mode = state.feedMode;
+  const endpoint = mode === 'for-you' ? '/api/for-you' : '/api/feed';
+  const firstUrl = `${endpoint}?limit=15${mode === 'for-you' ? '&offset=0' : ''}`;
+  const [rawPage, stories] = await Promise.all([api(firstUrl), api('/api/stories')]);
+  const page = normalizePagePayload(rawPage);
+  const rows = page.items;
+  const empty = mode === 'for-you'
     ? `<div class="card empty feed-empty"><div class="empty-icon">✦</div><h3>Estamos preparando tu Para ti</h3><p>Interactúa con publicaciones, sigue perfiles o añade intereses para afinarlo.</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button><button class="btn ghost compact" onclick="editProfile()">Mis intereses</button></div></div>`
     : `<div class="card empty feed-empty"><div class="empty-icon">⌂</div><h3>Tu feed está empezando</h3><p>Sigue personas desde Descubrir o crea tu primera publicación.</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button><button class="btn ghost compact" onclick="openComposerModal()">Publicar</button></div></div>`;
-  $('#main').innerHTML = `<div class="feed-start">${storyStrip(stories)}${composer()}${feedTabs()}${personalizeHint()}</div><div class="post-list">${rows.length ? rows.map(postHtml).join('') : empty}</div>`;
+  $('#main').innerHTML = `<div class="feed-start">${storyStrip(stories)}${composer()}${feedTabs()}${personalizeHint()}</div><div class="post-list" id="feedPostList">${rows.length ? rows.map(postHtml).join('') : empty}</div>${pagerHtml('feed', page.has_more)}`;
+  setupLazyMedia($('#main'));
+  installInfinitePager('feed', page, async pager => {
+    if (state.view !== 'feed' || state.feedMode !== mode) return;
+    const nextRaw = await api(pageUrl(endpoint, pager, 15));
+    const next = normalizePagePayload(nextRaw);
+    appendPostItems('feedPostList', next.items);
+    pager.hasMore = next.has_more;
+    pager.nextCursor = next.next_cursor;
+    pager.nextOffset = next.next_offset;
+  }, { mode });
 }
+
 
 
 function followButtonHtml(u, klass = 'btn primary compact') {
@@ -835,16 +964,43 @@ function suggestionCard(u) {
 }
 
 async function renderDiscover() {
-  const [rows,trends,suggestions] = await Promise.all([api('/api/discover'),api('/api/trending'),api('/api/suggestions?limit=8')]);
+  resetLazyMediaObserver();
+  const [rawPage,trends,suggestions] = await Promise.all([api('/api/discover?limit=15&offset=0'),api('/api/trending'),api('/api/suggestions?limit=8')]);
+  const page = normalizePagePayload(rawPage);
+  const rows = page.items;
   const trendStrip = trends.length ? `<div class="trend-strip">${trends.slice(0,8).map(t=>`<button onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} posts · ${t.authors} personas</small></button>`).join('')}</div>` : '';
   const people = suggestions.length ? `<section class="discover-people"><div class="section-heading"><div><h3>Personas para ti</h3><p>Perfiles recomendados según tu actividad e intereses.</p></div></div><div class="suggestion-scroll">${suggestions.map(suggestionCard).join('')}</div></section>` : '';
-  $('#main').innerHTML = `${pageHeader('Descubrir','Encuentra personas, temas y contenido nuevo')}${people}${trendStrip}<div class="section-heading post-discover-heading"><div><h3>Popular ahora</h3><p>Publicaciones públicas con más conversación reciente.</p></div></div><div class="post-list">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty"><div class="empty-icon">✦</div><h3>Aún no hay contenido público</h3><p>Cuando la comunidad publique contenido público, aparecerá aquí.</p></div>`}</div>`;
+  $('#main').innerHTML = `${pageHeader('Descubrir','Encuentra personas, temas y contenido nuevo')}${people}${trendStrip}<div class="section-heading post-discover-heading"><div><h3>Popular ahora</h3><p>Publicaciones públicas con más conversación reciente.</p></div></div><div class="post-list" id="discoverPostList">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty"><div class="empty-icon">✦</div><h3>Aún no hay contenido público</h3><p>Cuando la comunidad publique contenido público, aparecerá aquí.</p></div>`}</div>${pagerHtml('discover', page.has_more)}`;
+  setupLazyMedia($('#main'));
+  installInfinitePager('discover', page, async pager => {
+    if (state.view !== 'discover') return;
+    const next = normalizePagePayload(await api(pageUrl('/api/discover', pager, 15)));
+    appendPostItems('discoverPostList', next.items);
+    pager.hasMore = next.has_more;
+    pager.nextCursor = next.next_cursor;
+    pager.nextOffset = next.next_offset;
+  });
 }
 
+
+
 async function renderBookmarks() {
-  const rows = await api('/api/bookmarks');
-  $('#main').innerHTML = `${pageHeader('Guardados','Solo tú puedes ver lo que guardas')}<div class="post-list">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty"><div class="empty-icon">▱</div><h3>No has guardado nada todavía</h3><p>Usa el icono de marcador de cualquier publicación.</p></div>`}</div>`;
+  resetLazyMediaObserver();
+  const page = normalizePagePayload(await api('/api/bookmarks?limit=15&offset=0'));
+  const rows = page.items;
+  $('#main').innerHTML = `${pageHeader('Guardados','Solo tú puedes ver lo que guardas')}<div class="post-list" id="bookmarkPostList">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty"><div class="empty-icon">▱</div><h3>No has guardado nada todavía</h3><p>Usa el icono de marcador de cualquier publicación.</p></div>`}</div>${pagerHtml('bookmarks', page.has_more)}`;
+  setupLazyMedia($('#main'));
+  installInfinitePager('bookmarks', page, async pager => {
+    if (state.view !== 'bookmarks') return;
+    const next = normalizePagePayload(await api(pageUrl('/api/bookmarks', pager, 15)));
+    appendPostItems('bookmarkPostList', next.items);
+    pager.hasMore = next.has_more;
+    pager.nextCursor = next.next_cursor;
+    pager.nextOffset = next.next_offset;
+  });
 }
+
+
 
 window.likePost = async (id) => {
   const buttons = [...document.querySelectorAll(`[data-post="${Number(id)}"] .post-actions .action`)].filter((_,i)=>i===0);
@@ -928,6 +1084,7 @@ window.runSearch = async (updateState = true) => {
     const users = d.users.length ? `<div class="card result-section"><h3>Personas</h3>${d.users.map(userRow).join('')}</div>` : '';
     const posts = d.posts.length ? `<div class="result-section"><h3 class="section-title">Publicaciones</h3>${d.posts.map(postHtml).join('')}</div>` : '';
     $('#searchResults').innerHTML = users + posts || `<div class="card empty"><h3>Sin resultados</h3><p>No encontramos nada para “${escapeHtml(q)}”.</p></div>`;
+    setupLazyMedia($('#searchResults'));
   } catch (e) { toast(e.message, 'error'); }
 };
 
@@ -938,16 +1095,18 @@ function userRow(u) {
   return `<div class="user-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u)}<span><b>${escapeHtml(u.name)}${u.account_private ? ' <i class="private-mini">🔒</i>' : ''}</b><small>@${escapeHtml(u.username)}</small>${summary ? `<em>${escapeHtml(summary).slice(0,90)}</em>` : ''}</span></button>${followButtonHtml(u)}</div>`;
 }
 
-window.openProfile = async (username, opts = {}) => { if (state.messagePoll) { clearInterval(state.messagePoll); state.messagePoll = null; } state.view = 'profile'; state.profile = username; if (opts.history !== false) setProfileBrowserUrl(username, { replace:Boolean(opts.replace) }); layout(); await renderProfile(username); };
+window.openProfile = async (username, opts = {}) => { if (state.messagePoll) { clearInterval(state.messagePoll); state.messagePoll = null; } resetViewObservers(); state.view = 'profile'; state.profile = username; if (opts.history !== false) setProfileBrowserUrl(username, { replace:Boolean(opts.replace) }); layout(); await renderProfile(username); };
 
 async function renderProfile(username) {
+  resetLazyMediaObserver();
   const u = await api('/api/users/' + encodeURIComponent(username));
   state.profileData = u;
   document.title = `${u.name || u.username} (@${u.username}) · Instant Admirers`;
   const canonical = document.querySelector('link[rel="canonical"]'); if (canonical) canonical.href = profileUrl(u.username);
   const profileLocked = Boolean(u.profile_locked);
-  let posts = [];
-  if (!u.blocked_by_me && !profileLocked) posts = await api('/api/users/' + encodeURIComponent(username) + '/posts');
+  let postPage = { items:[], has_more:false, next_cursor:null, next_offset:null };
+  if (!u.blocked_by_me && !profileLocked) postPage = normalizePagePayload(await api('/api/users/' + encodeURIComponent(username) + '/posts?limit=15'));
+  const posts = postPage.items;
   const website = u.website ? `<a class="profile-link" href="${escapeAttr(normalizeUrl(u.website))}" target="_blank" rel="noopener">↗ ${escapeHtml(u.website)}</a>` : '';
   const interests = String(u.interests || '').split(',').map(x=>x.trim()).filter(Boolean).slice(0,10);
   const privateLocked = !profileLocked && u.account_private && !u.own && !u.following;
@@ -960,7 +1119,7 @@ async function renderProfile(username) {
     actions = `${u.can_message?`<button class="btn ghost compact" onclick="startMessage(${u.id})">Mensaje</button>`:''}${friendButton(u)}${followButtonHtml(u)}<button class="icon-btn profile-more" title="Más opciones" onclick="openProfileMenu(${u.id},'${escapeAttr(u.username)}',${u.muted?'true':'false'})">•••</button>`;
   }
   $('#main').innerHTML = `<section class="card profile-card profile-card-v7">
-    <div class="profile-cover ${u.cover ? 'has-cover' : ''}">${u.cover ? `<img src="${escapeAttr(u.cover)}" alt="">` : ''}</div>
+    <div class="profile-cover ${u.cover ? 'has-cover' : ''}">${u.cover ? `<img src="${escapeAttr(u.cover)}" decoding="async" alt="">` : ''}</div>
     <div class="profile-main-v7">
       <div class="profile-top">${avatar(u, 'xl')}<div class="profile-cta">${actions}</div></div>
       <h2>${escapeHtml(u.name)}${u.account_private ? ' <span class="private-badge" title="Cuenta privada">🔒</span>' : ''}</h2><div class="handle">@${escapeHtml(u.username)}</div>
@@ -977,7 +1136,19 @@ async function renderProfile(username) {
   </section>
   ${friendGateBanner(u)}
   ${privateLocked ? `<div class="card private-profile-lock"><div>🔒</div><h3>Esta cuenta es privada</h3><p>Envía una solicitud para ver sus publicaciones y Stories.</p>${u.follow_requested ? '<span>Solicitud de seguimiento enviada</span>' : followButtonHtml(u)}</div>` : ''}
-  ${!u.blocked_by_me && !privateLocked && !profileLocked ? `<div class="profile-section-title">Publicaciones</div><div class="post-list">${posts.length ? posts.map(postHtml).join('') : `<div class="card empty profile-empty"><div class="empty-icon">▧</div><h3>Sin publicaciones todavía</h3><p>${u.own ? 'Tu primera publicación aparecerá aquí.' : 'Cuando publique algo, aparecerá aquí.'}</p>${u.own ? '<button class="btn primary compact" onclick="openComposerModal()">Crear publicación</button>' : ''}</div>`}</div>` : ''}`;
+  ${!u.blocked_by_me && !privateLocked && !profileLocked ? `<div class="profile-section-title">Publicaciones</div><div class="post-list" id="profilePostList">${posts.length ? posts.map(postHtml).join('') : `<div class="card empty profile-empty"><div class="empty-icon">▧</div><h3>Sin publicaciones todavía</h3><p>${u.own ? 'Tu primera publicación aparecerá aquí.' : 'Cuando publique algo, aparecerá aquí.'}</p>${u.own ? '<button class="btn primary compact" onclick="openComposerModal()">Crear publicación</button>' : ''}</div>`}</div>${pagerHtml('profile', postPage.has_more)}` : ''}`;
+  setupLazyMedia($('#main'));
+  if (!u.blocked_by_me && !privateLocked && !profileLocked) {
+    const canonicalUsername = u.username;
+    installInfinitePager('profile', postPage, async pager => {
+      if (state.view !== 'profile' || String(state.profile || '').toLowerCase() !== String(canonicalUsername).toLowerCase()) return;
+      const next = normalizePagePayload(await api(pageUrl('/api/users/' + encodeURIComponent(canonicalUsername) + '/posts', pager, 15)));
+      appendPostItems('profilePostList', next.items);
+      pager.hasMore = next.has_more;
+      pager.nextCursor = next.next_cursor;
+      pager.nextOffset = next.next_offset;
+    }, { username:canonicalUsername });
+  }
 }
 
 window.openProfileMenu = (userId, username, muted = false) => {
@@ -1052,6 +1223,7 @@ window.toggleFollow = async (id, username = '') => {
     else if (d.status === 'following') toast('Ahora sigues a esta persona');
     else toast('Ya no la sigues');
     await refreshMe(false);
+    state.rightbarCache = null;
     if (state.view === 'profile' && username) await renderProfile(username); else await renderView();
   } catch (e) { toast(e.message, 'error'); }
 };
@@ -1389,13 +1561,22 @@ function layoutNavOnly() {
 async function loadRightbar() {
   const box = $('#rightbar'); if (!box) return;
   try {
-    const [suggestions, tags] = await Promise.all([api('/api/suggestions?limit=4'), api('/api/trending')]);
+    let suggestions, tags;
+    const cached = state.rightbarCache;
+    if (cached && Date.now() - cached.at < 45000) {
+      suggestions = cached.suggestions;
+      tags = cached.tags;
+    } else {
+      [suggestions, tags] = await Promise.all([api('/api/suggestions?limit=4'), api('/api/trending')]);
+      state.rightbarCache = { at:Date.now(), suggestions, tags };
+    }
+    if (!box.isConnected) return;
     box.innerHTML = `<div class="card side-card"><div class="side-title">Tu perfil</div><button class="profile-summary" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me)}<span><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></span></button><div class="mini-stats"><span><b>${state.me.posts_count || 0}</b>posts</span><span><b>${state.me.followers_count || 0}</b>seguidores</span><span><b>${state.me.following_count || 0}</b>siguiendo</span></div></div>
       <div class="card side-card"><div class="side-title">Personas para ti</div>${suggestions.length ? suggestions.map(u => `<div class="side-user suggested-side-user"><button onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small><em>✦ ${escapeHtml(u.recommendation_reason || 'Sugerido')}</em></span></button>${u.follow_requested?`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Solicitada</button>`:`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.account_private?'Solicitar':'Seguir'}</button>`}</div>`).join('') : '<p class="muted">Sigue interactuando y aparecerán sugerencias.</p>'}</div>
       <div class="card side-card"><div class="side-title">Tendencias · 7 días</div>${tags.length ? tags.map(t => `<button class="trend" onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} posts · ${t.authors || 1} personas · ${t.engagement || 0} interacciones</small></button>`).join('') : '<p class="muted">Los hashtags aparecerán aquí cuando se usen.</p>'}</div>
       <button class="logout-link" onclick="logout()">Cerrar sesión</button>`;
   } catch {
-    box.innerHTML = '';
+    if (box.isConnected) box.innerHTML = '';
   }
 }
 
@@ -1557,14 +1738,26 @@ window.showStoryViewers = async (id) => {
 
 // --- V0.5: Reels -----------------------------------------------------------
 async function renderReels() {
-  const rows = await api('/api/reels');
-  $('#main').innerHTML = `${pageHeader('Reels','Vídeos verticales de la comunidad')}<div class="reels-feed">${rows.length ? rows.map(reelHtml).join('') : `<div class="card empty"><div class="empty-icon">▶</div><h3>Aún no hay Reels</h3><p>Publica un vídeo desde Inicio y aparecerá aquí.</p><button class="btn primary" onclick="focusComposer()">Publicar vídeo</button></div>`}</div>`;
+  resetLazyMediaObserver();
+  const page = normalizePagePayload(await api('/api/reels?limit=8&offset=0'));
+  const rows = page.items;
+  $('#main').innerHTML = `${pageHeader('Reels','Vídeos verticales de la comunidad')}<div class="reels-feed" id="reelsFeed">${rows.length ? rows.map(reelHtml).join('') : `<div class="card empty"><div class="empty-icon">▶</div><h3>Aún no hay Reels</h3><p>Publica un vídeo desde Inicio y aparecerá aquí.</p><button class="btn primary" onclick="focusComposer()">Publicar vídeo</button></div>`}</div>${pagerHtml('reels', page.has_more)}`;
   setupReels();
+  installInfinitePager('reels', page, async pager => {
+    if (state.view !== 'reels') return;
+    const next = normalizePagePayload(await api(pageUrl('/api/reels', pager, 8)));
+    const feed = document.getElementById('reelsFeed');
+    if (feed && next.items.length) feed.insertAdjacentHTML('beforeend', next.items.map(reelHtml).join(''));
+    pager.hasMore = next.has_more;
+    pager.nextCursor = next.next_cursor;
+    pager.nextOffset = next.next_offset;
+    setupReels();
+  });
 }
 
 function reelHtml(p) {
   return `<article class="reel-card" data-reel="${p.id}">
-    <video class="reel-video" src="${escapeAttr(p.media_url)}" loop muted playsinline preload="metadata" onclick="toggleReelSound(this)"></video>
+    <video class="reel-video" src="${escapeAttr(p.media_url)}" loop muted playsinline preload="none" data-reel-video="1" onclick="toggleReelSound(this)"></video>
     <div class="reel-gradient"></div>
     <div class="reel-info"><button class="reel-user" onclick="openProfile('${escapeAttr(p.username)}')">${avatar(p,'small')}<span><b>${escapeHtml(p.name)}</b><small>@${escapeHtml(p.username)}</small></span></button>${p.text ? `<div class="reel-text">${formatText(p.text)}</div>` : ''}<div class="reel-hint">Toca el vídeo para activar/desactivar sonido</div></div>
     <div class="reel-actions"><button class="reel-action ${p.liked?'liked':''}" onclick="likePost(${p.id})"><span>${p.liked?'♥':'♡'}</span><b>${p.likes_count}</b></button><button class="reel-action" onclick="openComments(${p.id})"><span>◌</span><b>${p.comments_count}</b></button><button class="reel-action" onclick="sharePost(${p.id})"><span>↗</span></button><button class="reel-action ${p.saved?'saved':''}" onclick="savePost(${p.id})"><span>${p.saved?'▰':'▱'}</span></button></div>
@@ -1573,12 +1766,27 @@ function reelHtml(p) {
 
 function setupReels() {
   const videos = $$('.reel-video');
-  if (!('IntersectionObserver' in window)) { videos[0]?.play().catch(()=>{}); return; }
-  const observer = new IntersectionObserver(entries => entries.forEach(entry => {
+  if (state.reelObserver) { state.reelObserver.disconnect(); state.reelObserver = null; }
+  if (!videos.length) return;
+  if (!('IntersectionObserver' in window)) {
+    const first = videos[0];
+    if (first) { first.preload = 'metadata'; first.play().catch(()=>{}); }
+    return;
+  }
+  state.reelObserver = new IntersectionObserver(entries => entries.forEach(entry => {
     const v = entry.target;
-    if (entry.isIntersecting && entry.intersectionRatio > .65) v.play().catch(()=>{}); else v.pause();
-  }), { threshold:[0,.65,1] });
-  videos.forEach(v => observer.observe(v));
+    if (entry.isIntersecting && entry.intersectionRatio > .65) {
+      if (v.dataset.metadataLoaded !== '1') {
+        v.preload = 'metadata';
+        v.dataset.metadataLoaded = '1';
+        try { v.load(); } catch (_) {}
+      }
+      v.play().catch(()=>{});
+    } else {
+      v.pause();
+    }
+  }), { rootMargin:'350px 0px', threshold:[0,.25,.65,1] });
+  videos.forEach(v => state.reelObserver.observe(v));
 }
 
 window.toggleReelSound = (video) => { video.muted = !video.muted; if (video.paused) video.play().catch(()=>{}); };
@@ -1628,6 +1836,7 @@ window.sharePostTo = async (postId, userId) => {
 };
 
 async function renderMessages() {
+  resetLazyMediaObserver();
   const conversations = await api('/api/conversations');
   const isMobile = matchMedia('(max-width:860px)').matches;
   if (!state.activeConversation && !isMobile && conversations[0]) state.activeConversation = Number(conversations[0].id);
@@ -1642,6 +1851,7 @@ async function renderMessages() {
       </div>
       <div class="message-pane">${active ? chatPanelHtml(active,messages,isMobile) : `<div class="chat-placeholder"><div>✉</div><h3>Selecciona una conversación</h3><p>Habla en privado con otras personas de la comunidad.</p></div>`}</div>
     </section>`;
+  setupLazyMedia($('#main'));
   if (active) {
     requestAnimationFrame(() => { const stream=$('#messageStream'); if(stream) stream.scrollTop=stream.scrollHeight; });
     state.me.unread_messages = Math.max(0, Number(state.me.unread_messages || 0) - Number(active.unread_count || 0));
@@ -1667,13 +1877,13 @@ function chatPanelHtml(c, messages, isMobile) {
 }
 
 function messageHtml(m) {
-  const media = m.media_url ? (m.media_type === 'video' ? `<video class="message-media" src="${escapeAttr(m.media_url)}" controls></video>` : `<img class="message-media" src="${escapeAttr(m.media_url)}" alt="">`) : '';
+  const media = m.media_url ? (m.media_type === 'video' ? `<video class="message-media" src="${escapeAttr(m.media_url)}" controls playsinline preload="none" data-lazy-video="1"></video>` : `<img class="message-media" src="${escapeAttr(m.media_url)}" loading="lazy" decoding="async" alt="">`) : '';
   const reply = m.reply ? `<div class="message-reply"><b>${escapeHtml(m.reply.name || m.reply.username || 'Mensaje')}</b><span>${escapeHtml(m.reply.text || (m.reply.media_type==='image'?'📷 Foto':m.reply.media_type==='video'?'🎬 Vídeo':'Mensaje')).slice(0,120)}</span></div>` : '';
   let shared = '';
   if (m.shared_post?.unavailable) shared = `<div class="shared-post unavailable">Esta publicación ya no está disponible para ti.</div>`;
   else if (m.shared_post) {
     const sp=m.shared_post;
-    const smedia=sp.media_url ? (sp.media_type==='video'?`<video src="${escapeAttr(sp.media_url)}" controls preload="metadata"></video>`:`<img src="${escapeAttr(sp.media_url)}" loading="lazy" alt="">`) : '';
+    const smedia=sp.media_url ? (sp.media_type==='video'?`<video src="${escapeAttr(sp.media_url)}" controls playsinline preload="none" data-lazy-video="1"></video>`:`<img src="${escapeAttr(sp.media_url)}" loading="lazy" decoding="async" alt="">`) : '';
     shared = `<div class="shared-post"><div class="shared-author">${avatar(sp,'small')}<span><b>${escapeHtml(sp.name || sp.username)}</b><small>@${escapeHtml(sp.username || '')}</small></span></div>${sp.text?`<p>${formatText(sp.text)}</p>`:''}${smedia}</div>`;
   }
   const excerpt = safeEncode((m.text || (m.media_type==='image'?'Foto':m.media_type==='video'?'Vídeo':m.shared_post?'Publicación':'Mensaje')).slice(0,100));

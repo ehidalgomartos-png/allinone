@@ -420,3 +420,14 @@ ALTER TABLE media ADD COLUMN IF NOT EXISTS format VARCHAR(40) NOT NULL DEFAULT '
 ALTER TABLE media ADD COLUMN IF NOT EXISTS migrated_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_media_provider ON media(provider);
 CREATE INDEX IF NOT EXISTS idx_media_secure_url ON media(secure_url) WHERE secure_url <> '';
+
+-- V1.4: índices de rendimiento para feeds, perfiles, Reels y actividad.
+CREATE INDEX IF NOT EXISTS idx_posts_user_id_desc ON posts(user_id, id DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_visibility_id_desc ON posts(visibility, id DESC);
+CREATE INDEX IF NOT EXISTS idx_posts_video_id_desc ON posts(id DESC) WHERE media_type = 'video';
+CREATE INDEX IF NOT EXISTS idx_comments_post_created_desc ON comments(post_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_likes_post_user ON likes(post_id, user_id);
+CREATE INDEX IF NOT EXISTS idx_bookmarks_user_created_desc ON bookmarks(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_stories_expires_created_desc ON stories(expires_at, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation_id_desc ON messages(conversation_id, id DESC);
+
