@@ -797,7 +797,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.9.0', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','starter-prompts','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge'] });
+  res.json({ ok: true, version: '1.9.1', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','starter-prompts','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -2731,6 +2731,109 @@ app.get('/api/admin/media-storage', auth, adminOnly, asyncRoute(async (_req, res
     FROM media
   `);
   res.json({ ...rows[0], configured: cloudinaryConfigured(), active_provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' });
+}));
+
+// V1.9.1: gestión y borrado seguro de usuarios desde Administración.
+app.get('/api/admin/users', auth, adminOnly, asyncRoute(async (req, res) => {
+  const q = String(req.query.q || '').trim().slice(0, 120);
+  const limit = Math.min(100, Math.max(10, Math.floor(Number(req.query.limit) || 50)));
+  const offset = Math.max(0, Math.floor(Number(req.query.offset) || 0));
+  const like = q ? `%${q}%` : '';
+  const params = [q, like, limit, offset];
+  const { rows } = await pool.query(`
+    SELECT u.id,u.username,u.name,u.email,u.role,u.account_status,u.email_verified_at,u.avatar,
+           u.created_at,u.last_seen_at,u.friend_gate_enabled,
+           (SELECT COUNT(*)::int FROM posts p WHERE p.user_id=u.id) AS posts_count,
+           (SELECT COUNT(*)::int FROM referral_attributions r WHERE r.inviter_id=u.id) AS referrals_count
+      FROM users u
+     WHERE u.is_demo=FALSE
+       AND ($1::text='' OR u.username ILIKE $2::text OR u.name ILIKE $2::text OR u.email ILIKE $2::text)
+     ORDER BY u.created_at DESC
+     LIMIT $3::int OFFSET $4::int
+  `, params);
+  const totalResult = await pool.query(`
+    SELECT COUNT(*)::int AS total
+      FROM users u
+     WHERE u.is_demo=FALSE
+       AND ($1::text='' OR u.username ILIKE $2::text OR u.name ILIKE $2::text OR u.email ILIKE $2::text)
+  `, [q, like]);
+  res.json({
+    users: rows.map(row => ({ ...row, is_admin: isAdminRecord(row) })),
+    total: Number(totalResult.rows[0]?.total || 0),
+    query: q,
+    limit,
+    offset
+  });
+}));
+
+app.delete('/api/admin/users/:id', auth, adminOnly, asyncRoute(async (req, res) => {
+  const targetId = Number(req.params.id);
+  if (!Number.isInteger(targetId) || targetId <= 0) return res.status(400).json({ error:'Usuario no válido' });
+  if (targetId === Number(req.user.id)) return res.status(400).json({ error:'No puedes eliminar tu propia cuenta desde Administración' });
+
+  const confirmation = String(req.body.confirmation || '').trim().replace(/^@/, '');
+  const reason = String(req.body.reason || '').trim().slice(0, 1000);
+
+  const result = await withTransaction(async client => {
+    const targetResult = await client.query(`
+      SELECT id,username,name,email,role,account_status
+        FROM users
+       WHERE id=$1 AND is_demo=FALSE
+       FOR UPDATE
+    `, [targetId]);
+    const target = targetResult.rows[0];
+    if (!target) {
+      const err = new Error('Usuario no encontrado');
+      err.status = 404;
+      throw err;
+    }
+    if (isAdminRecord(target)) {
+      const err = new Error('Las cuentas de administración están protegidas y no se pueden eliminar desde este panel');
+      err.status = 400;
+      throw err;
+    }
+    if (!confirmation || confirmation.toLowerCase() !== String(target.username).toLowerCase()) {
+      const err = new Error(`Escribe ${target.username} para confirmar la eliminación`);
+      err.status = 400;
+      throw err;
+    }
+
+    const mediaResult = await client.query(`
+      SELECT provider,provider_id,resource_type
+        FROM media
+       WHERE user_id=$1 AND provider='cloudinary' AND provider_id<>''
+    `, [targetId]);
+
+    const auditNote = [
+      `Usuario eliminado: @${target.username} <${target.email}>`,
+      reason ? `Motivo: ${reason}` : 'Sin motivo interno indicado'
+    ].join(' · ').slice(0, 2000);
+    await client.query(`
+      INSERT INTO moderation_actions(admin_id,action,target_user_id,note)
+      VALUES($1,'delete_user',$2,$3)
+    `, [req.user.id, targetId, auditNote]);
+
+    await client.query('DELETE FROM users WHERE id=$1', [targetId]);
+    return { target, media: mediaResult.rows };
+  });
+
+  // La base de datos ya quedó consistente. La limpieza remota se hace después para
+  // no dejar referencias rotas si Cloudinary tuviera un fallo temporal.
+  const cleanup = await Promise.allSettled(result.media.map(item => destroyRemoteAsset(item)));
+  const mediaCleanupFailures = cleanup.filter(item => item.status === 'rejected').length;
+  io.to(`user:${targetId}`).disconnectSockets(true);
+  onlineUsers.delete(String(targetId));
+  await securityEvent(req, 'admin_user_deleted', req.user.id, {
+    deleted_user_id: targetId,
+    deleted_username: result.target.username,
+    media_cleanup_failures: mediaCleanupFailures
+  });
+
+  res.json({
+    ok:true,
+    deleted_user:{ id:targetId, username:result.target.username },
+    media_cleanup_failures:mediaCleanupFailures
+  });
 }));
 
 app.post('/api/admin/users/:id/status', auth, adminOnly, asyncRoute(async (req, res) => {

@@ -1,4 +1,4 @@
-// V1.9.0 · Growth Engine sobre V1.8.0
+// V1.9.1 · Gestión de usuarios desde Administración sobre V1.9.0
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -2435,7 +2435,7 @@ async function renderAdmin() {
     $('#main').innerHTML=`<div class="card empty"><h3>Acceso no disponible</h3><p>Este panel está reservado a administración.</p></div>`;
     return;
   }
-  const [stats,reports,actions,security,launch,demo,readiness,communityLaunch,growth]=await Promise.all([
+  const [stats,reports,actions,security,launch,demo,readiness,communityLaunch,growth,adminUsers]=await Promise.all([
     api('/api/admin/stats'),
     api('/api/admin/reports?status=all'),
     api('/api/admin/actions'),
@@ -2444,7 +2444,8 @@ async function renderAdmin() {
     api('/api/admin/demo/status'),
     api('/api/admin/launch-readiness'),
     api('/api/admin/community-launch'),
-    api('/api/admin/growth-engine')
+    api('/api/admin/growth-engine'),
+    api('/api/admin/users?limit=50')
   ]);
   $('#main').innerHTML=`${pageHeader('Administración','Moderación y estado general de Instant Admirers')}
     <div class="admin-stats">
@@ -2453,6 +2454,12 @@ async function renderAdmin() {
       <div class="card admin-stat"><b>${stats.open_reports}</b><span>Denuncias abiertas</span><small>${stats.reviewing_reports} en revisión</small></div>
       <div class="card admin-stat"><b>${stats.suspended_users}</b><span>Suspendidos</span><small>${stats.closed_reports} denuncias cerradas</small></div>
     </div>
+    <section class="card admin-section admin-users-section">
+      <div class="section-row"><div><h3>Gestión de usuarios</h3><p>Busca, suspende, reactiva o elimina cuentas reales. Las cuentas de administración están protegidas.</p></div><span id="adminUsersCount">${Number(adminUsers.total||0)}</span></div>
+      <div class="admin-user-search"><input id="adminUserSearch" maxlength="120" placeholder="Buscar por nick, nombre o email" onkeydown="if(event.key==='Enter') adminSearchUsers()"><button class="btn ghost compact" onclick="adminSearchUsers()">Buscar</button><button class="btn ghost compact" onclick="adminResetUserSearch()">Todos</button></div>
+      <div id="adminUserList" class="admin-user-list">${adminUsers.users.length?adminUsers.users.map(adminUserHtml).join(''):'<div class="empty compact-empty">No hay usuarios.</div>'}</div>
+      <p class="admin-users-note">Eliminar una cuenta es definitivo: se borran sus publicaciones, mensajes, relaciones, referidos y multimedia asociada mediante las reglas de la base de datos. Se conserva una entrada de auditoría de la acción administrativa.</p>
+    </section>
     <section class="card admin-section launch-dashboard">
       <div class="section-row"><div><h3>Lanzamiento controlado</h3><p>Altas, activación, actividad y errores reales.</p></div><span class="launch-mode-badge">${escapeHtml(launch.settings.registration_mode)}</span></div>
       <div class="launch-control-row"><label>Registro<select id="launchRegistrationMode"><option value="open" ${launch.settings.registration_mode==='open'?'selected':''}>Abierto</option><option value="invite_only" ${launch.settings.registration_mode==='invite_only'?'selected':''}>Solo invitación</option><option value="paused" ${launch.settings.registration_mode==='paused'?'selected':''}>Pausado</option></select></label><button class="btn primary compact" onclick="saveLaunchRegistrationMode()">Aplicar</button></div>
@@ -2598,6 +2605,61 @@ window.saveLaunchPreparation = async () => {
 window.copyLaunchInvite = async (url) => {
   try{await navigator.clipboard.writeText(url);toast('Invitación inicial copiada');}
   catch(_){prompt('Copia este enlace de invitación:',url);}
+};
+
+function adminUserHtml(u){
+  const status=String(u.account_status||'active');
+  const protectedAccount=Boolean(u.is_admin);
+  const verified=Boolean(u.email_verified_at);
+  const lastSeen=u.last_seen_at?timeAgo(u.last_seen_at):'sin actividad registrada';
+  return `<article class="admin-user-row" data-admin-user="${Number(u.id)}">
+    <div class="admin-user-main">
+      <div class="admin-user-avatar">${u.avatar?`<img src="${escapeAttr(u.avatar)}" alt="">`:'◎'}</div>
+      <div><b>@${escapeHtml(u.username)}</b><span>${escapeHtml(u.name||'')}</span><small>${escapeHtml(u.email||'')}</small></div>
+    </div>
+    <div class="admin-user-meta">
+      <span class="admin-user-status ${escapeAttr(status)}">${status==='suspended'?'Suspendido':'Activo'}</span>
+      <span>${verified?'✓ Email verificado':'Email pendiente'}</span>
+      <span>${Number(u.posts_count||0)} posts · ${Number(u.referrals_count||0)} referidos</span>
+      <small>Alta ${timeAgo(u.created_at)} · ${lastSeen}</small>
+    </div>
+    <div class="admin-user-actions">
+      ${protectedAccount?'<span class="admin-protected-account">Cuenta de administración</span>':`<button class="btn ${status==='suspended'?'primary':'ghost'} compact" onclick="adminToggleUser(${Number(u.id)},'${status==='suspended'?'active':'suspended'}',0)">${status==='suspended'?'Reactivar':'Suspender'}</button><button class="btn danger compact" onclick="adminDeleteUser(${Number(u.id)},'${escapeAttr(u.username)}')">Eliminar</button>`}
+    </div>
+  </article>`;
+}
+
+window.adminSearchUsers=async()=>{
+  const q=String($('#adminUserSearch')?.value||'').trim();
+  try{
+    const result=await api(`/api/admin/users?limit=50&q=${encodeURIComponent(q)}`);
+    const list=$('#adminUserList');
+    const count=$('#adminUsersCount');
+    if(count) count.textContent=String(Number(result.total||0));
+    if(list) list.innerHTML=result.users.length?result.users.map(adminUserHtml).join(''):'<div class="empty compact-empty">No se encontraron usuarios.</div>';
+  }catch(e){toast(e.message,'error');}
+};
+
+window.adminResetUserSearch=async()=>{
+  if($('#adminUserSearch')) $('#adminUserSearch').value='';
+  await adminSearchUsers();
+};
+
+window.adminDeleteUser=async(userId,username)=>{
+  const typed=prompt(`ELIMINACIÓN DEFINITIVA\n\nSe borrará @${username} y todo su contenido asociado.\n\nEscribe exactamente ${username} para confirmar:`,'');
+  if(typed===null) return;
+  if(String(typed).trim().replace(/^@/,'').toLowerCase()!==String(username).toLowerCase()){
+    toast('Confirmación incorrecta. No se ha eliminado la cuenta.','error');
+    return;
+  }
+  const reason=prompt('Motivo interno de la eliminación (opcional):','') ?? '';
+  if(!confirm(`Última confirmación: ¿eliminar definitivamente la cuenta @${username}? Esta acción no se puede deshacer.`)) return;
+  try{
+    const result=await api(`/api/admin/users/${Number(userId)}`,{method:'DELETE',body:JSON.stringify({confirmation:typed,reason}),timeout:120000});
+    const suffix=Number(result.media_cleanup_failures||0)>0?' · Hay multimedia remota pendiente de limpieza.':'';
+    toast(`Cuenta @${username} eliminada${suffix}`);
+    await renderAdmin();
+  }catch(e){toast(e.message,'error');}
 };
 
 function adminReportHtml(r){
