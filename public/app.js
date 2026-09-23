@@ -1,4 +1,4 @@
-// V1.12.1 · Protección de contenido + bloqueo reforzado + Español / English
+// V1.12.2 · Protección de contenido + bloqueo reforzado + Español / English
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -3210,7 +3210,7 @@ registerInstantAdmirersPwa();
 init();
 
 
-// V1.12.1: bloqueo reforzado de descarga casual sobre multimedia protegida.
+// V1.12.2: bloqueo reforzado de descarga casual sobre multimedia protegida.
 const isProtectedMediaTarget = target => Boolean(target?.closest?.('[data-protected-media="1"],[data-protected-media-frame="1"]'));
 
 document.addEventListener('contextmenu', event => {

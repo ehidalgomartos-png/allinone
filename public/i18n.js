@@ -1,4 +1,4 @@
-// Instant Admirers V1.12.1 · Español / English
+// Instant Admirers V1.12.2 · Español / English
 (() => {
   const STORAGE_KEY = 'iaLanguage';
   const SUPPORTED = new Set(['es','en']);

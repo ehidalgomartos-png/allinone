@@ -9,6 +9,7 @@ const { rateLimit } = require('express-rate-limit');
 const multer = require('multer');
 const http = require('http');
 const { Readable } = require('stream');
+const { pipeline } = require('stream/promises');
 const { Server } = require('socket.io');
 require('dotenv').config();
 
@@ -1051,7 +1052,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.12.1', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','authenticated-cloudinary-uploads','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence'] });
+  res.json({ ok: true, version: '1.12.2', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','authenticated-cloudinary-uploads','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -1461,23 +1462,110 @@ function sendBufferWithRange(req, res, item, cacheControl) {
   return res.end(chunk);
 }
 
+function mediaProxyErrorDetails(err) {
+  const code = String(err?.code || err?.cause?.code || err?.name || 'UPSTREAM_ERROR').slice(0,80);
+  const message = String(err?.message || err?.cause?.message || 'Error de multimedia upstream').slice(0,500);
+  return { code, message };
+}
+
+function isClientMediaAbort(req, err) {
+  if (req.aborted) return true;
+  const code = String(err?.code || err?.cause?.code || '');
+  return ['ERR_STREAM_PREMATURE_CLOSE','ECONNRESET','UND_ERR_ABORTED'].includes(code);
+}
+
+function reportMediaProxyError(req, item, err, stage='stream') {
+  const details = mediaProxyErrorDetails(err);
+  console.warn(`Protected media upstream error: media ${item?.id || '?'} [${stage}] ${details.code}: ${details.message}`);
+  void operationalEvent({
+    userId: req.user?.id || null,
+    eventType: 'protected_media_upstream_error',
+    severity: 'warning',
+    path: req.originalUrl || req.path || '',
+    userAgent: req.get('user-agent') || '',
+    metadata: { media_id: Number(item?.id || 0) || null, stage, code: details.code, message: details.message }
+  });
+}
+
 async function proxyCloudinaryMedia(req, res, item, cacheControl) {
   const source = cloudinaryDeliveryUrl(item);
   if (!source) return res.status(404).end();
-  const headers = {};
-  if (req.headers.range) headers.Range = String(req.headers.range);
-  const upstream = await fetch(source,{headers,redirect:'follow'});
-  if (!(upstream.ok || upstream.status === 206)) return res.status(upstream.status === 404 ? 404 : 502).end();
-  setInlineMediaHeaders(res,item,cacheControl);
-  res.status(upstream.status);
-  for (const name of ['content-length','content-range','accept-ranges']) {
-    const value=upstream.headers.get(name);
-    if (value) res.set(name,value);
+
+  const controller = new AbortController();
+  let headerTimeout = null;
+  let timeoutTriggered = false;
+  const abortForClientDisconnect = () => {
+    if (!controller.signal.aborted) {
+      try { controller.abort(new Error('Cliente desconectado antes de recibir el multimedia')); } catch (_) {}
+    }
+  };
+  req.once('aborted', abortForClientDisconnect);
+
+  try {
+    const headers = {};
+    if (req.headers.range) headers.Range = String(req.headers.range);
+
+    // El timeout cubre la conexión y la recepción de cabeceras. No limita la
+    // duración completa del vídeo: una vez recibido el upstream, manda pipeline.
+    headerTimeout = setTimeout(() => {
+      timeoutTriggered = true;
+      if (!controller.signal.aborted) {
+        try { controller.abort(new Error('Timeout esperando respuesta multimedia de Cloudinary')); } catch (_) {}
+      }
+    }, 20000);
+    headerTimeout.unref?.();
+
+    const upstream = await fetch(source, {
+      headers,
+      redirect: 'follow',
+      signal: controller.signal
+    });
+    clearTimeout(headerTimeout);
+    headerTimeout = null;
+
+    if (!(upstream.ok || upstream.status === 206)) {
+      try { await upstream.body?.cancel(); } catch (_) {}
+      return res.status(upstream.status === 404 ? 404 : 502).end();
+    }
+
+    setInlineMediaHeaders(res,item,cacheControl);
+    res.status(upstream.status);
+    for (const name of ['content-length','content-range','accept-ranges']) {
+      const value=upstream.headers.get(name);
+      if (value) res.set(name,value);
+    }
+    const contentType=upstream.headers.get('content-type');
+    if (contentType) res.set('Content-Type',contentType);
+    if (!upstream.body) return res.end();
+
+    // Importante: pipe() deja errores del Readable sin capturar. pipeline()
+    // observa ambos extremos y convierte un HTTP/2 abortado en un rechazo que
+    // manejamos aquí, evitando que Node termine por un 'error' no controlado.
+    await pipeline(Readable.fromWeb(upstream.body), res);
+    return;
+  } catch (err) {
+    if (headerTimeout) clearTimeout(headerTimeout);
+
+    // Si el visitante cerró la pestaña, cambió de Reel o canceló el vídeo, no
+    // es un error de servidor y no debe generar ruido ni reiniciar el proceso.
+    if (isClientMediaAbort(req, err) && !timeoutTriggered) return;
+
+    reportMediaProxyError(req,item,err,timeoutTriggered ? 'headers-timeout' : 'stream');
+
+    if (!res.headersSent && !res.destroyed) {
+      return res.status(timeoutTriggered ? 504 : 502).end();
+    }
+    // Si ya empezamos a transmitir no podemos cambiar el status HTTP. Cerramos
+    // solo esta respuesta; pipeline ya ha absorbido el error del upstream.
+    if (!res.destroyed) res.destroy();
+    return;
+  } finally {
+    if (headerTimeout) clearTimeout(headerTimeout);
+    req.off('aborted', abortForClientDisconnect);
+    if (!controller.signal.aborted && req.aborted) {
+      try { controller.abort(new Error('Petición multimedia abortada')); } catch (_) {}
+    }
   }
-  const contentType=upstream.headers.get('content-type');
-  if (contentType) res.set('Content-Type',contentType);
-  if (!upstream.body) return res.end();
-  return Readable.fromWeb(upstream.body).pipe(res);
 }
 
 async function serveMedia(req, res, item, cacheControl='private, no-store') {
@@ -3658,7 +3746,7 @@ async function hardenLegacyCloudinaryMedia() {
     ORDER BY id ASC
   `);
   if (!rows.length) return;
-  console.log(`Protección multimedia V1.12.1: reforzando ${rows.length} recurso(s) heredado(s)...`);
+  console.log(`Protección multimedia V1.12.2: reforzando ${rows.length} recurso(s) heredado(s)...`);
   let ok = 0;
   let failed = 0;
   for (const item of rows) {
@@ -3681,7 +3769,7 @@ async function hardenLegacyCloudinaryMedia() {
       console.error(`Protección multimedia: no se pudo reforzar media #${item.id}:`, err.message);
     }
   }
-  console.log(`Protección multimedia V1.12.1: ${ok} reforzado(s), ${failed} pendiente(s).`);
+  console.log(`Protección multimedia V1.12.2: ${ok} reforzado(s), ${failed} pendiente(s).`);
 }
 
 async function start() {
@@ -3689,7 +3777,7 @@ async function start() {
   await syncSystemAccounts();
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Instant Admirers V1.12.1 en http://localhost:${PORT}`);
+    console.log(`Instant Admirers V1.12.2 en http://localhost:${PORT}`);
     void hardenLegacyCloudinaryMedia().catch(err => console.error('Protección multimedia heredada:', err.message));
   });
 }
