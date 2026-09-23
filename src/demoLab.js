@@ -127,12 +127,7 @@ async function createDemoEnvironment(client, adminUserId) {
     }
   }
 
-  // El administrador sigue varias cuentas demo para que "Siguiendo" tenga contenido.
-  for (const user of demoUsers.slice(0, 14)) {
-    if (Number(user.id) !== Number(adminUserId)) {
-      await client.query(`INSERT INTO follows(follower_id,followed_id) VALUES($1,$2) ON CONFLICT DO NOTHING`,[adminUserId,user.id]);
-    }
-  }
+  // V1.10.1: la cuenta administradora es técnica y no entra en la red social.
 
   // Red de seguimiento entre cuentas demo para alimentar recomendaciones.
   for (let i = 0; i < demoUsers.length; i += 1) {

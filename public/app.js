@@ -1,4 +1,4 @@
-// V1.10.0 · Publicidad administrable, Google AdSense y segmentación por perfil
+// V1.10.1 · Administrador como cuenta técnica del sistema
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -159,6 +159,8 @@ const state = {
   community: null,
   authMode: 'login'
 };
+
+function isSystemAccount() { return Boolean(state.me?.social_hidden); }
 
 const $ = (s, root = document) => root.querySelector(s);
 const $$ = (s, root = document) => [...root.querySelectorAll(s)];
@@ -841,8 +843,8 @@ function layout() {
       <button class="brand-button" onclick="go('feed')">${brandLockup('top')}</button>
       <div class="top-actions">
         <button class="top-icon" onclick="go('search')" aria-label="Buscar">⌕</button>
-        <button id="topActivityButton" class="top-icon badge-wrap" onclick="go('notifications')" aria-label="Actividad">♡${Number(state.me?.unread_notifications || 0) ? `<span class="nav-badge">${Math.min(99,state.me.unread_notifications)}</span>` : ''}</button>
-        <button class="top-avatar" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me, 'small')}</button>
+        ${isSystemAccount()?`<button id="topActivityButton" class="top-icon" onclick="go('admin')" aria-label="Administración">⚙</button>`:`<button id="topActivityButton" class="top-icon badge-wrap" onclick="go('notifications')" aria-label="Actividad">♡${Number(state.me?.unread_notifications || 0) ? `<span class="nav-badge">${Math.min(99,state.me.unread_notifications)}</span>` : ''}</button>`}
+        <button class="top-avatar" onclick="${isSystemAccount()?"go('admin')":`openProfile('${escapeAttr(state.me.username)}')`}">${avatar(state.me, 'small')}</button>
       </div>
     </header>
     ${launchBannerHtml()}
@@ -855,14 +857,14 @@ function layout() {
             ${navButton('reels','▶','Reels')}
             ${navButton('discover','✦','Descubrir')}
             ${navButton('search','⌕','Buscar')}
-            ${navButton('messages','✉','Mensajes')}
-            ${navButton('notifications','♡','Actividad')}
-            ${navButton('bookmarks','▱','Guardados')}
+            ${!isSystemAccount()?navButton('messages','✉','Mensajes'):''}
+            ${!isSystemAccount()?navButton('notifications','♡','Actividad'):''}
+            ${!isSystemAccount()?navButton('bookmarks','▱','Guardados'):''}
             ${state.me?.is_admin ? navButton('admin','⚙','Administración') : ''}
-            <button class="nav-item ${state.view === 'profile' ? 'active' : ''}" onclick="openProfile('${escapeAttr(state.me.username)}')"><span class="nav-icon">◎</span><span>Perfil</span></button>
+            ${!isSystemAccount()?`<button class="nav-item ${state.view === 'profile' ? 'active' : ''}" onclick="openProfile('${escapeAttr(state.me.username)}')"><span class="nav-icon">◎</span><span>Perfil</span></button>`:''}
           </nav>
-          <button class="btn primary compose-side" onclick="focusComposer()">Publicar</button>
-          <button class="account-mini" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me, 'small')}<span><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></span></button>
+          ${!isSystemAccount()?`<button class="btn primary compose-side" onclick="focusComposer()">Publicar</button>`:''}
+          <button class="account-mini" onclick="${isSystemAccount()?"openAccountSettings()":`openProfile('${escapeAttr(state.me.username)}')`}">${avatar(state.me, 'small')}<span><b>${escapeHtml(state.me.name)}</b><small>${isSystemAccount()?'Cuenta técnica':`@${escapeHtml(state.me.username)}`}</small></span></button>
           ${legalLinks()}
         </div>
       </aside>
@@ -873,8 +875,8 @@ function layout() {
       ${navButton('feed','⌂','Inicio')}
       ${navButton('reels','▶','Reels')}
       ${navButton('discover','✦','Descubrir')}
-      ${navButton('messages','✉','Mensajes')}
-      <button class="nav-item ${state.view === 'profile' ? 'active' : ''}" onclick="openProfile('${escapeAttr(state.me.username)}')"><span class="nav-icon">◎</span><span>Perfil</span></button>
+      ${isSystemAccount()?navButton('search','⌕','Buscar'):navButton('messages','✉','Mensajes')}
+      ${isSystemAccount()?navButton('admin','⚙','Admin'):`<button class="nav-item ${state.view === 'profile' ? 'active' : ''}" onclick="openProfile('${escapeAttr(state.me.username)}')"><span class="nav-icon">◎</span><span>Perfil</span></button>`}
     </nav>`;
   loadRightbar();
 }
@@ -888,6 +890,7 @@ window.logout = () => {
 window.go = async (view, opts = {}) => {
   if (state.messagePoll) { clearInterval(state.messagePoll); state.messagePoll = null; }
   resetViewObservers();
+  if (isSystemAccount() && ['profile','friends','messages','notifications','bookmarks'].includes(view)) view='admin';
   state.view = view;
   if (view !== 'profile') {
     document.title = 'Instant Admirers — Conecta. Comparte. Descubre.';
@@ -1047,6 +1050,7 @@ function resetViewObservers() {
 
 
 function composer() {
+  if (isSystemAccount()) return '';
   return `<section class="card composer-compact" id="composer">
     ${avatar(state.me)}
     <button class="composer-trigger" onclick="openComposerModal()">¿Qué quieres compartir?</button>
@@ -1274,9 +1278,9 @@ async function renderFeed() {
   const rows = page.items;
   const empty = mode === 'for-you'
     ? `<div class="card empty feed-empty"><div class="empty-icon">✦</div><h3>Estamos preparando tu Para ti</h3><p>Interactúa con publicaciones, sigue perfiles o añade intereses para afinarlo.</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button><button class="btn ghost compact" onclick="editProfile()">Mis intereses</button></div></div>`
-    : `<div class="card empty feed-empty"><div class="empty-icon">⌂</div><h3>Tu feed está empezando</h3><p>Sigue personas desde Descubrir o crea tu primera publicación.</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button><button class="btn ghost compact" onclick="openComposerModal()">Publicar</button></div></div>`;
-  const warmStart = rows.length < 6 ? communityPromptCard(community) : '';
-  $('#main').innerHTML = `<div class="feed-start">${activationChecklistHtml(activation)}${communityPulseHtml(community)}${storyStrip(stories)}${composer()}${feedTabs()}${personalizeHint()}${warmStart}</div><div class="post-list" id="feedPostList">${rows.length ? rows.map(postHtml).join('') : empty}</div>${pagerHtml('feed', page.has_more)}`;
+    : `<div class="card empty feed-empty"><div class="empty-icon">⌂</div><h3>Tu feed está empezando</h3><p>${isSystemAccount()?'No hay publicaciones visibles en este momento.':'Sigue personas desde Descubrir o crea tu primera publicación.'}</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button>${isSystemAccount()?'':`<button class="btn ghost compact" onclick="openComposerModal()">Publicar</button>`}</div></div>`;
+  const warmStart = !isSystemAccount() && rows.length < 6 ? communityPromptCard(community) : '';
+  $('#main').innerHTML = `<div class="feed-start">${isSystemAccount()?'':activationChecklistHtml(activation)}${communityPulseHtml(community)}${storyStrip(stories)}${composer()}${feedTabs()}${personalizeHint()}${warmStart}</div><div class="post-list" id="feedPostList">${rows.length ? rows.map(postHtml).join('') : empty}</div>${pagerHtml('feed', page.has_more)}`;
   setupLazyMedia($('#main'));
   void mountFeedAd();
   installInfinitePager('feed', page, async pager => {
@@ -1293,6 +1297,7 @@ async function renderFeed() {
 
 
 function followButtonHtml(u, klass = 'btn primary compact') {
+  if (isSystemAccount()) return '';
   if (u.following) return `<button class="btn ghost compact follow-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Siguiendo</button>`;
   if (u.follow_requested) return `<button class="btn ghost compact follow-btn requested" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Solicitud enviada</button>`;
   const label = u.account_private ? 'Solicitar seguir' : 'Seguir';
@@ -1448,7 +1453,7 @@ function userRow(u) {
   return `<div class="user-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u)}<span><b>${escapeHtml(u.name)}${u.account_private ? ' <i class="private-mini">🔒</i>' : ''}</b><small>@${escapeHtml(u.username)}</small>${summary ? `<em>${escapeHtml(summary).slice(0,90)}</em>` : ''}</span></button>${followButtonHtml(u)}</div>`;
 }
 
-window.openProfile = async (username, opts = {}) => { if (state.messagePoll) { clearInterval(state.messagePoll); state.messagePoll = null; } resetViewObservers(); state.view = 'profile'; state.profile = username; if (opts.history !== false) setProfileBrowserUrl(username, { replace:Boolean(opts.replace) }); layout(); await renderProfile(username); };
+window.openProfile = async (username, opts = {}) => { if (isSystemAccount() && String(username||'').toLowerCase()===String(state.me?.username||'').toLowerCase()) return go('admin',opts); if (state.messagePoll) { clearInterval(state.messagePoll); state.messagePoll = null; } resetViewObservers(); state.view = 'profile'; state.profile = username; if (opts.history !== false) setProfileBrowserUrl(username, { replace:Boolean(opts.replace) }); layout(); await renderProfile(username); };
 
 async function renderProfile(username) {
   resetLazyMediaObserver();
@@ -1470,7 +1475,7 @@ async function renderProfile(username) {
   } else if (u.blocked_by_me) {
     actions = `<button class="btn primary compact" onclick="toggleBlock(${u.id},'${escapeAttr(u.username)}')">Desbloquear</button>`;
   } else {
-    actions = `${u.can_message?`<button class="btn ghost compact" onclick="startMessage(${u.id})">Mensaje</button>`:''}${friendButton(u)}${followButtonHtml(u)}<button class="icon-btn profile-more" title="Más opciones" onclick="openProfileMenu(${u.id},'${escapeAttr(u.username)}',${u.muted?'true':'false'})">•••</button>`;
+    actions = isSystemAccount() ? '' : `${u.can_message?`<button class="btn ghost compact" onclick="startMessage(${u.id})">Mensaje</button>`:''}${friendButton(u)}${followButtonHtml(u)}<button class="icon-btn profile-more" title="Más opciones" onclick="openProfileMenu(${u.id},'${escapeAttr(u.username)}',${u.muted?'true':'false'})">•••</button>`;
   }
   $('#main').innerHTML = `<section class="card profile-card profile-card-v7">
     <div class="profile-cover ${u.cover ? 'has-cover' : ''}">${u.cover ? `<img src="${escapeAttr(u.cover)}" decoding="async" alt="">` : ''}</div>
@@ -1518,7 +1523,7 @@ window.openProfileMenu = (userId, username, muted = false) => {
 
 
 function friendButton(u) {
-  if (!u || u.own) return '';
+  if (isSystemAccount() || !u || u.own) return '';
   if (u.friendship_status === 'friends') return `<button class="btn ghost compact friendship-btn" onclick="removeFriend(${u.id},'${escapeAttr(u.username)}')">✓ Amigos</button>`;
   if (u.friendship_status === 'sent') return `<button class="btn ghost compact friendship-btn" onclick="sendFriendRequest(${u.id},'${escapeAttr(u.username)}')">Solicitud enviada</button>`;
   if (u.friendship_status === 'received') return `<button class="btn primary compact friendship-btn" onclick="acceptFriendRequest(${Number(u.friend_request_id)},'${escapeAttr(u.username)}')">Aceptar amistad</button>`;
@@ -1997,7 +2002,7 @@ function notificationHtml(n) {
 
 function layoutNavOnly() {
   const desktop = $('#desktopNav');
-  if (desktop) desktop.innerHTML = `${navButton('feed','⌂','Inicio')}${navButton('reels','▶','Reels')}${navButton('discover','✦','Descubrir')}${navButton('search','⌕','Buscar')}${navButton('messages','✉','Mensajes')}${navButton('notifications','♡','Actividad')}${navButton('bookmarks','▱','Guardados')}${state.me?.is_admin ? navButton('admin','⚙','Administración') : ''}<button class="nav-item ${state.view === 'profile' ? 'active' : ''}" onclick="openProfile('${escapeAttr(state.me.username)}')"><span class="nav-icon">◎</span><span>Perfil</span></button>`;
+  if (desktop) desktop.innerHTML = `${navButton('feed','⌂','Inicio')}${navButton('reels','▶','Reels')}${navButton('discover','✦','Descubrir')}${navButton('search','⌕','Buscar')}${!isSystemAccount()?navButton('messages','✉','Mensajes'):''}${!isSystemAccount()?navButton('notifications','♡','Actividad'):''}${!isSystemAccount()?navButton('bookmarks','▱','Guardados'):''}${state.me?.is_admin ? navButton('admin','⚙','Administración') : ''}${!isSystemAccount()?`<button class="nav-item ${state.view === 'profile' ? 'active' : ''}" onclick="openProfile('${escapeAttr(state.me.username)}')"><span class="nav-icon">◎</span><span>Perfil</span></button>`:''}`;
 }
 
 async function loadRightbar() {
@@ -2013,8 +2018,11 @@ async function loadRightbar() {
       state.rightbarCache = { at:Date.now(), suggestions, tags };
     }
     if (!box.isConnected) return;
-    box.innerHTML = `<div class="card side-card"><div class="side-title">Tu perfil</div><button class="profile-summary" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me)}<span><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></span></button><div class="mini-stats"><button type="button" class="mini-stat-btn" onclick="openProfile('${escapeAttr(state.me.username)}')" title="Ver tus publicaciones"><b>${state.me.posts_count || 0}</b><span>posts</span></button><button type="button" class="mini-stat-btn social" onclick="openFollowList('${escapeAttr(state.me.username)}','followers')" title="Ver seguidores" aria-label="Ver seguidores"><b>${state.me.followers_count || 0}</b><span>seguidores ↗</span></button><button type="button" class="mini-stat-btn social" onclick="openFollowList('${escapeAttr(state.me.username)}','following')" title="Ver a quién sigues" aria-label="Ver a quién sigues"><b>${state.me.following_count || 0}</b><span>siguiendo ↗</span></button></div></div>
-      <div class="card side-card"><div class="side-title">Personas para ti</div>${suggestions.length ? suggestions.map(u => `<div class="side-user suggested-side-user"><button onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small><em>✦ ${escapeHtml(u.recommendation_reason || 'Sugerido')}</em></span></button>${u.follow_requested?`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Solicitada</button>`:`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.account_private?'Solicitar':'Seguir'}</button>`}</div>`).join('') : '<p class="muted">Sigue interactuando y aparecerán sugerencias.</p>'}</div>
+    const accountCard=isSystemAccount()
+      ? `<div class="card side-card"><div class="side-title">Cuenta técnica</div><div class="profile-summary">${avatar(state.me)}<span><b>${escapeHtml(state.me.name)}</b><small>Administración · fuera de la red social</small></span></div><div class="system-account-actions"><button class="btn primary compact" onclick="go('admin')">Administración</button><button class="btn ghost compact" onclick="openAccountSettings()">Ajustes</button></div></div>`
+      : `<div class="card side-card"><div class="side-title">Tu perfil</div><button class="profile-summary" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me)}<span><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></span></button><div class="mini-stats"><button type="button" class="mini-stat-btn" onclick="openProfile('${escapeAttr(state.me.username)}')" title="Ver tus publicaciones"><b>${state.me.posts_count || 0}</b><span>posts</span></button><button type="button" class="mini-stat-btn social" onclick="openFollowList('${escapeAttr(state.me.username)}','followers')" title="Ver seguidores" aria-label="Ver seguidores"><b>${state.me.followers_count || 0}</b><span>seguidores ↗</span></button><button type="button" class="mini-stat-btn social" onclick="openFollowList('${escapeAttr(state.me.username)}','following')" title="Ver a quién sigues" aria-label="Ver a quién sigues"><b>${state.me.following_count || 0}</b><span>siguiendo ↗</span></button></div></div>`;
+    box.innerHTML = `${accountCard}
+      <div class="card side-card"><div class="side-title">Personas para ti</div>${suggestions.length ? suggestions.map(u => `<div class="side-user suggested-side-user"><button onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small><em>✦ ${escapeHtml(u.recommendation_reason || 'Sugerido')}</em></span></button>${isSystemAccount()?'':(u.follow_requested?`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Solicitada</button>`:`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.account_private?'Solicitar':'Seguir'}</button>`)}</div>`).join('') : '<p class="muted">No hay sugerencias disponibles.</p>'}</div>
       <div id="rightbarTrends" class="card side-card"><div class="side-title">Tendencias · 7 días</div>${tags.length ? tags.map(t => `<button class="trend" onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} posts · ${t.authors || 1} personas · ${t.engagement || 0} interacciones</small></button>`).join('') : '<p class="muted">Los hashtags aparecerán aquí cuando se usen.</p>'}</div>
       <button class="logout-link" onclick="logout()">Cerrar sesión</button>`;
     void mountRightbarAd();
@@ -2752,7 +2760,7 @@ window.addAdTargetProfile=(id,encodedUsername,encodedName)=>{
 };
 window.searchAdTargetProfiles=async()=>{
   const q=String($('#adTargetSearch')?.value||'').trim();if(q.length<1)return;
-  try{const data=await api(`/api/admin/users?limit=15&q=${encodeURIComponent(q)}`);const results=$('#adTargetResults');if(!results)return;results.innerHTML=data.users.length?data.users.map(u=>`<button type="button" onclick="addAdTargetProfile(${Number(u.id)},'${safeEncode(u.username)}','${safeEncode(u.name||'')}')"><b>@${escapeHtml(u.username)}</b><span>${escapeHtml(u.name||'')}</span></button>`).join(''):'<small>No se encontraron perfiles.</small>';}catch(e){toast(e.message,'error');}
+  try{const data=await api(`/api/admin/users?limit=15&q=${encodeURIComponent(q)}`);const results=$('#adTargetResults');if(!results)return;const candidates=(data.users||[]).filter(u=>!u.is_admin&&!u.social_hidden);results.innerHTML=candidates.length?candidates.map(u=>`<button type="button" onclick="addAdTargetProfile(${Number(u.id)},'${safeEncode(u.username)}','${safeEncode(u.name||'')}')"><b>@${escapeHtml(u.username)}</b><span>${escapeHtml(u.name||'')}</span></button>`).join(''):'<small>No se encontraron perfiles sociales.</small>';}catch(e){toast(e.message,'error');}
 };
 async function uploadAdminAdImage(file){
   if(!file)return null;const fd=new FormData();fd.append('file',file);return api('/api/admin/ads/upload',{method:'POST',body:fd,timeout:MEDIA_UPLOAD_TIMEOUT_MS});

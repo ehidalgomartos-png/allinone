@@ -312,9 +312,13 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'us
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_role_check;
 ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('user','admin'));
 
+-- V1.10.1: cuentas técnicas fuera de la red social.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS social_hidden BOOLEAN NOT NULL DEFAULT FALSE;
+
 ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status VARCHAR(20) NOT NULL DEFAULT 'active';
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_account_status_check;
 ALTER TABLE users ADD CONSTRAINT users_account_status_check CHECK (account_status IN ('active','suspended'));
+CREATE INDEX IF NOT EXISTS idx_users_social_visibility ON users(social_hidden,account_status,id);
 
 -- TRUE por defecto conserva la experiencia de los usuarios existentes.
 -- Los nuevos registros se crean explícitamente con FALSE desde el servidor.

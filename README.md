@@ -1,7 +1,9 @@
-## Instant Admirers V1.10.0 — Sistema de Publicidad
+## Instant Admirers V1.10.1 — Administrador como cuenta técnica
 
-Versión basada exclusivamente en V1.9.4 — Personas.
+Versión basada exclusivamente en **V1.10.0 — Sistema de Publicidad**.
 
-Incluye administración de banners propios y Google AdSense, subida de imágenes desde ordenador mediante Cloudinary, imágenes por URL, enlaces de destino, ubicaciones PC/móvil, programación, estadísticas de banners propios y segmentación por perfiles concretos.
+La cuenta Administrador deja de formar parte de la red social: no aparece en Descubrir, búsquedas, sugerencias, seguidores, siguiendo, amistades, solicitudes, Stories, Reels, mensajes ni otras superficies sociales. Las acciones sociales de esa cuenta quedan desactivadas y la interfaz la identifica como **Cuenta técnica**.
 
-Consulta `README-V1.10.0.md` y `ACTUALIZAR-A-V1.10.0.md`.
+El sistema de publicidad de V1.10.0 se mantiene completo.
+
+Consulta `README-V1.10.1.md`, `CHANGELOG-V1.10.1.md` y `ACTUALIZAR-A-V1.10.1.md`.
