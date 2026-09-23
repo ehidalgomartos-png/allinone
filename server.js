@@ -163,7 +163,62 @@ async function growthCampaignBySlug(slug, client=pool, { activeOnly=true }={}) {
 
 function growthCampaignLink(row) {
   if(!row?.target_username || !row?.target_invite_code || !row?.slug) return '';
-  return `${APP_URL}/${encodeURIComponent(row.target_username)}?ref=${encodeURIComponent(row.target_invite_code)}&invite=profile&campaign=${encodeURIComponent(row.slug)}`;
+  const params=new URLSearchParams({
+    ref:String(row.target_invite_code),
+    invite:'profile',
+    campaign:String(row.slug),
+    utm_source:String(row.channel || 'other'),
+    utm_medium:['facebook','instagram','tiktok'].includes(String(row.channel||'').toLowerCase()) ? 'social' : (String(row.channel||'').toLowerCase()==='whatsapp' ? 'messaging' : (String(row.channel||'').toLowerCase()==='google' ? 'paid-search' : 'referral')),
+    utm_campaign:String(row.slug)
+  });
+  if(String(row.source_tag || '').trim()) params.set('utm_content',String(row.source_tag).trim().slice(0,160));
+  return `${APP_URL}/${encodeURIComponent(row.target_username)}?${params.toString()}`;
+}
+
+function compactTrackingValue(value='', max=160) {
+  return String(value || '').trim().replace(/[\r\n\t]+/g,' ').slice(0,max);
+}
+
+function trackingReferrerHost(value='') {
+  const raw=compactTrackingValue(value,500);
+  if(!raw) return '';
+  try { return String(new URL(raw).hostname || '').toLowerCase().replace(/^www\./,'').slice(0,255); }
+  catch (_) { return raw.toLowerCase().replace(/^www\./,'').split('/')[0].slice(0,255); }
+}
+
+function normalizedTrafficSource({utmSource='',referrerHost='',campaignChannel='other'}={}) {
+  const explicit=compactTrackingValue(utmSource,120).toLowerCase();
+  if(explicit) return explicit;
+  const host=compactTrackingValue(referrerHost,255).toLowerCase();
+  if(host){
+    let ownHost='';
+    try { ownHost=String(new URL(APP_URL).hostname || '').toLowerCase().replace(/^www\./,''); } catch (_) {}
+    if(ownHost && host===ownHost){
+      const channel=compactTrackingValue(campaignChannel,30).toLowerCase();
+      return channel && channel!=='other' ? channel : 'direct';
+    }
+    if(host.includes('facebook.com') || host.includes('fb.com')) return 'facebook';
+    if(host.includes('instagram.com')) return 'instagram';
+    if(host.includes('tiktok.com')) return 'tiktok';
+    if(host.includes('google.')) return 'google';
+    if(host.includes('bing.com')) return 'bing';
+    if(host.includes('youtube.com') || host.includes('youtu.be')) return 'youtube';
+    if(host.includes('twitter.com') || host.includes('x.com')) return 'x';
+    if(host.includes('linkedin.com')) return 'linkedin';
+    if(host.includes('reddit.com')) return 'reddit';
+    return host.slice(0,120);
+  }
+  const channel=compactTrackingValue(campaignChannel,30).toLowerCase();
+  return channel && channel!=='other' ? channel : 'direct';
+}
+
+function growthDeviceType(req, supplied='') {
+  const explicit=compactTrackingValue(supplied,20).toLowerCase();
+  if(['mobile','tablet','desktop'].includes(explicit)) return explicit;
+  const ua=String(req.get('user-agent') || '').toLowerCase();
+  if(/ipad|tablet|kindle|silk/.test(ua)) return 'tablet';
+  if(/mobi|android|iphone|ipod/.test(ua)) return 'mobile';
+  return ua ? 'desktop' : 'unknown';
 }
 
 async function incrementGrowthDaily(campaignId, field, client=pool) {
@@ -1054,7 +1109,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.12.3', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','authenticated-cloudinary-uploads','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth'] });
+  res.json({ ok: true, version: '1.12.4', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','authenticated-cloudinary-uploads','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -1115,12 +1170,26 @@ app.get('/api/community/bootstrap', auth, asyncRoute(async (req,res) => {
 }));
 
 
-// V1.9: visita anónima de campaña. Solo agrega una página vista; no guarda IP ni identificador de visitante.
+// V1.12.4: visita anónima de campaña con atribución de procedencia. No guarda IP.
 app.post('/api/growth/campaign/visit', asyncRoute(async (req,res) => {
   const campaign=await growthCampaignBySlug(req.body?.campaign || '');
   if(!campaign) return res.status(404).json({error:'Campaña no disponible'});
+  const referrerHost=trackingReferrerHost(req.body?.referrer || req.get('referer') || '');
+  const utmSource=compactTrackingValue(req.body?.utm_source,120).toLowerCase();
+  const utmMedium=compactTrackingValue(req.body?.utm_medium,120).toLowerCase();
+  const utmCampaign=compactTrackingValue(req.body?.utm_campaign,160).toLowerCase();
+  const utmContent=compactTrackingValue(req.body?.utm_content,160);
+  const visitorKey=compactTrackingValue(req.body?.visitor_key,80);
+  const landingPath=compactTrackingValue(req.body?.landing_path || `/${campaign.target_username}`,500);
+  const deviceType=growthDeviceType(req,req.body?.device_type || '');
+  const source=normalizedTrafficSource({utmSource,referrerHost,campaignChannel:campaign.channel});
+  const {rows}=await pool.query(`
+    INSERT INTO growth_campaign_visits(campaign_id,visitor_key,source,referrer_host,utm_source,utm_medium,utm_campaign,utm_content,device_type,landing_path)
+    VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    RETURNING id,visited_at
+  `,[campaign.id,visitorKey,source,referrerHost,utmSource,utmMedium,utmCampaign,utmContent,deviceType,landingPath]);
   await incrementGrowthDaily(campaign.id,'visits');
-  res.json({ok:true,campaign:{slug:campaign.slug,name:campaign.name,channel:campaign.channel,target_username:campaign.target_username}});
+  res.json({ok:true,visit_id:rows[0]?.id || null,source,campaign:{slug:campaign.slug,name:campaign.name,channel:campaign.channel,target_username:campaign.target_username}});
 }));
 
 const RESERVED_PROFILE_SLUGS = new Set([
@@ -1131,7 +1200,7 @@ const RESERVED_PROFILE_SLUGS = new Set([
 ]);
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
-  const { username, name, email, password, age_confirmed, terms_accepted, terms_version, referral_code, gate_code, campaign_code, language } = req.body;
+  const { username, name, email, password, age_confirmed, terms_accepted, terms_version, referral_code, gate_code, campaign_code, campaign_visit_id, campaign_context, language } = req.body;
   if (!username || !name || !email || !password) return res.status(400).json({ error: 'Faltan datos' });
   if (age_confirmed !== true) return res.status(400).json({ error: 'Debes confirmar que tienes 18 años o más' });
   if (terms_accepted !== true) return res.status(400).json({ error: 'Debes aceptar los Términos de Uso' });
@@ -1171,7 +1240,25 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
       const created = rows[0];
       if (normalizedCampaign) {
         const campaign=await growthCampaignBySlug(normalizedCampaign,client);
-        if(campaign) await client.query(`INSERT INTO growth_campaign_attributions(user_id,campaign_id) VALUES($1,$2) ON CONFLICT (user_id) DO NOTHING`,[created.id,campaign.id]);
+        if(campaign){
+          const visitId=Number(campaign_visit_id);
+          let visit=null;
+          if(Number.isInteger(visitId) && visitId>0){
+            const visitResult=await client.query(`SELECT id,source,utm_source,utm_medium,utm_content FROM growth_campaign_visits WHERE id=$1 AND campaign_id=$2 LIMIT 1`,[visitId,campaign.id]);
+            visit=visitResult.rows[0] || null;
+          }
+          const ctx=(campaign_context && typeof campaign_context==='object') ? campaign_context : {};
+          const ctxReferrer=trackingReferrerHost(ctx.referrer || '');
+          const ctxUtmSource=compactTrackingValue(ctx.utm_source,120).toLowerCase();
+          const ctxUtmMedium=compactTrackingValue(ctx.utm_medium,120).toLowerCase();
+          const ctxUtmContent=compactTrackingValue(ctx.utm_content,160);
+          const attributedSource=visit?.source || normalizedTrafficSource({utmSource:ctxUtmSource,referrerHost:ctxReferrer,campaignChannel:campaign.channel});
+          await client.query(`
+            INSERT INTO growth_campaign_attributions(user_id,campaign_id,visit_id,source,utm_source,utm_medium,utm_content)
+            VALUES($1,$2,$3,$4,$5,$6,$7)
+            ON CONFLICT (user_id) DO NOTHING
+          `,[created.id,campaign.id,visit?.id || null,attributedSource,visit?.utm_source || ctxUtmSource,visit?.utm_medium || ctxUtmMedium,visit?.utm_content || ctxUtmContent || campaign.source_tag || '']);
+        }
       }
       const ref = String(referral_code || '').trim().toLowerCase().slice(0,24);
       const gate = String(gate_code || '').trim().toLowerCase().slice(0,24);
@@ -2067,24 +2154,34 @@ app.get('/api/users', auth, asyncRoute(async (req, res) => {
   res.json(rows.map(r => ({ ...r, online: isOnline(r.id) })));
 }));
 
-// V1.2.9: resolución pública mínima de URLs /usuario. No expone email, bio ni datos privados.
+// V1.12.4: resolución pública mínima de URLs /usuario con mensaje específico de campaña.
 app.get('/api/public/profile/:username', asyncRoute(async (req, res) => {
   const username = String(req.params.username || '').trim().replace(/^@/, '');
   if (!/^[a-zA-Z0-9_.]{3,30}$/.test(username)) return res.status(404).json({ error:'Perfil no encontrado' });
   const { rows } = await pool.query(
-    `SELECT username, name, friend_gate_enabled, friend_gate_message
+    `SELECT id,username, name, friend_gate_enabled, friend_gate_message
        FROM users
       WHERE LOWER(username)=LOWER($1) AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE
       LIMIT 1`,
     [username]
   );
-  if (!rows[0]) return res.status(404).json({ error:'Perfil no encontrado' });
+  const target=rows[0];
+  if (!target) return res.status(404).json({ error:'Perfil no encontrado' });
+  let campaignMessage='';
+  const campaignSlug=normalizeCampaignSlug(req.query?.campaign || '');
+  if(campaignSlug){
+    const campaign=await growthCampaignBySlug(campaignSlug);
+    if(campaign && Number(campaign.target_user_id)===Number(target.id)) campaignMessage=String(campaign.access_message || '').trim().slice(0,220);
+  }
+  const profileMessage=String(target.friend_gate_message || '').trim().slice(0,220);
   res.json({
     exists:true,
-    username:rows[0].username,
-    name:rows[0].name,
-    friend_gate_enabled:Boolean(rows[0].friend_gate_enabled),
-    friend_gate_message:rows[0].friend_gate_enabled ? String(rows[0].friend_gate_message || '').slice(0,220) : ''
+    username:target.username,
+    name:target.name,
+    friend_gate_enabled:Boolean(target.friend_gate_enabled),
+    friend_gate_message:target.friend_gate_enabled ? profileMessage : '',
+    access_message:target.friend_gate_enabled ? (campaignMessage || profileMessage) : '',
+    access_message_source:campaignMessage ? 'campaign' : (profileMessage ? 'profile' : 'default')
   });
 }));
 
@@ -2116,7 +2213,15 @@ app.get('/api/users/:username', auth, asyncRoute(async (req, res) => {
   if (row.blocked_me && !row.own) return res.status(404).json({ error:'Perfil no disponible' });
   const canMessage = row.own ? false : await canMessageUser(req.user.id,row.id);
   const friendGate = (!row.own && row.friend_gate_enabled && row.friendship_status !== 'friends') ? await friendGateProgress(req.user.id,row.id) : null;
-  if(friendGate?.enabled && !friendGate.unlocked) await recordFriendGateSession(req.user.id,row.id,req.query?.campaign || '');
+  if(friendGate?.enabled && !friendGate.unlocked){
+    const gateCampaign=await recordFriendGateSession(req.user.id,row.id,req.query?.campaign || '');
+    if(gateCampaign && Number(gateCampaign.target_user_id)===Number(row.id) && String(gateCampaign.access_message || '').trim()){
+      friendGate.access_message=String(gateCampaign.access_message).trim().slice(0,220);
+      friendGate.access_message_source='campaign';
+    }else{
+      friendGate.access_message_source=String(friendGate.access_message || '').trim() ? 'profile' : 'default';
+    }
+  }
   const profileLocked = Boolean(friendGate?.enabled && !friendGate.unlocked && row.friendship_status !== 'friends' && !row.own);
 
   if (profileLocked) {
@@ -3361,7 +3466,7 @@ app.patch('/api/admin/community-launch', auth, adminOnly, asyncRoute(async (req,
 }));
 
 
-// --- V1.9: Growth Engine --------------------------------------------------
+// --- V1.12.4: Growth Engine + atribución de procedencia -------------------
 app.get('/api/admin/growth-engine', auth, adminOnly, asyncRoute(async (_req,res) => {
   const {rows:campaignRows}=await pool.query(`
     SELECT gc.*,u.username AS target_username,u.name AS target_name,u.invite_code AS target_invite_code,
@@ -3380,7 +3485,36 @@ app.get('/api/admin/growth-engine', auth, adminOnly, asyncRoute(async (_req,res)
         (SELECT COUNT(*)::int FROM growth_campaign_attributions gca JOIN referral_attributions ra ON ra.invited_user_id=gca.user_id WHERE gca.campaign_id=$1 AND ra.gate_user_id IS NOT NULL) AS referred_signups,
         (SELECT COUNT(*)::int FROM friend_gate_sessions WHERE campaign_id=$1 AND completed_at IS NOT NULL) AS completed
     `,[row.id]);
-    campaigns.push({...row,link:growthCampaignLink(row),metrics:mRows[0] || {}});
+    const {rows:sources}=await pool.query(`
+      SELECT v.source,COUNT(*)::int AS visits,
+        COALESCE((SELECT COUNT(*)::int FROM growth_campaign_attributions a WHERE a.campaign_id=$1 AND LOWER(COALESCE(NULLIF(a.source,''),'direct'))=LOWER(v.source)),0) AS registrations
+      FROM growth_campaign_visits v WHERE v.campaign_id=$1
+      GROUP BY v.source ORDER BY visits DESC,v.source ASC LIMIT 12
+    `,[row.id]);
+    const {rows:referrers}=await pool.query(`
+      SELECT referrer_host,COUNT(*)::int AS visits
+      FROM growth_campaign_visits
+      WHERE campaign_id=$1 AND referrer_host<>''
+      GROUP BY referrer_host ORDER BY visits DESC,referrer_host ASC LIMIT 8
+    `,[row.id]);
+    const {rows:devices}=await pool.query(`
+      SELECT device_type,COUNT(*)::int AS visits
+      FROM growth_campaign_visits WHERE campaign_id=$1
+      GROUP BY device_type ORDER BY visits DESC
+    `,[row.id]);
+    const {rows:recentVisits}=await pool.query(`
+      SELECT source,referrer_host,utm_source,utm_medium,utm_content,device_type,landing_path,visited_at
+      FROM growth_campaign_visits WHERE campaign_id=$1
+      ORDER BY visited_at DESC LIMIT 8
+    `,[row.id]);
+    const totalVisits=Number(mRows[0]?.visits || 0);
+    const totalRegistrations=Number(mRows[0]?.registrations || 0);
+    const detailedVisits=sources.reduce((sum,item)=>sum+Number(item.visits||0),0);
+    const detailedRegistrations=sources.reduce((sum,item)=>sum+Number(item.registrations||0),0);
+    if(totalVisits>detailedVisits || totalRegistrations>detailedRegistrations){
+      sources.push({source:'histórico sin origen',visits:Math.max(0,totalVisits-detailedVisits),registrations:Math.max(0,totalRegistrations-detailedRegistrations),legacy:true});
+    }
+    campaigns.push({...row,link:growthCampaignLink(row),metrics:mRows[0] || {},sources,referrers,devices,recent_visits:recentVisits});
   }
   const {rows:profiles}=await pool.query(`
     SELECT u.id,u.username,u.name,u.friend_gate_required_referrals AS required,u.friend_gate_require_post AS require_post,
@@ -3392,15 +3526,17 @@ app.get('/api/admin/growth-engine', auth, adminOnly, asyncRoute(async (_req,res)
     WHERE u.friend_gate_enabled=TRUE AND u.account_status='active' AND COALESCE(u.is_demo,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE
     ORDER BY challenge_starts DESC,u.created_at ASC LIMIT 30
   `);
-  res.json({campaigns,profiles,channels:['facebook','instagram','tiktok','whatsapp','other']});
+  res.json({campaigns,profiles,channels:['facebook','instagram','tiktok','whatsapp','google','email','other']});
 }));
 
 app.post('/api/admin/growth-campaigns', auth, adminOnly, asyncRoute(async (req,res) => {
   const name=String(req.body?.name || '').trim().slice(0,120);
   const channel=String(req.body?.channel || 'other').trim().toLowerCase();
   const username=String(req.body?.target_username || req.user.username || '').trim().replace(/^@/,'');
+  const accessMessage=String(req.body?.access_message || '').trim().slice(0,220);
+  const sourceTag=String(req.body?.source_tag || '').trim().slice(0,120);
   if(name.length<2) return res.status(400).json({error:'Escribe un nombre para la campaña'});
-  if(!['facebook','instagram','tiktok','whatsapp','other'].includes(channel)) return res.status(400).json({error:'Canal no válido'});
+  if(!['facebook','instagram','tiktok','whatsapp','google','email','other'].includes(channel)) return res.status(400).json({error:'Canal no válido'});
   const targetResult=await pool.query(`SELECT id,username,name,invite_code,friend_gate_enabled,friend_gate_required_referrals FROM users WHERE LOWER(username)=LOWER($1) AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE LIMIT 1`,[username]);
   const target=targetResult.rows[0];
   if(!target) return res.status(404).json({error:'Perfil destino no encontrado'});
@@ -3410,20 +3546,27 @@ app.post('/api/admin/growth-campaigns', auth, adminOnly, asyncRoute(async (req,r
     if(!exists.rowCount) break;
     slug=`${slugifyCampaign(`${name}-${channel}`).slice(0,43)}-${crypto.randomBytes(2).toString('hex')}`;
   }
-  const {rows}=await pool.query(`INSERT INTO growth_campaigns(created_by,target_user_id,name,slug,channel) VALUES($1,$2,$3,$4,$5) RETURNING *`,[req.user.id,target.id,name,slug,channel]);
+  const {rows}=await pool.query(`INSERT INTO growth_campaigns(created_by,target_user_id,name,slug,channel,access_message,source_tag) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,[req.user.id,target.id,name,slug,channel,accessMessage,sourceTag]);
   const row={...rows[0],target_username:target.username,target_name:target.name,target_invite_code:target.invite_code,target_gate_enabled:target.friend_gate_enabled,target_gate_required:target.friend_gate_required_referrals};
-  await pool.query(`INSERT INTO moderation_actions(admin_id,action,target_user_id,note) VALUES($1,'growth_campaign_create',$2,$3)`,[req.user.id,target.id,JSON.stringify({name,slug,channel}).slice(0,1000)]);
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,target_user_id,note) VALUES($1,'growth_campaign_create',$2,$3)`,[req.user.id,target.id,JSON.stringify({name,slug,channel,source_tag:sourceTag,has_access_message:Boolean(accessMessage)}).slice(0,1000)]);
   res.json({...row,link:growthCampaignLink(row)});
 }));
 
 app.patch('/api/admin/growth-campaigns/:id', auth, adminOnly, asyncRoute(async (req,res) => {
   const id=Number(req.params.id);
   if(!Number.isInteger(id)) return res.status(400).json({error:'Campaña inválida'});
-  const active=Boolean(req.body?.active);
-  const {rows}=await pool.query(`UPDATE growth_campaigns SET active=$2,updated_at=NOW() WHERE id=$1 RETURNING id,name,slug,active`,[id,active]);
-  if(!rows[0]) return res.status(404).json({error:'Campaña no encontrada'});
-  await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'growth_campaign_status',$2)`,[req.user.id,JSON.stringify({id,active}).slice(0,1000)]);
-  res.json(rows[0]);
+  const currentResult=await pool.query(`SELECT * FROM growth_campaigns WHERE id=$1 LIMIT 1`,[id]);
+  const current=currentResult.rows[0];
+  if(!current) return res.status(404).json({error:'Campaña no encontrada'});
+  const active=typeof req.body?.active==='boolean' ? Boolean(req.body.active) : Boolean(current.active);
+  const accessMessage=req.body?.access_message===undefined ? String(current.access_message || '') : String(req.body.access_message || '').trim().slice(0,220);
+  const sourceTag=req.body?.source_tag===undefined ? String(current.source_tag || '') : String(req.body.source_tag || '').trim().slice(0,120);
+  const {rows}=await pool.query(`UPDATE growth_campaigns SET active=$2,access_message=$3,source_tag=$4,updated_at=NOW() WHERE id=$1 RETURNING *`,[id,active,accessMessage,sourceTag]);
+  const targetResult=await pool.query(`SELECT username,name,invite_code,friend_gate_enabled,friend_gate_required_referrals FROM users WHERE id=$1 LIMIT 1`,[rows[0].target_user_id]);
+  const target=targetResult.rows[0] || {};
+  const row={...rows[0],target_username:target.username,target_name:target.name,target_invite_code:target.invite_code,target_gate_enabled:target.friend_gate_enabled,target_gate_required:target.friend_gate_required_referrals};
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'growth_campaign_update',$2)`,[req.user.id,JSON.stringify({id,active,source_tag:sourceTag,has_access_message:Boolean(accessMessage)}).slice(0,1000)]);
+  res.json({...row,link:growthCampaignLink(row)});
 }));
 
 
@@ -3758,7 +3901,7 @@ async function hardenLegacyCloudinaryMedia() {
     ORDER BY id ASC
   `);
   if (!rows.length) return;
-  console.log(`Protección multimedia V1.12.3: reforzando ${rows.length} recurso(s) heredado(s)...`);
+  console.log(`Protección multimedia V1.12.4: reforzando ${rows.length} recurso(s) heredado(s)...`);
   let ok = 0;
   let failed = 0;
   for (const item of rows) {
@@ -3781,7 +3924,7 @@ async function hardenLegacyCloudinaryMedia() {
       console.error(`Protección multimedia: no se pudo reforzar media #${item.id}:`, err.message);
     }
   }
-  console.log(`Protección multimedia V1.12.3: ${ok} reforzado(s), ${failed} pendiente(s).`);
+  console.log(`Protección multimedia V1.12.4: ${ok} reforzado(s), ${failed} pendiente(s).`);
 }
 
 async function start() {
@@ -3789,7 +3932,7 @@ async function start() {
   await syncSystemAccounts();
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Instant Admirers V1.12.3 en http://localhost:${PORT}`);
+    console.log(`Instant Admirers V1.12.4 en http://localhost:${PORT}`);
     void hardenLegacyCloudinaryMedia().catch(err => console.error('Protección multimedia heredada:', err.message));
   });
 }

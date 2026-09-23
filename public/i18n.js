@@ -1,4 +1,4 @@
-// Instant Admirers V1.12.3 · Español / English
+// Instant Admirers V1.12.4 · Español / English
 (() => {
   const STORAGE_KEY = 'iaLanguage';
   const SUPPORTED = new Set(['es','en']);
@@ -20,7 +20,31 @@
     'Explica brevemente por qué has protegido tu perfil o qué encontrará quien consiga entrar.':'Briefly explain why you protected your profile or what someone will find after gaining access.',
     'Aquí comparto cosas más personales. Si quieres verlas, desbloquea mi perfil 💜':'I share more personal things here. If you want to see them, unlock my profile 💜',
     'Guardar condición':'Save access settings',
-    'Mensaje de':'Message from'
+    'Mensaje de':'Message from',
+    'Growth Engine':'Growth Engine',
+    'Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.':'Measurable campaigns to turn external audiences into sign-ups and know exactly where visits come from.',
+    'Pieza / origen':'Creative / source',
+    'Mensaje de acceso':'Access message',
+    'Este texto aparecerá en Entrar y Crear cuenta cuando la visita llegue desde esta campaña.':'This text will appear on Log in and Create account when the visit comes from this campaign.',
+    'Crear campaña':'Create campaign',
+    'El enlace generado añade UTM automáticamente. Instant Admirers registra la fuente, el referrer disponible y el dispositivo sin guardar la IP del visitante.':'The generated link adds UTM parameters automatically. Instant Admirers records the source, available referrer and device without storing the visitor IP.',
+    'Ver procedencia de las visitas':'View visit sources',
+    'FUENTES Y CONVERSIÓN':'SOURCES AND CONVERSION',
+    'Fuente':'Source',
+    'Visitas':'Visits',
+    'Registros':'Sign-ups',
+    'Conv.':'Conv.',
+    'REFERRER DETECTADO':'DETECTED REFERRER',
+    'DISPOSITIVOS':'DEVICES',
+    'ÚLTIMAS VISITAS':'LATEST VISITS',
+    'Editar mensaje y origen':'Edit message and source',
+    'Guardar cambios':'Save changes',
+    'Usará el mensaje general del perfil.':'The profile default message will be used.',
+    'Aún no hay visitas atribuidas.':'No attributed visits yet.',
+    'Sin referrer externo detectado':'No external referrer detected',
+    'Sin visitas recientes.':'No recent visits.',
+    'histórico sin origen':'historical without source',
+    'Campaña actualizada':'Campaign updated'
   });
   const EN_ES = Object.fromEntries(Object.entries(ES_EN).map(([es,en]) => [en,es]));
   const normalized = obj => {

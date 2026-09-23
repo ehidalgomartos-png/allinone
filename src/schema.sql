@@ -627,3 +627,32 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS content_watermark_mode VARCHAR(20) NO
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_content_watermark_mode_check;
 ALTER TABLE users ADD CONSTRAINT users_content_watermark_mode_check
   CHECK (content_watermark_mode IN ('off','exclusive','all'));
+
+-- V1.12.4: atribución detallada del Growth Engine y mensaje por campaña.
+ALTER TABLE growth_campaigns ADD COLUMN IF NOT EXISTS access_message VARCHAR(220) NOT NULL DEFAULT '';
+ALTER TABLE growth_campaigns ADD COLUMN IF NOT EXISTS source_tag VARCHAR(120) NOT NULL DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS growth_campaign_visits (
+  id BIGSERIAL PRIMARY KEY,
+  campaign_id BIGINT NOT NULL REFERENCES growth_campaigns(id) ON DELETE CASCADE,
+  visitor_key VARCHAR(80) NOT NULL DEFAULT '',
+  source VARCHAR(120) NOT NULL DEFAULT '',
+  referrer_host VARCHAR(255) NOT NULL DEFAULT '',
+  utm_source VARCHAR(120) NOT NULL DEFAULT '',
+  utm_medium VARCHAR(120) NOT NULL DEFAULT '',
+  utm_campaign VARCHAR(160) NOT NULL DEFAULT '',
+  utm_content VARCHAR(160) NOT NULL DEFAULT '',
+  device_type VARCHAR(20) NOT NULL DEFAULT 'unknown',
+  landing_path VARCHAR(500) NOT NULL DEFAULT '',
+  visited_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_growth_visits_campaign_time ON growth_campaign_visits(campaign_id, visited_at DESC);
+CREATE INDEX IF NOT EXISTS idx_growth_visits_campaign_source ON growth_campaign_visits(campaign_id, source, visited_at DESC);
+CREATE INDEX IF NOT EXISTS idx_growth_visits_referrer ON growth_campaign_visits(campaign_id, referrer_host, visited_at DESC);
+
+ALTER TABLE growth_campaign_attributions ADD COLUMN IF NOT EXISTS visit_id BIGINT REFERENCES growth_campaign_visits(id) ON DELETE SET NULL;
+ALTER TABLE growth_campaign_attributions ADD COLUMN IF NOT EXISTS source VARCHAR(120) NOT NULL DEFAULT '';
+ALTER TABLE growth_campaign_attributions ADD COLUMN IF NOT EXISTS utm_source VARCHAR(120) NOT NULL DEFAULT '';
+ALTER TABLE growth_campaign_attributions ADD COLUMN IF NOT EXISTS utm_medium VARCHAR(120) NOT NULL DEFAULT '';
+ALTER TABLE growth_campaign_attributions ADD COLUMN IF NOT EXISTS utm_content VARCHAR(160) NOT NULL DEFAULT '';
+CREATE INDEX IF NOT EXISTS idx_growth_attributions_source ON growth_campaign_attributions(campaign_id, source, registered_at DESC);
