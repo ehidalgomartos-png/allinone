@@ -765,6 +765,16 @@ async function enrichReposts(userId, posts = []) {
     SELECT p.id,p.user_id,p.text,p.media_id,p.media_type,p.visibility,p.created_at,p.edited_at,
            u.username,u.name,u.avatar,m.provider AS media_provider,m.secure_url AS media_secure_url,m.resource_type AS media_resource_type,
            (u.account_status='active' AND COALESCE(u.social_hidden,FALSE)=FALSE AND (p.user_id=$1 OR (NOT u.account_private) OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
+            AND (
+              p.user_id=$1 OR NOT u.friend_gate_enabled OR
+              EXISTS(SELECT 1 FROM friendships ergfr WHERE (ergfr.user1_id=$1 AND ergfr.user2_id=p.user_id) OR (ergfr.user1_id=p.user_id AND ergfr.user2_id=$1)) OR
+              (
+                CASE WHEN u.friend_gate_require_post
+                  THEN (SELECT COUNT(*) FROM referral_attributions erra WHERE erra.inviter_id=$1 AND erra.gate_user_id=p.user_id AND erra.qualified_at IS NOT NULL)
+                  ELSE (SELECT COUNT(*) FROM referral_attributions erra WHERE erra.inviter_id=$1 AND erra.gate_user_id=p.user_id)
+                END
+              ) >= u.friend_gate_required_referrals
+            )
             AND (p.visibility='public' OR p.user_id=$1 OR
              (p.visibility='followers' AND EXISTS(
                SELECT 1 FROM follows f WHERE f.follower_id=$1 AND f.followed_id=p.user_id
@@ -974,7 +984,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.11.0', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy'] });
+  res.json({ ok: true, version: '1.11.1', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -1443,6 +1453,16 @@ app.get('/api/for-you', auth, asyncRoute(async (req, res) => {
         AND COALESCE(u.social_hidden,FALSE)=FALSE
         AND (p.visibility = 'public' OR p.user_id = $1)
         AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
+        AND (
+          p.user_id=$1 OR NOT u.friend_gate_enabled OR
+          EXISTS(SELECT 1 FROM friendships fygfr WHERE (fygfr.user1_id=$1 AND fygfr.user2_id=p.user_id) OR (fygfr.user1_id=p.user_id AND fygfr.user2_id=$1)) OR
+          (
+            CASE WHEN u.friend_gate_require_post
+              THEN (SELECT COUNT(*) FROM referral_attributions fyra WHERE fyra.inviter_id=$1 AND fyra.gate_user_id=p.user_id AND fyra.qualified_at IS NOT NULL)
+              ELSE (SELECT COUNT(*) FROM referral_attributions fyra WHERE fyra.inviter_id=$1 AND fyra.gate_user_id=p.user_id)
+            END
+          ) >= u.friend_gate_required_referrals
+        )
         AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
         AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)
       ORDER BY p.id DESC
@@ -1571,6 +1591,16 @@ app.get('/api/discover', auth, asyncRoute(async (req, res) => {
         AND COALESCE(u.social_hidden,FALSE)=FALSE
         AND (p.visibility = 'public' OR p.user_id = $1)
         AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
+        AND (
+          p.user_id=$1 OR NOT u.friend_gate_enabled OR
+          EXISTS(SELECT 1 FROM friendships dcgfr WHERE (dcgfr.user1_id=$1 AND dcgfr.user2_id=p.user_id) OR (dcgfr.user1_id=p.user_id AND dcgfr.user2_id=$1)) OR
+          (
+            CASE WHEN u.friend_gate_require_post
+              THEN (SELECT COUNT(*) FROM referral_attributions dcra WHERE dcra.inviter_id=$1 AND dcra.gate_user_id=p.user_id AND dcra.qualified_at IS NOT NULL)
+              ELSE (SELECT COUNT(*) FROM referral_attributions dcra WHERE dcra.inviter_id=$1 AND dcra.gate_user_id=p.user_id)
+            END
+          ) >= u.friend_gate_required_referrals
+        )
         AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
         AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)
       ORDER BY p.id DESC
@@ -1611,6 +1641,16 @@ app.get('/api/bookmarks', auth, asyncRoute(async (req, res) => {
         AND COALESCE(u.social_hidden,FALSE)=FALSE
         AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
         AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
+        AND (
+          p.user_id=$1 OR NOT u.friend_gate_enabled OR
+          EXISTS(SELECT 1 FROM friendships bkgfr WHERE (bkgfr.user1_id=$1 AND bkgfr.user2_id=p.user_id) OR (bkgfr.user1_id=p.user_id AND bkgfr.user2_id=$1)) OR
+          (
+            CASE WHEN u.friend_gate_require_post
+              THEN (SELECT COUNT(*) FROM referral_attributions bkra WHERE bkra.inviter_id=$1 AND bkra.gate_user_id=p.user_id AND bkra.qualified_at IS NOT NULL)
+              ELSE (SELECT COUNT(*) FROM referral_attributions bkra WHERE bkra.inviter_id=$1 AND bkra.gate_user_id=p.user_id)
+            END
+          ) >= u.friend_gate_required_referrals
+        )
       ORDER BY bk.created_at DESC
       LIMIT $2 OFFSET $3
     )
@@ -2225,6 +2265,16 @@ app.get('/api/trending', auth, asyncRoute(async (req, res) => {
       WHERE p.created_at > NOW() - INTERVAL '7 days' AND p.visibility = 'public'
         AND COALESCE(u.social_hidden,FALSE)=FALSE
         AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
+        AND (
+          p.user_id=$1 OR NOT u.friend_gate_enabled OR
+          EXISTS(SELECT 1 FROM friendships trgfr WHERE (trgfr.user1_id=$1 AND trgfr.user2_id=p.user_id) OR (trgfr.user1_id=p.user_id AND trgfr.user2_id=$1)) OR
+          (
+            CASE WHEN u.friend_gate_require_post
+              THEN (SELECT COUNT(*) FROM referral_attributions trra WHERE trra.inviter_id=$1 AND trra.gate_user_id=p.user_id AND trra.qualified_at IS NOT NULL)
+              ELSE (SELECT COUNT(*) FROM referral_attributions trra WHERE trra.inviter_id=$1 AND trra.gate_user_id=p.user_id)
+            END
+          ) >= u.friend_gate_required_referrals
+        )
         AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=p.user_id) OR (bl.blocker_id=p.user_id AND bl.blocked_id=$1))
         AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id)
     ), engagement AS (
@@ -2519,24 +2569,64 @@ app.get('/api/conversations/:id/messages', auth, asyncRoute(async (req, res) => 
              CASE WHEN sp.id IS NOT NULL AND (
                COALESCE(spu.social_hidden,FALSE)=FALSE AND (sp.user_id=$2 OR NOT spu.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$2 AND pf.followed_id=sp.user_id))
                AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$2 AND bl.blocked_id=sp.user_id) OR (bl.blocker_id=sp.user_id AND bl.blocked_id=$2))
+               AND (
+                 sp.user_id=$2 OR NOT spu.friend_gate_enabled OR
+                 EXISTS(SELECT 1 FROM friendships msgfr WHERE (msgfr.user1_id=$2 AND msgfr.user2_id=sp.user_id) OR (msgfr.user1_id=sp.user_id AND msgfr.user2_id=$2)) OR
+                 (
+                   CASE WHEN spu.friend_gate_require_post
+                     THEN (SELECT COUNT(*) FROM referral_attributions msra WHERE msra.inviter_id=$2 AND msra.gate_user_id=sp.user_id AND msra.qualified_at IS NOT NULL)
+                     ELSE (SELECT COUNT(*) FROM referral_attributions msra WHERE msra.inviter_id=$2 AND msra.gate_user_id=sp.user_id)
+                   END
+                 ) >= spu.friend_gate_required_referrals
+               )
                AND (sp.visibility='public' OR sp.user_id=$2 OR
                (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id)))
              ) THEN sp.id END AS shared_visible_id,
              CASE WHEN sp.id IS NOT NULL AND (
                COALESCE(spu.social_hidden,FALSE)=FALSE AND (sp.user_id=$2 OR NOT spu.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$2 AND pf.followed_id=sp.user_id))
                AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$2 AND bl.blocked_id=sp.user_id) OR (bl.blocker_id=sp.user_id AND bl.blocked_id=$2))
+               AND (
+                 sp.user_id=$2 OR NOT spu.friend_gate_enabled OR
+                 EXISTS(SELECT 1 FROM friendships msgfr WHERE (msgfr.user1_id=$2 AND msgfr.user2_id=sp.user_id) OR (msgfr.user1_id=sp.user_id AND msgfr.user2_id=$2)) OR
+                 (
+                   CASE WHEN spu.friend_gate_require_post
+                     THEN (SELECT COUNT(*) FROM referral_attributions msra WHERE msra.inviter_id=$2 AND msra.gate_user_id=sp.user_id AND msra.qualified_at IS NOT NULL)
+                     ELSE (SELECT COUNT(*) FROM referral_attributions msra WHERE msra.inviter_id=$2 AND msra.gate_user_id=sp.user_id)
+                   END
+                 ) >= spu.friend_gate_required_referrals
+               )
                AND (sp.visibility='public' OR sp.user_id=$2 OR
                (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id)))
              ) THEN sp.text ELSE NULL END AS shared_text,
              CASE WHEN sp.id IS NOT NULL AND (
                COALESCE(spu.social_hidden,FALSE)=FALSE AND (sp.user_id=$2 OR NOT spu.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$2 AND pf.followed_id=sp.user_id))
                AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$2 AND bl.blocked_id=sp.user_id) OR (bl.blocker_id=sp.user_id AND bl.blocked_id=$2))
+               AND (
+                 sp.user_id=$2 OR NOT spu.friend_gate_enabled OR
+                 EXISTS(SELECT 1 FROM friendships msgfr WHERE (msgfr.user1_id=$2 AND msgfr.user2_id=sp.user_id) OR (msgfr.user1_id=sp.user_id AND msgfr.user2_id=$2)) OR
+                 (
+                   CASE WHEN spu.friend_gate_require_post
+                     THEN (SELECT COUNT(*) FROM referral_attributions msra WHERE msra.inviter_id=$2 AND msra.gate_user_id=sp.user_id AND msra.qualified_at IS NOT NULL)
+                     ELSE (SELECT COUNT(*) FROM referral_attributions msra WHERE msra.inviter_id=$2 AND msra.gate_user_id=sp.user_id)
+                   END
+                 ) >= spu.friend_gate_required_referrals
+               )
                AND (sp.visibility='public' OR sp.user_id=$2 OR
                (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id)))
              ) THEN sp.media_id ELSE NULL END AS shared_media_id,
              CASE WHEN sp.id IS NOT NULL AND (
                COALESCE(spu.social_hidden,FALSE)=FALSE AND (sp.user_id=$2 OR NOT spu.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$2 AND pf.followed_id=sp.user_id))
                AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$2 AND bl.blocked_id=sp.user_id) OR (bl.blocker_id=sp.user_id AND bl.blocked_id=$2))
+               AND (
+                 sp.user_id=$2 OR NOT spu.friend_gate_enabled OR
+                 EXISTS(SELECT 1 FROM friendships msgfr WHERE (msgfr.user1_id=$2 AND msgfr.user2_id=sp.user_id) OR (msgfr.user1_id=sp.user_id AND msgfr.user2_id=$2)) OR
+                 (
+                   CASE WHEN spu.friend_gate_require_post
+                     THEN (SELECT COUNT(*) FROM referral_attributions msra WHERE msra.inviter_id=$2 AND msra.gate_user_id=sp.user_id AND msra.qualified_at IS NOT NULL)
+                     ELSE (SELECT COUNT(*) FROM referral_attributions msra WHERE msra.inviter_id=$2 AND msra.gate_user_id=sp.user_id)
+                   END
+                 ) >= spu.friend_gate_required_referrals
+               )
                AND (sp.visibility='public' OR sp.user_id=$2 OR
                (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id)))
              ) THEN sp.media_type ELSE NULL END AS shared_media_type,
@@ -3341,7 +3431,7 @@ async function start() {
   await initDb();
   await syncSystemAccounts();
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.11.0 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.11.1 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {

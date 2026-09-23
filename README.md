@@ -1,5 +1,5 @@
-## Instant Admirers V1.11.0 — Español / English
+## Instant Admirers V1.11.1 — Contenido protegido por acceso
 
-Base acumulativa sobre V1.10.4. Añade detección automática de idioma, selector manual ES/EN, preferencia guardada en la cuenta, interfaz bilingüe, páginas legales en inglés, emails de cuenta bilingües y copias publicitarias separadas para español e inglés.
+Versión actual de este paquete. Corrige la visibilidad de publicaciones pertenecientes a perfiles que todavía están bloqueados por el reto de invitaciones.
 
-Consulta `README-V1.11.0.md`, `CHANGELOG-V1.11.0.md` y `ACTUALIZAR-A-V1.11.0.md`.
+Consulta `README-V1.11.1.md`, `CHANGELOG-V1.11.1.md` y `ACTUALIZAR-A-V1.11.1.md`.

@@ -1,4 +1,4 @@
-// V1.11.0 · Español / English + Administrador como cuenta técnica del sistema
+// V1.11.1 · Contenido protegido por acceso + Español / English
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
