@@ -1,13 +1,14 @@
 {
   "name": "instant-admirers-community",
-  "version": "1.11.1",
-  "description": "Instant Admirers V1.11.1 - Contenido protegido por acceso",
+  "version": "1.12.0",
+  "description": "Instant Admirers V1.12.0 - Protección de contenido",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "check": "node --check server.js && node --check src/db.js && node --check public/app.js && node --check public/sw.js",
-    "migrate:media": "node scripts/migrate-media-to-cloudinary.js"
+    "check": "node --check server.js && node --check src/db.js && node --check src/mediaStorage.js && node --check public/app.js && node --check public/i18n.js && node --check public/sw.js && node --check scripts/migrate-media-to-cloudinary.js && node --check scripts/harden-cloudinary-media.js",
+    "migrate:media": "node scripts/migrate-media-to-cloudinary.js",
+    "harden:media": "node scripts/harden-cloudinary-media.js"
   },
   "engines": {
     "node": ">=20"

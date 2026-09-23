@@ -615,3 +615,13 @@ CREATE INDEX IF NOT EXISTS idx_ads_active_schedule ON ads(active, starts_at, end
 CREATE INDEX IF NOT EXISTS idx_ads_placements ON ads USING GIN(placements);
 CREATE INDEX IF NOT EXISTS idx_ad_profile_targets_user ON ad_profile_targets(user_id, ad_id);
 CREATE INDEX IF NOT EXISTS idx_ad_daily_stats_day ON ad_daily_stats(day DESC, ad_id);
+
+-- V1.12.0: protección de contenido multimedia.
+-- Las nuevas subidas de usuario pueden usar entrega autenticada en Cloudinary y
+-- la aplicación entrega posts/Stories/Reels/mensajes mediante URLs temporales.
+ALTER TABLE media ADD COLUMN IF NOT EXISTS delivery_type VARCHAR(30) NOT NULL DEFAULT 'upload';
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS content_watermark_mode VARCHAR(20) NOT NULL DEFAULT 'exclusive';
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_content_watermark_mode_check;
+ALTER TABLE users ADD CONSTRAINT users_content_watermark_mode_check
+  CHECK (content_watermark_mode IN ('off','exclusive','all'));

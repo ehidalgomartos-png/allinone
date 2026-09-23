@@ -6,13 +6,15 @@ function resourceTypeFromMime(mime='') {
   return String(mime).startsWith('video/') ? 'video' : 'image';
 }
 
-function uploadBuffer(buffer, { mimeType='', originalName='', userId }) {
+function uploadBuffer(buffer, { mimeType='', originalName='', userId, privateDelivery=false } = {}) {
   if (!configured()) throw new Error('Cloudinary no está configurado');
   const resourceType = resourceTypeFromMime(mimeType);
   const folder = `instant-admirers/${resourceType}s/user_${userId}`;
+  const deliveryType = privateDelivery ? 'authenticated' : 'upload';
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream({
       resource_type: resourceType,
+      type: deliveryType,
       folder,
       use_filename: false,
       unique_filename: true,
@@ -26,6 +28,7 @@ function uploadBuffer(buffer, { mimeType='', originalName='', userId }) {
         providerId: result.public_id,
         secureUrl: result.secure_url,
         resourceType: result.resource_type || resourceType,
+        deliveryType: result.type || deliveryType,
         width: Number.isFinite(result.width) ? result.width : null,
         height: Number.isFinite(result.height) ? result.height : null,
         durationSeconds: Number.isFinite(result.duration) ? result.duration : null,
@@ -37,11 +40,55 @@ function uploadBuffer(buffer, { mimeType='', originalName='', userId }) {
   });
 }
 
-async function destroyAsset({ provider, provider_id, resource_type }) {
+function deliveryUrl({ provider, provider_id, resource_type, delivery_type='upload', secure_url='', format='' } = {}) {
+  if (provider !== 'cloudinary' || !provider_id || !configured()) return String(secure_url || '');
+  const type = String(delivery_type || 'upload');
+  if (type === 'upload') return String(secure_url || cloudinary.url(provider_id, {
+    secure: true,
+    resource_type: resource_type === 'video' ? 'video' : 'image',
+    type: 'upload',
+    format: format || undefined
+  }));
+  return cloudinary.url(provider_id, {
+    secure: true,
+    sign_url: true,
+    resource_type: resource_type === 'video' ? 'video' : 'image',
+    type,
+    format: format || undefined
+  });
+}
+
+
+async function hardenAsset({ provider, provider_id, resource_type, delivery_type='upload' } = {}) {
+  if (provider !== 'cloudinary' || !provider_id || !configured()) return null;
+  const currentType = String(delivery_type || 'upload');
+  if (currentType === 'authenticated') return {
+    providerId: provider_id,
+    deliveryType: 'authenticated'
+  };
+  const resourceType = resource_type === 'video' ? 'video' : 'image';
+  const result = await cloudinary.uploader.rename(provider_id, provider_id, {
+    resource_type: resourceType,
+    type: currentType,
+    to_type: 'authenticated',
+    overwrite: false,
+    invalidate: true
+  });
+  return {
+    providerId: result.public_id || provider_id,
+    secureUrl: result.secure_url || '',
+    resourceType: result.resource_type || resourceType,
+    deliveryType: result.type || 'authenticated',
+    format: result.format || ''
+  };
+}
+
+async function destroyAsset({ provider, provider_id, resource_type, delivery_type='upload' }) {
   if (provider !== 'cloudinary' || !provider_id || !configured()) return false;
   try {
     await cloudinary.uploader.destroy(provider_id, {
       resource_type: resource_type === 'video' ? 'video' : 'image',
+      type: String(delivery_type || 'upload'),
       invalidate: true
     });
     return true;
@@ -51,4 +98,4 @@ async function destroyAsset({ provider, provider_id, resource_type }) {
   }
 }
 
-module.exports = { configured, uploadBuffer, destroyAsset, resourceTypeFromMime };
+module.exports = { configured, uploadBuffer, deliveryUrl, hardenAsset, destroyAsset, resourceTypeFromMime };

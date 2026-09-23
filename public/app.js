@@ -1,4 +1,4 @@
-// V1.11.1 · Contenido protegido por acceso + Español / English
+// V1.12.0 · Protección de contenido + Español / English
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -894,6 +894,7 @@ function layout() {
 window.logout = () => {
   if (state.messagePoll) { clearInterval(state.messagePoll); state.messagePoll = null; }
   if (state.socket) { state.socket.disconnect(); state.socket = null; }
+  try { fetch('/api/auth/logout',{method:'POST',keepalive:true}).catch(()=>{}); } catch (_) {}
   localStorage.removeItem('token'); state.token = ''; state.me = null; state.view = 'feed'; authScreen();
 };
 
@@ -1151,12 +1152,34 @@ window.createPost = async () => {
   }
 };
 
+
+function mediaProtectionAttrs(item, {video=false} = {}) {
+  if (!item?.media_protected) return '';
+  return video
+    ? ' data-protected-media="1" controlsList="nodownload noremoteplayback" disablePictureInPicture oncontextmenu="return false"'
+    : ' data-protected-media="1" draggable="false" oncontextmenu="return false"';
+}
+
+function mediaWatermarkHtml(item) {
+  if (!item?.watermarked) return '';
+  const username=state.me?.username ? `@${state.me.username}` : 'Instant Admirers';
+  const label=`${username} · instantadmirers.com`;
+  return `<span class="media-watermark watermark-a" aria-hidden="true">${escapeHtml(label)}</span><span class="media-watermark watermark-b" aria-hidden="true">${escapeHtml(label)}</span>`;
+}
+
+function protectedMediaFrame(item, mediaHtml, className='') {
+  if (!mediaHtml) return '';
+  if (!item?.media_protected && !item?.watermarked) return mediaHtml;
+  return `<div class="protected-media-frame ${escapeAttr(className)}" data-protected-media-frame="1">${mediaHtml}${mediaWatermarkHtml(item)}</div>`;
+}
+
 function repostEmbed(r) {
   if (!r) return '';
   if (r.unavailable) return `<div class="repost-embed unavailable">Esta publicación ya no está disponible.</div>`;
-  const media = r.media_url ? (r.media_type === 'video'
-    ? `<video class="repost-media" src="${escapeAttr(r.media_url)}" controls playsinline preload="none" data-lazy-video="1"></video>`
-    : `<img class="repost-media" src="${escapeAttr(r.media_url)}" loading="lazy" decoding="async" alt="">`) : '';
+  const rawMedia = r.media_url ? (r.media_type === 'video'
+    ? `<video class="repost-media" src="${escapeAttr(r.media_url)}" controls playsinline preload="none" data-lazy-video="1"${mediaProtectionAttrs(r,{video:true})}></video>`
+    : `<img class="repost-media" src="${escapeAttr(r.media_url)}" loading="lazy" decoding="async" alt=""${mediaProtectionAttrs(r)}>` ) : '';
+  const media = protectedMediaFrame(r,rawMedia,'repost-protected-media');
   return `<div class="repost-embed">
     <button class="repost-author" onclick="openProfile('${escapeAttr(r.username)}')">${avatar(r,'small')}<span><b>${escapeHtml(r.name)}</b><small>@${escapeHtml(r.username)} · ${timeAgo(r.created_at)}</small></span></button>
     ${r.text ? `<div class="repost-text">${formatText(r.text)}</div>` : ''}
@@ -1165,9 +1188,10 @@ function repostEmbed(r) {
 }
 
 function postHtml(p) {
-  const media = p.media_url ? (p.media_type === 'video'
-    ? `<video class="post-media" src="${escapeAttr(p.media_url)}" controls playsinline preload="none" data-lazy-video="1"></video>`
-    : `<img class="post-media" src="${escapeAttr(p.media_url)}" loading="lazy" decoding="async" alt="Publicación de ${escapeAttr(p.username)}">`) : '';
+  const rawMedia = p.media_url ? (p.media_type === 'video'
+    ? `<video class="post-media" src="${escapeAttr(p.media_url)}" controls playsinline preload="none" data-lazy-video="1"${mediaProtectionAttrs(p,{video:true})}></video>`
+    : `<img class="post-media" src="${escapeAttr(p.media_url)}" loading="lazy" decoding="async" alt="Publicación de ${escapeAttr(p.username)}"${mediaProtectionAttrs(p)}>` ) : '';
+  const media = protectedMediaFrame(p,rawMedia,'post-protected-media');
   const privacy = p.visibility === 'followers' ? ' · 👥' : '';
   const edited = p.edited_at ? ' · editado' : '';
   const encodedText = safeEncode(p.text || '');
@@ -1631,6 +1655,8 @@ window.openPrivacySettings = async () => {
       <div class="privacy-settings">
         <section class="privacy-section"><div><b>Cuenta privada</b><small>Solo los seguidores que apruebes podrán ver tus publicaciones y Stories.</small></div><label class="switch"><input id="privacyPrivate" type="checkbox" ${settings.account_private?'checked':''}><span></span></label></section>
         <label class="privacy-field"><span><b>Quién puede enviarte mensajes</b><small>Controla quién puede iniciar o continuar una conversación contigo.</small></span><select id="privacyMessages"><option value="everyone" ${settings.message_policy==='everyone'?'selected':''}>Todo el mundo</option><option value="followers" ${settings.message_policy==='followers'?'selected':''}>Personas que me siguen</option><option value="friends" ${settings.message_policy==='friends'?'selected':''}>Solo amigos</option><option value="nobody" ${settings.message_policy==='nobody'?'selected':''}>Nadie</option></select></label>
+        <label class="privacy-field"><span><b>Marca de agua en mi contenido</b><small>La entrega protegida siempre está activa. Elige cuándo añadir además la identificación del espectador sobre fotos y vídeos.</small></span><select id="privacyWatermark"><option value="exclusive" ${settings.content_watermark_mode==='exclusive'?'selected':''}>Solo en perfil exclusivo</option><option value="all" ${settings.content_watermark_mode==='all'?'selected':''}>En todo mi contenido</option><option value="off" ${settings.content_watermark_mode==='off'?'selected':''}>Sin marca visible</option></select></label>
+        <div class="security-callout"><b>Protección de contenido activa</b><p>Las publicaciones, Stories, Reels y archivos enviados por mensaje se sirven mediante enlaces temporales vinculados a la sesión. Las fotos no se pueden arrastrar y los reproductores ocultan la descarga directa.</p></div>
         <button class="btn primary" onclick="savePrivacySettings()">Guardar privacidad</button>
         <section class="privacy-list"><div class="section-row"><h3>Solicitudes para seguirte</h3><span>${requests.length}</span></div>${requests.length?requests.map(followRequestRow).join(''):'<p class="muted">No tienes solicitudes pendientes.</p>'}</section>
         <section class="privacy-list"><div class="section-row"><h3>Perfiles bloqueados</h3><span>${blocked.length}</span></div>${blocked.length?blocked.map(u=>privacyPersonRow(u,'block')).join(''):'<p class="muted">No has bloqueado a nadie.</p>'}</section>
@@ -1647,7 +1673,7 @@ function privacyPersonRow(u,type){
   return `<div class="privacy-person">${avatar(u,'small')}<button class="privacy-person-name" onclick="closeModal();openProfile('${escapeAttr(u.username)}')"><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small></button><button class="btn ghost compact" onclick="${action}">${type==='block'?'Desbloquear':'Mostrar'}</button></div>`;
 }
 window.savePrivacySettings = async () => {
-  try { await api('/api/privacy',{method:'PATCH',body:JSON.stringify({account_private:$('#privacyPrivate').checked,message_policy:$('#privacyMessages').value})}); await refreshMe(false); toast('Privacidad actualizada'); await openPrivacySettings(); }
+  try { await api('/api/privacy',{method:'PATCH',body:JSON.stringify({account_private:$('#privacyPrivate').checked,message_policy:$('#privacyMessages').value,content_watermark_mode:$('#privacyWatermark')?.value || 'exclusive'})}); await refreshMe(false); toast('Privacidad actualizada'); await openPrivacySettings(); }
   catch(e){toast(e.message,'error');}
 };
 window.acceptFollowRequest = async id => { try{await api(`/api/follow-requests/${id}/accept`,{method:'POST'});await refreshMe(false);toast('Solicitud aceptada');await openPrivacySettings();}catch(e){toast(e.message,'error');} };
@@ -2139,9 +2165,10 @@ async function showStory() {
   const viewer = state.storyViewer; if (!viewer) return;
   const s = viewer.items[viewer.index]; if (!s) return closeStoryViewer();
   if (!s.own) api(`/api/stories/${s.id}/view`, { method:'POST' }).catch(()=>{});
-  const media = s.media_type === 'video'
-    ? `<video id="storyMedia" class="story-media" src="${escapeAttr(s.media_url)}" autoplay playsinline controls></video>`
-    : `<img class="story-media" src="${escapeAttr(s.media_url)}" alt="Story">`;
+  const rawMedia = s.media_type === 'video'
+    ? `<video id="storyMedia" class="story-media" src="${escapeAttr(s.media_url)}" autoplay playsinline controls${mediaProtectionAttrs(s,{video:true})}></video>`
+    : `<img class="story-media" src="${escapeAttr(s.media_url)}" alt="Story"${mediaProtectionAttrs(s)}>`;
+  const media = protectedMediaFrame(s,rawMedia,'story-protected-media');
   $('#modal-root').innerHTML = `<div class="story-backdrop"><div class="story-viewer">
     <div class="story-progress">${viewer.items.map((_,i)=>`<span class="${i < viewer.index ? 'done' : i === viewer.index ? 'active' : ''}"><i></i></span>`).join('')}</div>
     <div class="story-head"><button class="person-link" onclick="closeStoryViewer();openProfile('${escapeAttr(s.username)}')">${avatar(s,'small')}<span><b>${escapeHtml(s.name)}</b><small>@${escapeHtml(s.username)} · ${timeAgo(s.created_at)}</small></span></button><button class="story-close" onclick="closeStoryViewer()">×</button></div>
@@ -2205,8 +2232,10 @@ async function renderReels() {
 }
 
 function reelHtml(p) {
+  const rawMedia=`<video class="reel-video" src="${escapeAttr(p.media_url)}" loop muted playsinline preload="none" data-reel-video="1" onclick="toggleReelSound(this)"${mediaProtectionAttrs(p,{video:true})}></video>`;
+  const media=protectedMediaFrame(p,rawMedia,'reel-protected-media');
   return `<article class="reel-card" data-reel="${p.id}">
-    <video class="reel-video" src="${escapeAttr(p.media_url)}" loop muted playsinline preload="none" data-reel-video="1" onclick="toggleReelSound(this)"></video>
+    ${media}
     <div class="reel-gradient"></div>
     <div class="reel-info"><button class="reel-user" onclick="openProfile('${escapeAttr(p.username)}')">${avatar(p,'small')}<span><b>${escapeHtml(p.name)}</b><small>@${escapeHtml(p.username)}</small></span></button>${p.text ? `<div class="reel-text">${formatText(p.text)}</div>` : ''}<div class="reel-hint">Toca el vídeo para activar/desactivar sonido</div></div>
     <div class="reel-actions"><button class="reel-action ${p.liked?'liked':''}" onclick="likePost(${p.id})"><span>${p.liked?'♥':'♡'}</span><b>${p.likes_count}</b></button><button class="reel-action" onclick="openComments(${p.id})"><span>◌</span><b>${p.comments_count}</b></button><button class="reel-action" onclick="sharePost(${p.id})"><span>↗</span></button><button class="reel-action ${p.saved?'saved':''}" onclick="savePost(${p.id})"><span>${p.saved?'▰':'▱'}</span></button></div>
@@ -2326,13 +2355,15 @@ function chatPanelHtml(c, messages, isMobile) {
 }
 
 function messageHtml(m) {
-  const media = m.media_url ? (m.media_type === 'video' ? `<video class="message-media" src="${escapeAttr(m.media_url)}" controls playsinline preload="none" data-lazy-video="1"></video>` : `<img class="message-media" src="${escapeAttr(m.media_url)}" loading="lazy" decoding="async" alt="">`) : '';
+  const rawMedia = m.media_url ? (m.media_type === 'video' ? `<video class="message-media" src="${escapeAttr(m.media_url)}" controls playsinline preload="none" data-lazy-video="1"${mediaProtectionAttrs(m,{video:true})}></video>` : `<img class="message-media" src="${escapeAttr(m.media_url)}" loading="lazy" decoding="async" alt=""${mediaProtectionAttrs(m)}>` ) : '';
+  const media = protectedMediaFrame(m,rawMedia,'message-protected-media');
   const reply = m.reply ? `<div class="message-reply"><b>${escapeHtml(m.reply.name || m.reply.username || 'Mensaje')}</b><span>${escapeHtml(m.reply.text || (m.reply.media_type==='image'?'📷 Foto':m.reply.media_type==='video'?'🎬 Vídeo':'Mensaje')).slice(0,120)}</span></div>` : '';
   let shared = '';
   if (m.shared_post?.unavailable) shared = `<div class="shared-post unavailable">Esta publicación ya no está disponible para ti.</div>`;
   else if (m.shared_post) {
     const sp=m.shared_post;
-    const smedia=sp.media_url ? (sp.media_type==='video'?`<video src="${escapeAttr(sp.media_url)}" controls playsinline preload="none" data-lazy-video="1"></video>`:`<img src="${escapeAttr(sp.media_url)}" loading="lazy" decoding="async" alt="">`) : '';
+    const rawSharedMedia=sp.media_url ? (sp.media_type==='video'?`<video class="shared-protected-media-item" src="${escapeAttr(sp.media_url)}" controls playsinline preload="none" data-lazy-video="1"${mediaProtectionAttrs(sp,{video:true})}></video>`:`<img class="shared-protected-media-item" src="${escapeAttr(sp.media_url)}" loading="lazy" decoding="async" alt=""${mediaProtectionAttrs(sp)}>` ) : '';
+    const smedia=protectedMediaFrame(sp,rawSharedMedia,'shared-protected-media');
     shared = `<div class="shared-post"><div class="shared-author">${avatar(sp,'small')}<span><b>${escapeHtml(sp.name || sp.username)}</b><small>@${escapeHtml(sp.username || '')}</small></span></div>${sp.text?`<p>${formatText(sp.text)}</p>`:''}${smedia}</div>`;
   }
   const excerpt = safeEncode((m.text || (m.media_type==='image'?'Foto':m.media_type==='video'?'Vídeo':m.shared_post?'Publicación':'Mensaje')).slice(0,100));
@@ -3177,3 +3208,12 @@ if (!navigator.onLine) setTimeout(() => showNetworkState(false), 200);
 
 registerInstantAdmirersPwa();
 init();
+
+
+// V1.12.0: frena las vías de descarga casual sobre multimedia protegida.
+document.addEventListener('contextmenu', event => {
+  if (event.target?.closest?.('[data-protected-media="1"],[data-protected-media-frame="1"]')) event.preventDefault();
+}, true);
+document.addEventListener('dragstart', event => {
+  if (event.target?.closest?.('[data-protected-media="1"],[data-protected-media-frame="1"]')) event.preventDefault();
+}, true);

@@ -8,16 +8,17 @@ async function migrateOne(row) {
   const uploaded = await uploadBuffer(row.data, {
     mimeType: row.mime_type,
     originalName: row.original_name,
-    userId: row.user_id
+    userId: row.user_id,
+    privateDelivery: true
   });
 
   await pool.query(`
     UPDATE media SET
-      provider='cloudinary', provider_id=$2, secure_url=$3, resource_type=$4,
-      width=$5, height=$6, duration_seconds=$7, format=$8,
-      size_bytes=$9, data=NULL, migrated_at=NOW()
+      provider='cloudinary', provider_id=$2, secure_url=$3, resource_type=$4, delivery_type=$5,
+      width=$6, height=$7, duration_seconds=$8, format=$9,
+      size_bytes=$10, data=NULL, migrated_at=NOW()
     WHERE id=$1
-  `, [row.id, uploaded.providerId, uploaded.secureUrl, uploaded.resourceType,
+  `, [row.id, uploaded.providerId, uploaded.secureUrl, uploaded.resourceType, uploaded.deliveryType || 'authenticated',
       uploaded.width, uploaded.height, uploaded.durationSeconds, uploaded.format,
       uploaded.sizeBytes || row.size_bytes]);
 }

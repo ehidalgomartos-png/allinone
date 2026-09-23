@@ -8,11 +8,12 @@ const crypto = require('crypto');
 const { rateLimit } = require('express-rate-limit');
 const multer = require('multer');
 const http = require('http');
+const { Readable } = require('stream');
 const { Server } = require('socket.io');
 require('dotenv').config();
 
 const { pool, initDb, withTransaction } = require('./src/db');
-const { configured: cloudinaryConfigured, uploadBuffer: uploadMediaBuffer, destroyAsset: destroyRemoteAsset } = require('./src/mediaStorage');
+const { configured: cloudinaryConfigured, uploadBuffer: uploadMediaBuffer, deliveryUrl: cloudinaryDeliveryUrl, hardenAsset: hardenRemoteAsset, destroyAsset: destroyRemoteAsset } = require('./src/mediaStorage');
 const { createDemoEnvironment, clearDemoEnvironment, demoStatus } = require('./src/demoLab');
 
 const app = express();
@@ -22,6 +23,9 @@ const onlineUsers = new Map();
 const PORT = process.env.PORT || 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change-me';
 const CURRENT_TERMS_VERSION = '2026-09-20';
+const MEDIA_SESSION_COOKIE = 'ia_media_session';
+const MEDIA_URL_TTL_SECONDS = Math.min(3600, Math.max(300, Number(process.env.MEDIA_URL_TTL_SECONDS || 1800)));
+const MEDIA_SESSION_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const APP_URL = String(process.env.APP_URL || process.env.RENDER_EXTERNAL_URL || 'https://instantadmirers.com').replace(/\/$/, '');
 const REQUIRE_EMAIL_VERIFICATION = String(process.env.REQUIRE_EMAIL_VERIFICATION || 'false').toLowerCase() === 'true';
 const publicDir = path.join(__dirname, 'public');
@@ -317,6 +321,7 @@ async function auth(req, res, next) {
       return res.status(401).json({ error:'Tu sesión ha sido invalidada. Vuelve a entrar.' });
     }
     req.user = { ...decoded, ...dbUser };
+    setMediaSessionCookie(res, req.user);
     return next();
   } catch (err) {
     if (err?.status) return next(err);
@@ -535,12 +540,74 @@ function safeUser(row, includePrivate = false) {
     user.friend_gate_required_referrals = Number(row.friend_gate_required_referrals || 5);
     user.friend_gate_require_post = row.friend_gate_require_post !== false;
     user.friend_gate_auto_accept = row.friend_gate_auto_accept !== false;
+    user.content_watermark_mode = ['off','exclusive','all'].includes(String(row.content_watermark_mode || '')) ? String(row.content_watermark_mode) : 'exclusive';
   }
   return user;
 }
 
 function tokenFor(user) {
   return jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '30d' });
+}
+
+function mediaSessionToken(user) {
+  return jwt.sign({ id: Number(user.id), scope: 'media' }, JWT_SECRET, { expiresIn: '30d' });
+}
+
+function setMediaSessionCookie(res, user) {
+  if (!res || !user?.id) return;
+  res.cookie(MEDIA_SESSION_COOKIE, mediaSessionToken(user), {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: MEDIA_SESSION_MAX_AGE_MS
+  });
+}
+
+function cookieValue(req, name) {
+  const raw = String(req.headers.cookie || '');
+  for (const part of raw.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx < 0) continue;
+    const key = part.slice(0, idx).trim();
+    if (key !== name) continue;
+    try { return decodeURIComponent(part.slice(idx + 1).trim()); } catch { return part.slice(idx + 1).trim(); }
+  }
+  return '';
+}
+
+function mediaSignature(mediaId, viewerId, expiresAt) {
+  return crypto.createHmac('sha256', JWT_SECRET)
+    .update(`${Number(mediaId)}.${Number(viewerId)}.${Number(expiresAt)}`)
+    .digest('base64url');
+}
+
+function protectedMediaUrl(mediaId, viewerId) {
+  if (!mediaId || !viewerId) return '';
+  const expiresAt = Math.floor(Date.now() / 1000) + MEDIA_URL_TTL_SECONDS;
+  const sig = mediaSignature(mediaId, viewerId, expiresAt);
+  return `/protected-media/${Number(mediaId)}?uid=${Number(viewerId)}&exp=${expiresAt}&sig=${encodeURIComponent(sig)}`;
+}
+
+function verifyProtectedMediaRequest(req) {
+  const mediaId = Number(req.params.id);
+  const viewerId = Number(req.query.uid);
+  const expiresAt = Number(req.query.exp);
+  const sig = String(req.query.sig || '');
+  if (!Number.isSafeInteger(mediaId) || mediaId <= 0 || !Number.isSafeInteger(viewerId) || viewerId <= 0 || !Number.isSafeInteger(expiresAt) || !sig) return null;
+  const now = Math.floor(Date.now() / 1000);
+  if (expiresAt < now || expiresAt > now + 2 * 60 * 60) return null;
+  const expected = mediaSignature(mediaId, viewerId, expiresAt);
+  const a = Buffer.from(sig);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  const rawSession = cookieValue(req, MEDIA_SESSION_COOKIE);
+  if (!rawSession) return null;
+  try {
+    const session = jwt.verify(rawSession, JWT_SECRET);
+    if (session.scope !== 'media' || Number(session.id) !== viewerId) return null;
+  } catch { return null; }
+  return { mediaId, viewerId };
 }
 
 
@@ -593,7 +660,7 @@ async function cleanupMediaIfUnused(mediaId) {
   if (!mediaId) return false;
   const localUrl = `/media/${mediaId}`;
   const { rows } = await pool.query(`
-    SELECT m.id,m.provider,m.provider_id,m.resource_type
+    SELECT m.id,m.provider,m.provider_id,m.resource_type,m.delivery_type
       FROM media m
      WHERE m.id=$1
        AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.media_id=m.id)
@@ -710,28 +777,27 @@ function cursorId(req) {
   return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 
-function optimizedCloudinaryUrl(item = {}) {
-  const url = String(item.secure_url || '');
-  if (!url || item.provider !== 'cloudinary') return url;
-  if (!url.includes('/upload/')) return url;
-  if (item.resource_type === 'image') {
-    return url.replace('/upload/', '/upload/f_auto,q_auto:eco,c_limit,w_1600/');
-  }
-  return url;
-}
-
-async function attachDirectMediaUrls(posts = []) {
-  const ids = [...new Set(posts.map(p => Number(p.media_id)).filter(Number.isSafeInteger))];
-  if (!ids.length) return posts;
-  const { rows } = await pool.query(
-    `SELECT id,provider,secure_url,resource_type FROM media WHERE id = ANY($1::bigint[])`,
-    [ids]
-  );
+async function attachProtectedMediaUrls(items = [], viewerId) {
+  const ids = [...new Set(items.map(item => Number(item.media_id)).filter(Number.isSafeInteger))];
+  if (!ids.length || !viewerId) return items;
+  const { rows } = await pool.query(`
+    SELECT m.id,m.user_id,u.friend_gate_enabled,u.content_watermark_mode
+      FROM media m
+      JOIN users u ON u.id=m.user_id
+     WHERE m.id = ANY($1::bigint[])
+  `,[ids]);
   const media = new Map(rows.map(row => [Number(row.id), row]));
-  return posts.map(post => {
-    const item = media.get(Number(post.media_id));
-    const direct = item ? optimizedCloudinaryUrl(item) : '';
-    return direct ? { ...post, media_url: direct } : post;
+  return items.map(item => {
+    const m = media.get(Number(item.media_id));
+    if (!m) return item;
+    const mode = String(m.content_watermark_mode || 'exclusive');
+    const watermarked = Number(m.user_id) !== Number(viewerId) && (mode === 'all' || (mode === 'exclusive' && Boolean(m.friend_gate_enabled)));
+    return {
+      ...item,
+      media_url: protectedMediaUrl(item.media_id, viewerId),
+      media_protected: true,
+      watermarked
+    };
   });
 }
 
@@ -748,7 +814,7 @@ function offsetPage(items, limit, offset) {
 function normalizePost(row) {
   return {
     ...row,
-    media_url: row.media_id ? `/media/${row.media_id}` : '',
+    media_url: '',
     likes_count: Number(row.likes_count || 0),
     comments_count: Number(row.comments_count || 0),
     saved: Boolean(row.saved),
@@ -763,7 +829,7 @@ async function enrichReposts(userId, posts = []) {
   if (!ids.length) return posts;
   const { rows } = await pool.query(`
     SELECT p.id,p.user_id,p.text,p.media_id,p.media_type,p.visibility,p.created_at,p.edited_at,
-           u.username,u.name,u.avatar,m.provider AS media_provider,m.secure_url AS media_secure_url,m.resource_type AS media_resource_type,
+           u.username,u.name,u.avatar,u.friend_gate_enabled,u.content_watermark_mode,
            (u.account_status='active' AND COALESCE(u.social_hidden,FALSE)=FALSE AND (p.user_id=$1 OR (NOT u.account_private) OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
             AND (
               p.user_id=$1 OR NOT u.friend_gate_enabled OR
@@ -783,7 +849,6 @@ async function enrichReposts(userId, posts = []) {
             AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id))) AS can_view
       FROM posts p
       JOIN users u ON u.id=p.user_id
-      LEFT JOIN media m ON m.id=p.media_id
      WHERE p.id = ANY($2::bigint[])
   `,[userId,ids]);
   const map = new Map(rows.map(r => [Number(r.id), r]));
@@ -794,7 +859,9 @@ async function enrichReposts(userId, posts = []) {
     return { ...post, repost: {
       id:Number(original.id), user_id:Number(original.user_id), text:original.text || '',
       media_type:original.media_type || 'none',
-      media_url:original.media_id ? (optimizedCloudinaryUrl({ provider:original.media_provider, secure_url:original.media_secure_url, resource_type:original.media_resource_type }) || `/media/${original.media_id}`) : '',
+      media_url:original.media_id ? protectedMediaUrl(original.media_id,userId) : '',
+      media_protected:Boolean(original.media_id),
+      watermarked:Boolean(original.media_id) && Number(original.user_id)!==Number(userId) && (String(original.content_watermark_mode||'exclusive')==='all' || (String(original.content_watermark_mode||'exclusive')==='exclusive' && Boolean(original.friend_gate_enabled))),
       visibility:original.visibility, created_at:original.created_at, edited_at:original.edited_at,
       username:original.username, name:original.name, avatar:original.avatar || ''
     }};
@@ -885,7 +952,7 @@ async function postQuery(userId, { mode = 'following', profileId = null, search 
   const hasMore = paged && rows.length > requestedLimit;
   const selected = paged ? rows.slice(0, requestedLimit) : rows;
   let posts = selected.map(normalizePost);
-  posts = await attachDirectMediaUrls(posts);
+  posts = await attachProtectedMediaUrls(posts, userId);
   posts = await enrichReposts(userId, posts);
 
   if (!paged) return posts;
@@ -984,7 +1051,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.11.1', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery'] });
+  res.json({ ok: true, version: '1.12.0', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','authenticated-cloudinary-uploads','viewer-watermarks','download-deterrence'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -1054,7 +1121,7 @@ app.post('/api/growth/campaign/visit', asyncRoute(async (req,res) => {
 }));
 
 const RESERVED_PROFILE_SLUGS = new Set([
-  'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en',
+  'api','media','protected-media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
   'feed','reels','discover','search','messages','notifications','bookmarks','friends','settings','profile',
   'invite','invites','help','support','about'
@@ -1123,6 +1190,7 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
     const emailSent = await sendVerificationEmail(user).catch(err => { console.error('verification email:', err.message); return false; });
     await securityEvent(req, 'account_registered', user.id, { email_sent:emailSent, referral:Boolean(referral_code), gate:Boolean(gate_code), campaign:Boolean(normalizedCampaign) });
     if (REQUIRE_EMAIL_VERIFICATION) return res.json({ verification_required:true, email_sent:emailSent });
+    setMediaSessionCookie(res,user);
     res.json({ token: tokenFor(user), user: safeUser(user, true), email_sent:emailSent });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Usuario o email ya existe' });
@@ -1147,7 +1215,13 @@ app.post('/api/auth/login', asyncRoute(async (req, res) => {
     return res.status(403).json({ error:'Debes verificar tu email antes de entrar', code:'EMAIL_NOT_VERIFIED' });
   }
   await securityEvent(req, 'login_success', user.id);
+  setMediaSessionCookie(res,user);
   res.json({ token: tokenFor(user), user: safeUser(user, true) });
+}));
+
+app.post('/api/auth/logout', asyncRoute(async (_req,res) => {
+  res.clearCookie(MEDIA_SESSION_COOKIE,{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',path:'/'});
+  res.json({ok:true});
 }));
 
 app.post('/api/auth/verify-email/request', asyncRoute(async (req,res) => {
@@ -1293,6 +1367,148 @@ app.delete('/api/me/cover', auth, asyncRoute(async (req, res) => {
   res.json(await removeProfileMedia(req.user.id, 'cover'));
 }));
 
+
+// --- V1.12.0: entrega protegida de multimedia -----------------------------
+async function canUserViewStory(storyId, viewerId) {
+  const { rows } = await pool.query(`
+    SELECT s.id
+      FROM stories s
+      JOIN users u ON u.id=s.user_id
+     WHERE s.id=$1
+       AND s.expires_at > NOW()
+       AND u.account_status='active'
+       AND COALESCE(u.social_hidden,FALSE)=FALSE
+       AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$2 AND bl.blocked_id=s.user_id) OR (bl.blocker_id=s.user_id AND bl.blocked_id=$2))
+       AND (s.user_id=$2 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$2 AND pf.followed_id=s.user_id))
+       AND (
+         s.user_id=$2 OR NOT u.friend_gate_enabled OR
+         EXISTS(SELECT 1 FROM friendships svgfr WHERE (svgfr.user1_id=$2 AND svgfr.user2_id=s.user_id) OR (svgfr.user1_id=s.user_id AND svgfr.user2_id=$2)) OR
+         (
+           CASE WHEN u.friend_gate_require_post
+             THEN (SELECT COUNT(*) FROM referral_attributions svra WHERE svra.inviter_id=$2 AND svra.gate_user_id=s.user_id AND svra.qualified_at IS NOT NULL)
+             ELSE (SELECT COUNT(*) FROM referral_attributions svra WHERE svra.inviter_id=$2 AND svra.gate_user_id=s.user_id)
+           END
+         ) >= u.friend_gate_required_referrals
+       )
+       AND (s.visibility='public' OR s.user_id=$2 OR
+         (s.visibility='followers' AND EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=$2 AND f.followed_id=s.user_id)))
+     LIMIT 1
+  `,[storyId,viewerId]);
+  return Boolean(rows[0]);
+}
+
+async function canUserAccessMedia(mediaId, viewerId) {
+  const mediaResult = await pool.query('SELECT id,user_id FROM media WHERE id=$1',[mediaId]);
+  const media = mediaResult.rows[0];
+  if (!media) return false;
+  if (Number(media.user_id) === Number(viewerId)) return true;
+
+  const posts = await pool.query('SELECT id FROM posts WHERE media_id=$1 LIMIT 20',[mediaId]);
+  for (const post of posts.rows) if (await canUserViewPost(post.id,viewerId)) return true;
+
+  const stories = await pool.query('SELECT id FROM stories WHERE media_id=$1 AND expires_at>NOW() LIMIT 20',[mediaId]);
+  for (const story of stories.rows) if (await canUserViewStory(story.id,viewerId)) return true;
+
+  const message = await pool.query(`
+    SELECT 1
+      FROM messages m
+      JOIN conversations c ON c.id=m.conversation_id
+     WHERE m.media_id=$1 AND (c.user1_id=$2 OR c.user2_id=$2)
+     LIMIT 1
+  `,[mediaId,viewerId]);
+  return Boolean(message.rowCount);
+}
+
+async function mediaRecord(mediaId) {
+  const { rows } = await pool.query(`
+    SELECT id,user_id,mime_type,original_name,size_bytes,data,provider,provider_id,secure_url,
+           resource_type,delivery_type,format
+      FROM media WHERE id=$1
+  `,[mediaId]);
+  return rows[0] || null;
+}
+
+function setInlineMediaHeaders(res, item, cacheControl='private, no-store') {
+  res.set('Content-Type', item.mime_type || 'application/octet-stream');
+  res.set('Content-Disposition', 'inline');
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Cross-Origin-Resource-Policy', 'same-origin');
+  res.set('Cache-Control', cacheControl);
+  res.set('Accept-Ranges', 'bytes');
+}
+
+function sendBufferWithRange(req, res, item, cacheControl) {
+  const buffer = Buffer.isBuffer(item.data) ? item.data : Buffer.from(item.data || '');
+  const total = buffer.length;
+  setInlineMediaHeaders(res,item,cacheControl);
+  const range = String(req.headers.range || '');
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(range);
+  if (!match || !total) {
+    res.set('Content-Length', String(total));
+    return res.status(200).end(buffer);
+  }
+  let start = match[1] ? Number(match[1]) : 0;
+  let end = match[2] ? Number(match[2]) : total - 1;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end < start || start >= total) {
+    res.set('Content-Range', `bytes */${total}`);
+    return res.status(416).end();
+  }
+  end = Math.min(end,total-1);
+  const chunk = buffer.subarray(start,end+1);
+  res.status(206);
+  res.set('Content-Range', `bytes ${start}-${end}/${total}`);
+  res.set('Content-Length', String(chunk.length));
+  return res.end(chunk);
+}
+
+async function proxyCloudinaryMedia(req, res, item, cacheControl) {
+  const source = cloudinaryDeliveryUrl(item);
+  if (!source) return res.status(404).end();
+  const headers = {};
+  if (req.headers.range) headers.Range = String(req.headers.range);
+  const upstream = await fetch(source,{headers,redirect:'follow'});
+  if (!(upstream.ok || upstream.status === 206)) return res.status(upstream.status === 404 ? 404 : 502).end();
+  setInlineMediaHeaders(res,item,cacheControl);
+  res.status(upstream.status);
+  for (const name of ['content-length','content-range','accept-ranges']) {
+    const value=upstream.headers.get(name);
+    if (value) res.set(name,value);
+  }
+  const contentType=upstream.headers.get('content-type');
+  if (contentType) res.set('Content-Type',contentType);
+  if (!upstream.body) return res.end();
+  return Readable.fromWeb(upstream.body).pipe(res);
+}
+
+async function serveMedia(req, res, item, cacheControl='private, no-store') {
+  if (!item) return res.status(404).end();
+  if (item.provider === 'cloudinary' && item.provider_id) return proxyCloudinaryMedia(req,res,item,cacheControl);
+  if (item.provider === 'demo' && /^\/assets\/demo\/[a-z0-9._-]+$/i.test(String(item.secure_url || ''))) {
+    const demoPath = path.join(publicDir, String(item.secure_url).replace(/^\//,''));
+    res.set('Cache-Control',cacheControl);
+    res.set('Content-Disposition','inline');
+    res.set('X-Content-Type-Options','nosniff');
+    res.set('Cross-Origin-Resource-Policy','same-origin');
+    return res.sendFile(demoPath);
+  }
+  if (item.data) return sendBufferWithRange(req,res,item,cacheControl);
+  return res.status(404).end();
+}
+
+app.get('/protected-media/:id', asyncRoute(async (req,res) => {
+  // Un enlace copiado no debe convertirse en una página descargable al abrirlo directamente.
+  // Si el navegador no envía Sec-Fetch-Dest, no bloqueamos para mantener compatibilidad.
+  const fetchDest = String(req.get('sec-fetch-dest') || '').toLowerCase();
+  if (fetchDest === 'document') return res.status(404).end();
+  const signed = verifyProtectedMediaRequest(req);
+  if (!signed) return res.status(404).end();
+  if (!(await canUserAccessMedia(signed.mediaId,signed.viewerId))) return res.status(404).end();
+  const item = await mediaRecord(signed.mediaId);
+  res.set('X-Robots-Tag','noindex, nofollow, noarchive');
+  res.set('Referrer-Policy','same-origin');
+  return serveMedia(req,res,item,'private, no-store, max-age=0');
+}));
+
 app.post('/api/upload', auth, upload.single('file'), asyncRoute(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'Falta archivo' });
 
@@ -1313,16 +1529,17 @@ app.post('/api/upload', auth, upload.single('file'), asyncRoute(async (req, res)
     const uploaded = await uploadMediaBuffer(req.file.buffer, {
       mimeType: req.file.mimetype,
       originalName: req.file.originalname,
-      userId: req.user.id
+      userId: req.user.id,
+      privateDelivery: true
     });
     const { rows } = await pool.query(`
       INSERT INTO media (
         user_id,mime_type,original_name,size_bytes,data,provider,provider_id,secure_url,
-        resource_type,width,height,duration_seconds,format,migrated_at
-      ) VALUES ($1,$2,$3,$4,NULL,'cloudinary',$5,$6,$7,$8,$9,$10,$11,NOW()) RETURNING id
+        resource_type,delivery_type,width,height,duration_seconds,format,migrated_at
+      ) VALUES ($1,$2,$3,$4,NULL,'cloudinary',$5,$6,$7,$8,$9,$10,$11,$12,NOW()) RETURNING id
     `, [
       req.user.id, req.file.mimetype, req.file.originalname, uploaded.sizeBytes || req.file.size,
-      uploaded.providerId, uploaded.secureUrl, uploaded.resourceType, uploaded.width, uploaded.height,
+      uploaded.providerId, uploaded.secureUrl, uploaded.resourceType, uploaded.deliveryType || 'authenticated', uploaded.width, uploaded.height,
       uploaded.durationSeconds, uploaded.format
     ]);
     mediaId = rows[0].id;
@@ -1338,18 +1555,16 @@ app.post('/api/upload', auth, upload.single('file'), asyncRoute(async (req, res)
   res.json({ media_id: mediaId, url: `/media/${mediaId}`, mime: req.file.mimetype, provider });
 }));
 
+// Compatibilidad para avatar y portada. El contenido de posts/Stories/Reels/mensajes
+// ya no se sirve desde una URL pública permanente.
 app.get('/media/:id', asyncRoute(async (req, res) => {
-  const { rows } = await pool.query('SELECT mime_type,data,provider,secure_url FROM media WHERE id = $1', [req.params.id]);
-  const item = rows[0];
-  if (!item) return res.status(404).end();
-  if (item.secure_url) {
-    res.set('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
-    return res.redirect(302, item.secure_url);
-  }
-  if (!item.data) return res.status(404).end();
-  res.set('Content-Type', item.mime_type);
-  res.set('Cache-Control', 'public, max-age=604800');
-  res.send(item.data);
+  const mediaId=Number(req.params.id);
+  if(!Number.isSafeInteger(mediaId)||mediaId<=0) return res.status(404).end();
+  const localUrl=`/media/${mediaId}`;
+  const profileUse=await pool.query(`SELECT 1 FROM users WHERE avatar=$1 OR cover=$1 LIMIT 1`,[localUrl]);
+  if(!profileUse.rowCount) return res.status(404).end();
+  const item=await mediaRecord(mediaId);
+  return serveMedia(req,res,item,'public, max-age=3600, stale-while-revalidate=86400');
 }));
 
 app.post('/api/posts', auth, socialAccountOnly, asyncRoute(async (req, res) => {
@@ -1512,7 +1727,7 @@ app.get('/api/for-you', auth, asyncRoute(async (req, res) => {
     LIMIT $2 OFFSET $3
   `, [req.user.id, limit + 1, offset]);
   let posts = rows.map(r => ({ ...normalizePost(r), recommendation_reason: recommendationReason(r) }));
-  posts = await attachDirectMediaUrls(posts);
+  posts = await attachProtectedMediaUrls(posts, req.user.id);
   posts = await enrichReposts(req.user.id, posts);
   res.json(offsetPage(posts, limit, offset));
 }));
@@ -1620,7 +1835,7 @@ app.get('/api/discover', auth, asyncRoute(async (req, res) => {
     LIMIT $2 OFFSET $3
   `, [req.user.id, limit + 1, offset]);
   let posts = rows.map(normalizePost);
-  posts = await attachDirectMediaUrls(posts);
+  posts = await attachProtectedMediaUrls(posts, req.user.id);
   posts = await enrichReposts(req.user.id, posts);
   res.json(offsetPage(posts, limit, offset));
 }));
@@ -1665,7 +1880,7 @@ app.get('/api/bookmarks', auth, asyncRoute(async (req, res) => {
     ORDER BY c.bookmark_created_at DESC
   `, [req.user.id, limit + 1, offset]);
   let posts = rows.map(normalizePost);
-  posts = await attachDirectMediaUrls(posts);
+  posts = await attachProtectedMediaUrls(posts, req.user.id);
   posts = await enrichReposts(req.user.id, posts);
   res.json(offsetPage(posts, limit, offset));
 }));
@@ -1957,7 +2172,7 @@ app.post('/api/users/:id/follow', auth, socialAccountOnly, asyncRoute(async (req
 
 // --- V0.9: privacidad, solicitudes de seguimiento y control --------------
 app.get('/api/privacy', auth, asyncRoute(async (req,res)=>{
-  const {rows}=await pool.query(`SELECT account_private,message_policy,
+  const {rows}=await pool.query(`SELECT account_private,message_policy,content_watermark_mode,
     (SELECT COUNT(*)::int FROM follow_requests WHERE followed_id=$1) AS follow_requests_count,
     (SELECT COUNT(*)::int FROM blocks WHERE blocker_id=$1) AS blocked_count,
     (SELECT COUNT(*)::int FROM mutes WHERE muter_id=$1) AS muted_count
@@ -1968,9 +2183,11 @@ app.get('/api/privacy', auth, asyncRoute(async (req,res)=>{
 app.patch('/api/privacy', auth, asyncRoute(async (req,res)=>{
   const accountPrivate = req.body.account_private === undefined ? null : Boolean(req.body.account_private);
   const messagePolicy = req.body.message_policy === undefined ? null : String(req.body.message_policy);
+  const watermarkMode = req.body.content_watermark_mode === undefined ? null : String(req.body.content_watermark_mode);
   if (messagePolicy !== null && !['everyone','followers','friends','nobody'].includes(messagePolicy)) return res.status(400).json({error:'Privacidad de mensajes inválida'});
+  if (watermarkMode !== null && !['off','exclusive','all'].includes(watermarkMode)) return res.status(400).json({error:'Configuración de marca de agua inválida'});
   const result=await withTransaction(async client=>{
-    const {rows}=await client.query(`UPDATE users SET account_private=COALESCE($2,account_private), message_policy=COALESCE($3,message_policy) WHERE id=$1 RETURNING account_private,message_policy`,[req.user.id,accountPrivate,messagePolicy]);
+    const {rows}=await client.query(`UPDATE users SET account_private=COALESCE($2,account_private), message_policy=COALESCE($3,message_policy), content_watermark_mode=COALESCE($4,content_watermark_mode) WHERE id=$1 RETURNING account_private,message_policy,content_watermark_mode`,[req.user.id,accountPrivate,messagePolicy,watermarkMode]);
     if (accountPrivate === false) {
       await client.query(`INSERT INTO follows(follower_id,followed_id) SELECT follower_id,followed_id FROM follow_requests WHERE followed_id=$1 ON CONFLICT DO NOTHING`,[req.user.id]);
       await client.query('DELETE FROM follow_requests WHERE followed_id=$1',[req.user.id]);
@@ -2356,8 +2573,8 @@ app.get('/api/stories', auth, asyncRoute(async (req, res) => {
      ORDER BY (s.user_id = $1) DESC, following DESC, s.created_at ASC
      LIMIT 200
   `, [req.user.id]);
-  let stories = rows.map(r => ({ ...r, media_url: `/media/${r.media_id}`, viewed: Boolean(r.viewed), own: Boolean(r.own), following: Boolean(r.following), views_count: Number(r.views_count || 0) }));
-  stories = await attachDirectMediaUrls(stories);
+  let stories = rows.map(r => ({ ...r, media_url: '', viewed: Boolean(r.viewed), own: Boolean(r.own), following: Boolean(r.following), views_count: Number(r.views_count || 0) }));
+  stories = await attachProtectedMediaUrls(stories, req.user.id);
   res.json(stories);
 }));
 
@@ -2469,7 +2686,7 @@ app.get('/api/reels', auth, asyncRoute(async (req, res) => {
     LIMIT $2 OFFSET $3
   `, [req.user.id, limit + 1, offset]);
   let posts = rows.map(normalizePost);
-  posts = await attachDirectMediaUrls(posts);
+  posts = await attachProtectedMediaUrls(posts, req.user.id);
   posts = await enrichReposts(req.user.id, posts);
   res.json(offsetPage(posts, limit, offset));
 }));
@@ -2630,7 +2847,8 @@ app.get('/api/conversations/:id/messages', auth, asyncRoute(async (req, res) => 
                AND (sp.visibility='public' OR sp.user_id=$2 OR
                (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id)))
              ) THEN sp.media_type ELSE NULL END AS shared_media_type,
-             spu.username AS shared_username, spu.name AS shared_name, spu.avatar AS shared_avatar
+             spu.username AS shared_username, spu.name AS shared_name, spu.avatar AS shared_avatar,
+             spu.friend_gate_enabled AS shared_gate_enabled, spu.content_watermark_mode AS shared_watermark_mode
         FROM messages m
         JOIN users u ON u.id = m.sender_id
         LEFT JOIN messages rm ON rm.id=m.reply_to_id AND rm.conversation_id=m.conversation_id
@@ -2643,9 +2861,9 @@ app.get('/api/conversations/:id/messages', auth, asyncRoute(async (req, res) => 
   `, [req.params.id, req.user.id]);
   res.json(rows.map(r => ({
     id:r.id, conversation_id:r.conversation_id, sender_id:r.sender_id, text:r.text, media_id:r.media_id, media_type:r.media_type,
-    media_url:r.media_id ? `/media/${r.media_id}` : '', created_at:r.created_at, username:r.username, name:r.name, avatar:r.avatar, own:Boolean(r.own),
+    media_url:r.media_id ? protectedMediaUrl(r.media_id,req.user.id) : '', media_protected:Boolean(r.media_id), watermarked:false, created_at:r.created_at, username:r.username, name:r.name, avatar:r.avatar, own:Boolean(r.own),
     reply: r.reply_to_id ? { id:r.reply_to_id, name:r.reply_name, username:r.reply_username, text:r.reply_text || '', media_type:r.reply_media_type || 'none' } : null,
-    shared_post: r.shared_visible_id ? { id:r.shared_visible_id, text:r.shared_text || '', media_type:r.shared_media_type || 'none', media_url:r.shared_media_id ? `/media/${r.shared_media_id}` : '', username:r.shared_username, name:r.shared_name, avatar:r.shared_avatar } : (r.shared_post_id ? { unavailable:true } : null)
+    shared_post: r.shared_visible_id ? { id:r.shared_visible_id, text:r.shared_text || '', media_type:r.shared_media_type || 'none', media_url:r.shared_media_id ? protectedMediaUrl(r.shared_media_id,req.user.id) : '', media_protected:Boolean(r.shared_media_id), watermarked:Boolean(r.shared_media_id) && String(r.shared_watermark_mode||'exclusive')!=='off' && (String(r.shared_watermark_mode||'exclusive')==='all' || Boolean(r.shared_gate_enabled)), username:r.shared_username, name:r.shared_name, avatar:r.shared_avatar } : (r.shared_post_id ? { unavailable:true } : null)
   })));
 }));
 
@@ -2797,7 +3015,7 @@ app.delete('/api/account', auth, asyncRoute(async (req, res) => {
   const { rows } = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.user.id]);
   if (!rows[0] || !(await bcrypt.compare(password, rows[0].password_hash))) return res.status(400).json({ error:'La contraseña no es correcta' });
   await securityEvent(req,'account_deleted',req.user.id);
-  const mediaRows = await pool.query(`SELECT provider,provider_id,resource_type FROM media WHERE user_id=$1 AND provider='cloudinary' AND provider_id<>''`, [req.user.id]);
+  const mediaRows = await pool.query(`SELECT provider,provider_id,resource_type,delivery_type FROM media WHERE user_id=$1 AND provider='cloudinary' AND provider_id<>''`, [req.user.id]);
   await pool.query('DELETE FROM users WHERE id=$1', [req.user.id]);
   await Promise.allSettled(mediaRows.rows.map(item => destroyRemoteAsset(item)));
   res.json({ ok:true });
@@ -3347,7 +3565,7 @@ app.delete('/api/admin/users/:id', auth, adminOnly, asyncRoute(async (req, res) 
     }
 
     const mediaResult = await client.query(`
-      SELECT provider,provider_id,resource_type
+      SELECT provider,provider_id,resource_type,delivery_type
         FROM media
        WHERE user_id=$1 AND provider='cloudinary' AND provider_id<>''
     `, [targetId]);
@@ -3427,11 +3645,53 @@ app.use((err, req, res, _next) => {
   res.status(status).json({ error: status >= 500 ? 'Error interno del servidor' : err.message });
 });
 
+
+async function hardenLegacyCloudinaryMedia() {
+  if (!cloudinaryConfigured()) return;
+  if (String(process.env.HARDEN_LEGACY_MEDIA_ON_START || 'true').toLowerCase() === 'false') return;
+  const { rows } = await pool.query(`
+    SELECT id,provider,provider_id,resource_type,delivery_type
+    FROM media
+    WHERE provider='cloudinary'
+      AND provider_id<>''
+      AND COALESCE(delivery_type,'upload') <> 'authenticated'
+    ORDER BY id ASC
+  `);
+  if (!rows.length) return;
+  console.log(`Protección multimedia V1.12.0: reforzando ${rows.length} recurso(s) heredado(s)...`);
+  let ok = 0;
+  let failed = 0;
+  for (const item of rows) {
+    try {
+      const result = await hardenRemoteAsset(item);
+      if (!result) continue;
+      await pool.query(`
+        UPDATE media
+        SET provider_id=$2,
+            secure_url=COALESCE(NULLIF($3,''),secure_url),
+            resource_type=COALESCE(NULLIF($4,''),resource_type),
+            delivery_type=$5,
+            format=COALESCE(NULLIF($6,''),format),
+            migrated_at=NOW()
+        WHERE id=$1
+      `, [item.id, result.providerId || item.provider_id, result.secureUrl || '', result.resourceType || item.resource_type, result.deliveryType || 'authenticated', result.format || '']);
+      ok += 1;
+    } catch (err) {
+      failed += 1;
+      console.error(`Protección multimedia: no se pudo reforzar media #${item.id}:`, err.message);
+    }
+  }
+  console.log(`Protección multimedia V1.12.0: ${ok} reforzado(s), ${failed} pendiente(s).`);
+}
+
 async function start() {
   await initDb();
   await syncSystemAccounts();
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.11.1 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => {
+    console.log(`Instant Admirers V1.12.0 en http://localhost:${PORT}`);
+    void hardenLegacyCloudinaryMedia().catch(err => console.error('Protección multimedia heredada:', err.message));
+  });
 }
 
 start().catch((err) => {
