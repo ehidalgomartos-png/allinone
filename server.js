@@ -541,6 +541,7 @@ function safeUser(row, includePrivate = false) {
     user.friend_gate_required_referrals = Number(row.friend_gate_required_referrals || 5);
     user.friend_gate_require_post = row.friend_gate_require_post !== false;
     user.friend_gate_auto_accept = row.friend_gate_auto_accept !== false;
+    user.friend_gate_message = String(row.friend_gate_message || '').slice(0,220);
     user.content_watermark_mode = ['off','exclusive','all'].includes(String(row.content_watermark_mode || '')) ? String(row.content_watermark_mode) : 'exclusive';
   }
   return user;
@@ -1005,7 +1006,7 @@ function peopleRecommendationReason(row = {}) {
 async function friendGateProgress(inviterId, gateUserId, client = pool) {
   const targetResult = await client.query(`
     SELECT id, username, invite_code, friend_gate_enabled, friend_gate_required_referrals,
-           friend_gate_require_post, friend_gate_auto_accept
+           friend_gate_require_post, friend_gate_auto_accept, friend_gate_message
       FROM users WHERE id=$1 AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE LIMIT 1
   `,[gateUserId]);
   const target = targetResult.rows[0];
@@ -1032,7 +1033,8 @@ async function friendGateProgress(inviterId, gateUserId, client = pool) {
     progress,
     unlocked:progress >= required,
     gate_code:target.invite_code || '',
-    username:target.username
+    username:target.username,
+    access_message:String(target.friend_gate_message || '').slice(0,220)
   };
 }
 
@@ -1052,7 +1054,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.12.2', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','authenticated-cloudinary-uploads','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation'] });
+  res.json({ ok: true, version: '1.12.3', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','authenticated-cloudinary-uploads','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -2070,11 +2072,20 @@ app.get('/api/public/profile/:username', asyncRoute(async (req, res) => {
   const username = String(req.params.username || '').trim().replace(/^@/, '');
   if (!/^[a-zA-Z0-9_.]{3,30}$/.test(username)) return res.status(404).json({ error:'Perfil no encontrado' });
   const { rows } = await pool.query(
-    `SELECT username, name FROM users WHERE LOWER(username)=LOWER($1) AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE LIMIT 1`,
+    `SELECT username, name, friend_gate_enabled, friend_gate_message
+       FROM users
+      WHERE LOWER(username)=LOWER($1) AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE
+      LIMIT 1`,
     [username]
   );
   if (!rows[0]) return res.status(404).json({ error:'Perfil no encontrado' });
-  res.json({ exists:true, username:rows[0].username, name:rows[0].name });
+  res.json({
+    exists:true,
+    username:rows[0].username,
+    name:rows[0].name,
+    friend_gate_enabled:Boolean(rows[0].friend_gate_enabled),
+    friend_gate_message:rows[0].friend_gate_enabled ? String(rows[0].friend_gate_message || '').slice(0,220) : ''
+  });
 }));
 
 app.get('/api/users/:username', auth, asyncRoute(async (req, res) => {
@@ -2446,7 +2457,7 @@ app.get('/api/invites/me', auth, asyncRoute(async (req,res)=>{
 }));
 
 app.get('/api/friend-gate', auth, asyncRoute(async (req,res)=>{
-  const {rows}=await pool.query(`SELECT friend_gate_enabled,friend_gate_required_referrals,friend_gate_require_post,friend_gate_auto_accept FROM users WHERE id=$1`,[req.user.id]);
+  const {rows}=await pool.query(`SELECT friend_gate_enabled,friend_gate_required_referrals,friend_gate_require_post,friend_gate_auto_accept,friend_gate_message FROM users WHERE id=$1`,[req.user.id]);
   res.json(rows[0]);
 }));
 
@@ -2455,7 +2466,8 @@ app.patch('/api/friend-gate', auth, asyncRoute(async (req,res)=>{
   const required=Math.max(1,Math.min(50,Number(req.body.required_referrals||5)));
   const requirePost=req.body.require_post !== false;
   const autoAccept=req.body.auto_accept !== false;
-  const {rows}=await pool.query(`UPDATE users SET friend_gate_enabled=$2,friend_gate_required_referrals=$3,friend_gate_require_post=$4,friend_gate_auto_accept=$5 WHERE id=$1 RETURNING friend_gate_enabled,friend_gate_required_referrals,friend_gate_require_post,friend_gate_auto_accept`,[req.user.id,enabled,required,requirePost,autoAccept]);
+  const message=String(req.body.access_message || '').trim().replace(/\s+/g,' ').slice(0,220);
+  const {rows}=await pool.query(`UPDATE users SET friend_gate_enabled=$2,friend_gate_required_referrals=$3,friend_gate_require_post=$4,friend_gate_auto_accept=$5,friend_gate_message=$6 WHERE id=$1 RETURNING friend_gate_enabled,friend_gate_required_referrals,friend_gate_require_post,friend_gate_auto_accept,friend_gate_message`,[req.user.id,enabled,required,requirePost,autoAccept,message]);
   res.json(rows[0]);
 }));
 
@@ -3746,7 +3758,7 @@ async function hardenLegacyCloudinaryMedia() {
     ORDER BY id ASC
   `);
   if (!rows.length) return;
-  console.log(`Protección multimedia V1.12.2: reforzando ${rows.length} recurso(s) heredado(s)...`);
+  console.log(`Protección multimedia V1.12.3: reforzando ${rows.length} recurso(s) heredado(s)...`);
   let ok = 0;
   let failed = 0;
   for (const item of rows) {
@@ -3769,7 +3781,7 @@ async function hardenLegacyCloudinaryMedia() {
       console.error(`Protección multimedia: no se pudo reforzar media #${item.id}:`, err.message);
     }
   }
-  console.log(`Protección multimedia V1.12.2: ${ok} reforzado(s), ${failed} pendiente(s).`);
+  console.log(`Protección multimedia V1.12.3: ${ok} reforzado(s), ${failed} pendiente(s).`);
 }
 
 async function start() {
@@ -3777,7 +3789,7 @@ async function start() {
   await syncSystemAccounts();
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Instant Admirers V1.12.2 en http://localhost:${PORT}`);
+    console.log(`Instant Admirers V1.12.3 en http://localhost:${PORT}`);
     void hardenLegacyCloudinaryMedia().catch(err => console.error('Protección multimedia heredada:', err.message));
   });
 }

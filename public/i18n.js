@@ -1,4 +1,4 @@
-// Instant Admirers V1.12.2 · Español / English
+// Instant Admirers V1.12.3 · Español / English
 (() => {
   const STORAGE_KEY = 'iaLanguage';
   const SUPPORTED = new Set(['es','en']);
@@ -12,7 +12,15 @@
     'Protección de contenido activa':'Content protection active',
     'Las publicaciones, Stories, Reels y archivos enviados por mensaje se sirven mediante enlaces temporales vinculados a la sesión. Las fotos no se pueden arrastrar y los reproductores ocultan la descarga directa.':'Posts, Stories, Reels and media sent in messages are served through temporary links bound to the session. Photos cannot be dragged and players hide direct download controls.',
     'Configuración de marca de agua inválida':'Invalid watermark setting',
-    'Contenido protegido':'Protected content'
+    'Contenido protegido':'Protected content',
+    'Perfil exclusivo':'Exclusive profile',
+    'Invitación detectada':'Invitation detected',
+    'Este perfil tiene acceso especial. Completa el reto para descubrir su contenido.':'This profile has special access. Complete the challenge to discover its content.',
+    'Mensaje de acceso al perfil':'Profile access message',
+    'Explica brevemente por qué has protegido tu perfil o qué encontrará quien consiga entrar.':'Briefly explain why you protected your profile or what someone will find after gaining access.',
+    'Aquí comparto cosas más personales. Si quieres verlas, desbloquea mi perfil 💜':'I share more personal things here. If you want to see them, unlock my profile 💜',
+    'Guardar condición':'Save access settings',
+    'Mensaje de':'Message from'
   });
   const EN_ES = Object.fromEntries(Object.entries(ES_EN).map(([es,en]) => [en,es]));
   const normalized = obj => {

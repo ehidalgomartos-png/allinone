@@ -401,6 +401,8 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS friend_gate_enabled BOOLEAN NOT NULL 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS friend_gate_required_referrals INTEGER NOT NULL DEFAULT 5;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS friend_gate_require_post BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS friend_gate_auto_accept BOOLEAN NOT NULL DEFAULT TRUE;
+-- V1.12.3: mensaje personal que explica por qué el perfil usa acceso especial.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS friend_gate_message TEXT NOT NULL DEFAULT '';
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_friend_gate_required_check;
 ALTER TABLE users ADD CONSTRAINT users_friend_gate_required_check
   CHECK (friend_gate_required_referrals BETWEEN 1 AND 50);

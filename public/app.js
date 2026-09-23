@@ -1,4 +1,4 @@
-// V1.12.2 · Protección de contenido + bloqueo reforzado + Español / English
+// V1.12.3 · Mensaje de acceso a perfiles exclusivos + Protección de contenido
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -84,6 +84,41 @@ async function resolveDirectProfileUsername(username = '') {
   const canonical = String(data?.username || '').trim();
   if (canonical) rememberPendingProfile(canonical);
   return canonical;
+}
+
+function defaultProfileAccessMessage() {
+  return window.IAI18N?.t?.(
+    'Este perfil tiene acceso especial. Completa el reto para descubrir su contenido.',
+    'This profile has special access. Complete the challenge to discover its content.'
+  ) || 'Este perfil tiene acceso especial. Completa el reto para descubrir su contenido.';
+}
+
+async function loadPendingProfileAccessCard() {
+  const username = pendingProfileDestination();
+  const card = $('#directProfileAccessCard');
+  if (!username || !card) return;
+  try {
+    const data = await api('/api/public/profile/' + encodeURIComponent(username), { timeout:12000 });
+    const canonical = String(data?.username || username).trim();
+    if (canonical) rememberPendingProfile(canonical);
+    if (data?.friend_gate_enabled) {
+      const message = String(data.friend_gate_message || '').trim() || defaultProfileAccessMessage();
+      const inviteDetected = Boolean(localStorage.getItem('pendingReferralCode'));
+      card.className = 'profile-auth-access-card';
+      card.innerHTML = `
+        <div class="profile-auth-access-head">
+          <span class="profile-auth-lock">🔒</span>
+          <span><small>Perfil exclusivo</small><b>@${escapeHtml(canonical)}</b></span>
+        </div>
+        <p class="profile-auth-message user-content">“${escapeHtml(message)}”</p>
+        ${inviteDetected ? '<div class="profile-auth-invite">✓ Invitación detectada</div>' : ''}`;
+      return;
+    }
+    card.className = 'invite-auth-note profile-direct-note';
+    card.innerHTML = `<b>Perfil de @${escapeHtml(canonical)}</b><span>Inicia sesión o crea tu cuenta para entrar directamente en este perfil.</span>`;
+  } catch (_) {
+    // Conservamos el mensaje mínimo del primer render si la consulta pública falla.
+  }
 }
 
 function renderPendingProfileError(username, error) {
@@ -647,7 +682,7 @@ function authScreen() {
       </section>
       <section class="auth-card-wrap">
         <section class="auth-card card">
-          ${directProfile ? `<div class="invite-auth-note profile-direct-note"><b>Perfil de @${escapeHtml(directProfile)}</b><span>Inicia sesión o crea tu cuenta para entrar directamente en este perfil.</span></div>` : ''}
+          ${directProfile ? `<div id="directProfileAccessCard" class="invite-auth-note profile-direct-note"><b>Perfil de @${escapeHtml(directProfile)}</b><span>Inicia sesión o crea tu cuenta para entrar directamente en este perfil.</span></div>` : ''}
           <div class="tabs">
             <button id="loginTab" class="tab active" onclick="showAuth('login')">Entrar</button>
             <button id="registerTab" class="tab" onclick="showAuth('register')">Crear cuenta</button>
@@ -661,6 +696,7 @@ function authScreen() {
     </div>`;
   showAuth('login');
   loadLaunchStatus();
+  if (directProfile) void loadPendingProfileAccessCard();
   const authNotice=sessionStorage.getItem('authNotice'); if(authNotice){sessionStorage.removeItem('authNotice');setTimeout(()=>toast(authNotice),80);}
 }
 
@@ -678,7 +714,8 @@ window.showAuth = (mode) => {
     $('#authbox').innerHTML=`<div class="auth-form launch-auth-gate"><div class="invite-auth-note"><b>✦ Acceso por invitación</b><span>Instant Admirers está en lanzamiento controlado. Para crear una cuenta necesitas abrir un enlace de invitación de un miembro.</span></div><button class="btn ghost large" onclick="showAuth('login')">Ya tengo cuenta</button></div>`;
     return;
   }
-  const launchInviteNote = mode==='register' && launchMode==='invite_only' ? `<div class="invite-auth-note launch-invite-ok"><b>✓ Invitación detectada</b><span>Puedes crear tu cuenta dentro de esta fase de lanzamiento.</span></div>` : '';
+  const directProfile = pendingProfileDestination();
+  const launchInviteNote = mode==='register' && launchMode==='invite_only' && !directProfile ? `<div class="invite-auth-note launch-invite-ok"><b>✓ Invitación detectada</b><span>Puedes crear tu cuenta dentro de esta fase de lanzamiento.</span></div>` : '';
   $('#authbox').innerHTML = mode === 'login' ? `
     <div class="auth-form">
       <label>Email o usuario</label><input id="loginid" autocomplete="username" placeholder="tuusuario">
@@ -688,9 +725,7 @@ window.showAuth = (mode) => {
     </div>` : `
     <div class="auth-form">
       ${launchInviteNote}
-      ${pendingProfileDestination()
-        ? `<div class="invite-auth-note profile-invite-note"><b>🔐 Te han invitado al perfil de @${escapeHtml(pendingProfileDestination())}</b><span>Crea tu cuenta. Entrarás directamente a ese perfil y podrás usar Instant Admirers con normalidad mientras completas su acceso.</span></div>`
-        : (localStorage.getItem('pendingReferralCode') ? '<div class="invite-auth-note"><b>💬 Has llegado con una invitación</b><span>Crea tu perfil en Instant Admirers desde aquí.</span></div>' : '')}
+      ${!directProfile && localStorage.getItem('pendingReferralCode') ? '<div class="invite-auth-note"><b>💬 Has llegado con una invitación</b><span>Crea tu perfil en Instant Admirers desde aquí.</span></div>' : ''}
       <label>Nombre</label><input id="regname" placeholder="Tu nombre">
       <label>Usuario</label><input id="reguser" autocomplete="username" placeholder="tuusuario">
       <label>Email</label><input id="regemail" type="email" autocomplete="email" placeholder="tu@email.com">
@@ -1572,6 +1607,8 @@ function friendGateBanner(u) {
     ? `${required} personas nuevas deben crear su cuenta desde tu enlace y publicar al menos 1 post.`
     : `${required} personas nuevas deben crear su cuenta desde tu enlace.`;
   const headline=progress>0 ? `🔥 Ya tienes ${progress}. Te ${remaining===1?'queda':'quedan'} ${remaining}` : `Estás a ${required} invitaciones de entrar`;
+  const accessMessage=String(g.access_message || '').trim() || defaultProfileAccessMessage();
+  const ownerMessageLabel=window.IAI18N?.t?.('Mensaje de','Message from') || 'Mensaje de';
   return `<section class="card access-gate-card growth-access-gate">
     <div class="access-gate-top">
       <div class="access-gate-icon">🔐</div>
@@ -1582,6 +1619,7 @@ function friendGateBanner(u) {
       </div>
       <div class="access-gate-count"><strong>${progress}</strong><span>/${required}</span></div>
     </div>
+    <div class="access-gate-owner-message"><small>${escapeHtml(ownerMessageLabel)} @${escapeHtml(u.username)}</small><p class="user-content">“${escapeHtml(accessMessage)}”</p></div>
     <div class="access-gate-progress-wrap">
       <div class="gate-progress access-gate-progress"><span style="width:${pct}%"></span></div>
       <small>${pct}% completado</small>
@@ -1888,18 +1926,22 @@ window.openFriendGateSettings = async () => {
       <div class="gate-settings">
         <div class="security-callout"><b>Convierte tu perfil en un acceso por invitaciones</b><p>Quien llegue a tu perfil verá el progreso del reto y podrá usar su cuenta con normalidad mientras lo completa.</p></div>
         <label class="privacy-section"><span><b>Activar acceso especial</b><small>Si está activado, las personas deberán completar el reto antes de ver tu perfil.</small></span><span class="switch"><input id="gateEnabled" type="checkbox" ${g.friend_gate_enabled?'checked':''}><span></span></span></label>
+        <label class="gate-message-field"><span><b>Mensaje de acceso al perfil</b><small>Explica brevemente por qué has protegido tu perfil o qué encontrará quien consiga entrar.</small></span><textarea id="gateAccessMessage" maxlength="220" rows="4" placeholder="Aquí comparto cosas más personales. Si quieres verlas, desbloquea mi perfil 💜">${escapeHtml(g.friend_gate_message || '')}</textarea><small class="gate-message-count"><span id="gateMessageCount">${String(g.friend_gate_message || '').length}</span>/220</small></label>
         <label>Número de personas que deben invitar<input id="gateRequired" type="number" min="1" max="50" value="${Number(g.friend_gate_required_referrals||5)}"></label>
         <label class="legal-check"><input id="gateRequirePost" type="checkbox" ${g.friend_gate_require_post!==false?'checked':''}><span>Las nuevas cuentas deben publicar al menos 1 post para contar.</span></label>
         <label class="legal-check"><input id="gateAutoAccept" type="checkbox" ${g.friend_gate_auto_accept!==false?'checked':''}><span>Al completar el reto, crear automáticamente la amistad con esa persona.</span></label>
         <button class="btn primary" onclick="saveFriendGateSettings()">Guardar condición</button>
       </div>`);
+    const gateMessage=$('#gateAccessMessage');
+    gateMessage?.addEventListener('input',()=>{ const count=$('#gateMessageCount'); if(count) count.textContent=String(gateMessage.value||'').length; });
   }catch(e){toast(e.message,'error');}
 };
 
 window.saveFriendGateSettings = async () => {
   try{
     const required=Math.max(1,Math.min(50,Number($('#gateRequired')?.value||5)));
-    await api('/api/friend-gate',{method:'PATCH',body:JSON.stringify({enabled:Boolean($('#gateEnabled')?.checked),required_referrals:required,require_post:Boolean($('#gateRequirePost')?.checked),auto_accept:Boolean($('#gateAutoAccept')?.checked)})});
+    const accessMessage=String($('#gateAccessMessage')?.value || '').trim().slice(0,220);
+    await api('/api/friend-gate',{method:'PATCH',body:JSON.stringify({enabled:Boolean($('#gateEnabled')?.checked),required_referrals:required,require_post:Boolean($('#gateRequirePost')?.checked),auto_accept:Boolean($('#gateAutoAccept')?.checked),access_message:accessMessage})});
     await refreshMe(false);closeModal();toast('Condición de amistad actualizada');
   }catch(e){toast(e.message,'error');}
 };
@@ -3210,7 +3252,7 @@ registerInstantAdmirersPwa();
 init();
 
 
-// V1.12.2: bloqueo reforzado de descarga casual sobre multimedia protegida.
+// V1.12.3: bloqueo reforzado de descarga casual sobre multimedia protegida.
 const isProtectedMediaTarget = target => Boolean(target?.closest?.('[data-protected-media="1"],[data-protected-media-frame="1"]'));
 
 document.addEventListener('contextmenu', event => {
