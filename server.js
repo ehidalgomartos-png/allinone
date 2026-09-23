@@ -68,10 +68,11 @@ function emailError(message, code='EMAIL_SEND_FAILED', details=null) {
   return err;
 }
 
-function emailShell({ title, body, buttonText, buttonUrl, footer }) {
+function emailShell({ title, body, buttonText, buttonUrl, footer, lang='es' }) {
+  const english=String(lang||'').toLowerCase()==='en';
   const safeTitle = String(title || '').replace(/[<>&]/g, '');
-  const button = buttonUrl ? `<p style="margin:28px 0"><a href="${buttonUrl}" style="display:inline-block;padding:13px 22px;border-radius:12px;background:linear-gradient(135deg,#ff2aa1,#7c3cff);color:#fff;text-decoration:none;font-weight:700">${String(buttonText || 'Abrir Instant Admirers').replace(/[<>&]/g,'')}</a></p>` : '';
-  return `<!doctype html><html><body style="margin:0;background:#0b0b12;color:#f7f7fb;font-family:Arial,sans-serif"><div style="max-width:620px;margin:0 auto;padding:32px 18px"><div style="font-size:24px;font-weight:800;margin-bottom:24px">Instant <span style="color:#ff2aa1">Admirers</span></div><div style="background:#151621;border:1px solid #2b2d3c;border-radius:18px;padding:28px"><h1 style="font-size:24px;margin:0 0 16px">${safeTitle}</h1><div style="font-size:16px;line-height:1.6;color:#d7d8e3">${body || ''}</div>${button}${footer ? `<p style="font-size:13px;color:#9295a8;margin-top:24px">${footer}</p>` : ''}</div><p style="font-size:12px;color:#777b8c;margin-top:18px">Este correo ha sido enviado por Instant Admirers.</p></div></body></html>`;
+  const button = buttonUrl ? `<p style="margin:28px 0"><a href="${buttonUrl}" style="display:inline-block;padding:13px 22px;border-radius:12px;background:linear-gradient(135deg,#ff2aa1,#7c3cff);color:#fff;text-decoration:none;font-weight:700">${String(buttonText || (english?'Open Instant Admirers':'Abrir Instant Admirers')).replace(/[<>&]/g,'')}</a></p>` : '';
+  return `<!doctype html><html lang="${english?'en':'es'}"><body style="margin:0;background:#0b0b12;color:#f7f7fb;font-family:Arial,sans-serif"><div style="max-width:620px;margin:0 auto;padding:32px 18px"><div style="font-size:24px;font-weight:800;margin-bottom:24px">Instant <span style="color:#ff2aa1">Admirers</span></div><div style="background:#151621;border:1px solid #2b2d3c;border-radius:18px;padding:28px"><h1 style="font-size:24px;margin:0 0 16px">${safeTitle}</h1><div style="font-size:16px;line-height:1.6;color:#d7d8e3">${body || ''}</div>${button}${footer ? `<p style="font-size:13px;color:#9295a8;margin-top:24px">${footer}</p>` : ''}</div><p style="font-size:12px;color:#777b8c;margin-top:18px">${english?'This email was sent by Instant Admirers.':'Este correo ha sido enviado por Instant Admirers.'}</p></div></body></html>`;
 }
 
 function limiter({ windowMs, max, message }) {
@@ -264,11 +265,17 @@ async function sendEmail({to,subject,text,html}) {
 async function sendVerificationEmail(user) {
   const token = await createAccountToken(user.id, 'verify_email', { minutes: 24*60 });
   const url = `${APP_URL}/?action=verify-email&token=${encodeURIComponent(token)}`;
+  const english=String(user.preferred_language || '').toLowerCase()==='en';
+  const safeName=String(user.name || user.username).replace(/[<>&]/g,'');
   const sent = await sendEmail({
     to:user.email,
-    subject:'Confirma tu email · Instant Admirers',
-    text:`Hola ${user.name || user.username}. Confirma tu email en: ${url}\\n\\nEl enlace caduca en 24 horas.`,
-    html:emailShell({ title:'Confirma tu email', body:`<p>Hola ${String(user.name || user.username).replace(/[<>&]/g,'')},</p><p>Confirma tu dirección para proteger tu cuenta de Instant Admirers.</p>`, buttonText:'Confirmar email', buttonUrl:url, footer:'El enlace caduca en 24 horas.' })
+    subject:english?'Confirm your email · Instant Admirers':'Confirma tu email · Instant Admirers',
+    text:english?`Hi ${user.name || user.username}. Confirm your email at: ${url}
+
+The link expires in 24 hours.`:`Hola ${user.name || user.username}. Confirma tu email en: ${url}
+
+El enlace caduca en 24 horas.`,
+    html:emailShell({ lang:english?'en':'es', title:english?'Confirm your email':'Confirma tu email', body:english?`<p>Hi ${safeName},</p><p>Confirm your email address to protect your Instant Admirers account.</p>`:`<p>Hola ${safeName},</p><p>Confirma tu dirección para proteger tu cuenta de Instant Admirers.</p>`, buttonText:english?'Confirm email':'Confirmar email', buttonUrl:url, footer:english?'The link expires in 24 hours.':'El enlace caduca en 24 horas.' })
   });
   if (!sent && process.env.NODE_ENV !== 'production') console.log('VERIFY EMAIL:', url);
   return sent;
@@ -464,9 +471,13 @@ function normalizeAdPayload(body={}) {
     link_url:linkUrl || '',
     google_code:googleCode,
     alt_text:String(body.alt_text || '').trim().slice(0,240),
+    alt_text_en:String(body.alt_text_en || '').trim().slice(0,240),
     display_title:String(body.display_title ?? '').trim().slice(0,120),
+    display_title_en:String(body.display_title_en ?? '').trim().slice(0,120),
     display_text:String(body.display_text ?? '').trim().slice(0,500),
+    display_text_en:String(body.display_text_en ?? '').trim().slice(0,500),
     button_text:String(body.button_text ?? '').trim().slice(0,60),
+    button_text_en:String(body.button_text_en ?? '').trim().slice(0,60),
     placements,
     desktop_enabled:desktopEnabled,
     mobile_enabled:mobileEnabled,
@@ -509,6 +520,7 @@ function safeUser(row, includePrivate = false) {
   };
   if (includePrivate) {
     user.email = row.email;
+    user.preferred_language = ['es','en'].includes(String(row.preferred_language || '')) ? String(row.preferred_language) : '';
     user.message_policy = row.message_policy || 'everyone';
     user.onboarding_completed = row.onboarding_completed !== false;
     user.is_admin = isAdminRecord(row);
@@ -962,7 +974,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.10.4', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion'] });
+  res.json({ ok: true, version: '1.11.0', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -1032,14 +1044,14 @@ app.post('/api/growth/campaign/visit', asyncRoute(async (req,res) => {
 }));
 
 const RESERVED_PROFILE_SLUGS = new Set([
-  'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
+  'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
   'feed','reels','discover','search','messages','notifications','bookmarks','friends','settings','profile',
   'invite','invites','help','support','about'
 ]);
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
-  const { username, name, email, password, age_confirmed, terms_accepted, terms_version, referral_code, gate_code, campaign_code } = req.body;
+  const { username, name, email, password, age_confirmed, terms_accepted, terms_version, referral_code, gate_code, campaign_code, language } = req.body;
   if (!username || !name || !email || !password) return res.status(400).json({ error: 'Faltan datos' });
   if (age_confirmed !== true) return res.status(400).json({ error: 'Debes confirmar que tienes 18 años o más' });
   if (terms_accepted !== true) return res.status(400).json({ error: 'Debes aceptar los Términos de Uso' });
@@ -1048,6 +1060,7 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
   const normalizedEmail = String(email).trim().toLowerCase();
   const normalizedName = String(name).trim().slice(0, 100);
   const plainPassword = String(password);
+  const preferredLanguage=['es','en'].includes(String(language||'').toLowerCase()) ? String(language).toLowerCase() : '';
 
   if (!/^[a-zA-Z0-9_.]{3,30}$/.test(normalizedUsername)) return res.status(400).json({ error: 'El usuario debe tener 3-30 caracteres: letras, números, _ o .' });
   if (RESERVED_PROFILE_SLUGS.has(normalizedUsername)) return res.status(400).json({ error: 'Ese nombre de usuario está reservado. Elige otro.' });
@@ -1071,10 +1084,10 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
     const inviteCode = crypto.randomBytes(8).toString('hex');
     const user = await withTransaction(async client => {
       const { rows } = await client.query(`
-        INSERT INTO users (username, name, email, password_hash, onboarding_completed, age_confirmed_at, terms_accepted_at, terms_version, invite_code)
-        VALUES ($1, $2, $3, $4, FALSE, NOW(), NOW(), $5, $6)
+        INSERT INTO users (username, name, email, password_hash, onboarding_completed, age_confirmed_at, terms_accepted_at, terms_version, invite_code, preferred_language)
+        VALUES ($1, $2, $3, $4, FALSE, NOW(), NOW(), $5, $6, $7)
         RETURNING *
-      `, [normalizedUsername, normalizedName, normalizedEmail, passwordHash, CURRENT_TERMS_VERSION, inviteCode]);
+      `, [normalizedUsername, normalizedName, normalizedEmail, passwordHash, CURRENT_TERMS_VERSION, inviteCode, preferredLanguage]);
       const created = rows[0];
       if (normalizedCampaign) {
         const campaign=await growthCampaignBySlug(normalizedCampaign,client);
@@ -1166,7 +1179,8 @@ app.post('/api/auth/forgot-password', asyncRoute(async (req,res) => {
   if (user) {
     const token=await createAccountToken(user.id,'reset_password',{minutes:30});
     const url=`${APP_URL}/?action=reset-password&token=${encodeURIComponent(token)}`;
-    const sent=await sendEmail({to:user.email,subject:'Restablece tu contraseña · Instant Admirers',text:`Restablece tu contraseña en: ${url}\n\nEl enlace caduca en 30 minutos.`,html:emailShell({ title:'Restablecer contraseña', body:'<p>Hemos recibido una solicitud para cambiar la contraseña de tu cuenta.</p>', buttonText:'Crear nueva contraseña', buttonUrl:url, footer:'El enlace caduca en 30 minutos. Si no fuiste tú, puedes ignorar este mensaje.' })}).catch(err=>{console.error('reset email:',err.message);return false;});
+    const english=String(user.preferred_language||'').toLowerCase()==='en';
+    const sent=await sendEmail({to:user.email,subject:english?'Reset your password · Instant Admirers':'Restablece tu contraseña · Instant Admirers',text:english?`Reset your password at: ${url}\n\nThe link expires in 30 minutes.`:`Restablece tu contraseña en: ${url}\n\nEl enlace caduca en 30 minutos.`,html:emailShell({ lang:english?'en':'es', title:english?'Reset password':'Restablecer contraseña', body:english?'<p>We received a request to change your account password.</p>':'<p>Hemos recibido una solicitud para cambiar la contraseña de tu cuenta.</p>', buttonText:english?'Create new password':'Crear nueva contraseña', buttonUrl:url, footer:english?'The link expires in 30 minutes. If this was not you, you can ignore this message.':'El enlace caduca en 30 minutos. Si no fuiste tú, puedes ignorar este mensaje.' })}).catch(err=>{console.error('reset email:',err.message);return false;});
     await securityEvent(req,'password_reset_requested',user.id,{sent});
     if (!sent) return res.status(502).json({ error:'No hemos podido enviar el correo mediante Resend. Inténtalo de nuevo en unos minutos.', code:'EMAIL_SEND_FAILED' });
   }
@@ -1252,6 +1266,14 @@ app.patch('/api/me', auth, asyncRoute(async (req, res) => {
   res.json(safeUser(rows[0], true));
 }));
 
+
+// V1.11.0: preferencia de idioma sincronizada con la cuenta.
+app.patch('/api/me/language', auth, asyncRoute(async (req,res) => {
+  const language=String(req.body?.language || '').trim().toLowerCase();
+  if(!['es','en'].includes(language)) return res.status(400).json({error:'Idioma no válido'});
+  const {rows}=await pool.query('UPDATE users SET preferred_language=$2 WHERE id=$1 RETURNING preferred_language',[req.user.id,language]);
+  res.json(rows[0] || {preferred_language:language});
+}));
 
 app.delete('/api/me/avatar', auth, asyncRoute(async (req, res) => {
   res.json(await removeProfileMedia(req.user.id, 'avatar'));
@@ -2660,7 +2682,8 @@ app.post('/api/account/email', auth, recoveryLimiter, asyncRoute(async (req,res)
   if(exists.rowCount) return res.status(409).json({error:'Ese email ya está en uso'});
   const token=await createAccountToken(user.id,'change_email',{minutes:60,newEmail});
   const url=`${APP_URL}/?action=change-email&token=${encodeURIComponent(token)}`;
-  const sent=await sendEmail({to:newEmail,subject:'Confirma tu nuevo email · Instant Admirers',text:`Confirma el nuevo email de tu cuenta en: ${url}\\n\\nEl enlace caduca en 60 minutos.`,html:emailShell({ title:'Confirma tu nuevo email', body:'<p>Para terminar el cambio de email de tu cuenta, confirma esta dirección.</p>', buttonText:'Confirmar nuevo email', buttonUrl:url, footer:'El enlace caduca en 60 minutos.' })});
+  const english=String(user.preferred_language||'').toLowerCase()==='en';
+  const sent=await sendEmail({to:newEmail,subject:english?'Confirm your new email · Instant Admirers':'Confirma tu nuevo email · Instant Admirers',text:english?`Confirm the new email for your account at: ${url}\n\nThe link expires in 60 minutes.`:`Confirma el nuevo email de tu cuenta en: ${url}\n\nEl enlace caduca en 60 minutos.`,html:emailShell({ lang:english?'en':'es', title:english?'Confirm your new email':'Confirma tu nuevo email', body:english?'<p>To finish changing the email on your account, confirm this address.</p>':'<p>Para terminar el cambio de email de tu cuenta, confirma esta dirección.</p>', buttonText:english?'Confirm new email':'Confirmar nuevo email', buttonUrl:url, footer:english?'The link expires in 60 minutes.':'El enlace caduca en 60 minutos.' })});
   await securityEvent(req,'email_change_requested',user.id,{sent});
   res.json({ok:true});
 }));
@@ -2696,6 +2719,7 @@ app.get('/api/ads/slot', auth, asyncRoute(async (req,res) => {
   const placement=String(req.query.placement || '').trim();
   const device=String(req.query.device || '').trim()==='mobile' ? 'mobile' : 'desktop';
   const profileUsername=String(req.query.profile || '').trim().replace(/^@/,'').slice(0,30);
+  const language=String(req.query.lang || '').trim().toLowerCase()==='en' ? 'en' : 'es';
   if(!AD_PLACEMENTS.has(placement)) return res.status(400).json({error:'Ubicación publicitaria no válida'});
 
   let profileId=null;
@@ -2706,7 +2730,7 @@ app.get('/api/ads/slot', auth, asyncRoute(async (req,res) => {
   if(placement==='profile' && !profileId) return res.status(204).end();
 
   const {rows}=await pool.query(`
-    SELECT a.id,a.name,a.creative_type,a.image_url,a.mobile_image_url,a.link_url,a.google_code,a.alt_text,a.display_title,a.display_text,a.button_text,a.placements,a.profile_mode
+    SELECT a.id,a.name,a.creative_type,a.image_url,a.mobile_image_url,a.link_url,a.google_code,a.alt_text,a.alt_text_en,a.display_title,a.display_title_en,a.display_text,a.display_text_en,a.button_text,a.button_text_en,a.placements,a.profile_mode
       FROM ads a
       JOIN ad_settings s ON s.id=1 AND s.enabled=TRUE
      WHERE a.active=TRUE
@@ -2731,13 +2755,14 @@ app.get('/api/ads/slot', auth, asyncRoute(async (req,res) => {
     image_url:device==='mobile' && row.mobile_image_url ? row.mobile_image_url : row.image_url,
     link_url:row.link_url,
     google_code:row.google_code,
-    alt_text:row.alt_text,
-    display_title:row.display_title || '',
-    // Compatibilidad con anuncios creados antes de V1.10.3: si display_text es NULL,
-    // el antiguo “Texto alternativo” se muestra una vez como texto visible. Al guardar
-    // el anuncio en V1.10.3, display_text pasa a ser explícito y puede dejarse vacío.
-    display_text:row.display_text === null ? (row.alt_text || '') : (row.display_text || ''),
-    button_text:row.button_text || '',
+    alt_text:language==='en' ? (row.alt_text_en || row.alt_text || '') : (row.alt_text || ''),
+    display_title:language==='en' ? (row.display_title_en || row.display_title || '') : (row.display_title || ''),
+    // Compatibilidad con anuncios creados antes de V1.10.3: si display_text ES es NULL,
+    // el antiguo texto alternativo se reutiliza. En inglés se usa EN y, si falta, ES.
+    display_text:language==='en'
+      ? (row.display_text_en || (row.display_text === null ? (row.alt_text || '') : (row.display_text || '')))
+      : (row.display_text === null ? (row.alt_text || '') : (row.display_text || '')),
+    button_text:language==='en' ? (row.button_text_en || row.button_text || '') : (row.button_text || ''),
     placement
   });
 }));
@@ -3038,10 +3063,10 @@ app.post('/api/admin/ads', auth, adminOnly, asyncRoute(async (req,res) => {
   const result=await withTransaction(async client=>{
     const targetProfiles=await validateAdTargetUsers(ad.target_ids,client);
     const {rows}=await client.query(`
-      INSERT INTO ads(created_by,name,active,creative_type,image_url,image_provider,image_provider_id,image_resource_type,mobile_image_url,mobile_image_provider,mobile_image_provider_id,mobile_image_resource_type,link_url,google_code,alt_text,display_title,display_text,button_text,placements,desktop_enabled,mobile_enabled,profile_mode,priority,starts_at,ends_at)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19::text[],$20,$21,$22,$23,$24,$25)
+      INSERT INTO ads(created_by,name,active,creative_type,image_url,image_provider,image_provider_id,image_resource_type,mobile_image_url,mobile_image_provider,mobile_image_provider_id,mobile_image_resource_type,link_url,google_code,alt_text,alt_text_en,display_title,display_title_en,display_text,display_text_en,button_text,button_text_en,placements,desktop_enabled,mobile_enabled,profile_mode,priority,starts_at,ends_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23::text[],$24,$25,$26,$27,$28,$29)
       RETURNING *
-    `,[req.user.id,ad.name,ad.active,ad.creative_type,ad.image_url,ad.image_provider,ad.image_provider_id,ad.image_resource_type,ad.mobile_image_url,ad.mobile_image_provider,ad.mobile_image_provider_id,ad.mobile_image_resource_type,ad.link_url,ad.google_code,ad.alt_text,ad.display_title,ad.display_text,ad.button_text,ad.placements,ad.desktop_enabled,ad.mobile_enabled,ad.profile_mode,ad.priority,ad.starts_at,ad.ends_at]);
+    `,[req.user.id,ad.name,ad.active,ad.creative_type,ad.image_url,ad.image_provider,ad.image_provider_id,ad.image_resource_type,ad.mobile_image_url,ad.mobile_image_provider,ad.mobile_image_provider_id,ad.mobile_image_resource_type,ad.link_url,ad.google_code,ad.alt_text,ad.alt_text_en,ad.display_title,ad.display_title_en,ad.display_text,ad.display_text_en,ad.button_text,ad.button_text_en,ad.placements,ad.desktop_enabled,ad.mobile_enabled,ad.profile_mode,ad.priority,ad.starts_at,ad.ends_at]);
     const row=rows[0];
     for(const id of ad.target_ids) await client.query(`INSERT INTO ad_profile_targets(ad_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING`,[row.id,id]);
     await client.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'advertising_create',$2)`,[req.user.id,JSON.stringify({id:row.id,name:row.name,type:row.creative_type,placements:row.placements,profile_mode:row.profile_mode}).slice(0,1000)]);
@@ -3062,10 +3087,10 @@ app.patch('/api/admin/ads/:id', auth, adminOnly, asyncRoute(async (req,res) => {
     const targetProfiles=await validateAdTargetUsers(ad.target_ids,client);
     const {rows}=await client.query(`
       UPDATE ads SET name=$2,active=$3,creative_type=$4,image_url=$5,image_provider=$6,image_provider_id=$7,image_resource_type=$8,
-        mobile_image_url=$9,mobile_image_provider=$10,mobile_image_provider_id=$11,mobile_image_resource_type=$12,link_url=$13,google_code=$14,alt_text=$15,
-        display_title=$16,display_text=$17,button_text=$18,placements=$19::text[],desktop_enabled=$20,mobile_enabled=$21,profile_mode=$22,priority=$23,starts_at=$24,ends_at=$25,updated_at=NOW()
+        mobile_image_url=$9,mobile_image_provider=$10,mobile_image_provider_id=$11,mobile_image_resource_type=$12,link_url=$13,google_code=$14,alt_text=$15,alt_text_en=$16,
+        display_title=$17,display_title_en=$18,display_text=$19,display_text_en=$20,button_text=$21,button_text_en=$22,placements=$23::text[],desktop_enabled=$24,mobile_enabled=$25,profile_mode=$26,priority=$27,starts_at=$28,ends_at=$29,updated_at=NOW()
       WHERE id=$1 RETURNING *
-    `,[id,ad.name,ad.active,ad.creative_type,ad.image_url,ad.image_provider,ad.image_provider_id,ad.image_resource_type,ad.mobile_image_url,ad.mobile_image_provider,ad.mobile_image_provider_id,ad.mobile_image_resource_type,ad.link_url,ad.google_code,ad.alt_text,ad.display_title,ad.display_text,ad.button_text,ad.placements,ad.desktop_enabled,ad.mobile_enabled,ad.profile_mode,ad.priority,ad.starts_at,ad.ends_at]);
+    `,[id,ad.name,ad.active,ad.creative_type,ad.image_url,ad.image_provider,ad.image_provider_id,ad.image_resource_type,ad.mobile_image_url,ad.mobile_image_provider,ad.mobile_image_provider_id,ad.mobile_image_resource_type,ad.link_url,ad.google_code,ad.alt_text,ad.alt_text_en,ad.display_title,ad.display_title_en,ad.display_text,ad.display_text_en,ad.button_text,ad.button_text_en,ad.placements,ad.desktop_enabled,ad.mobile_enabled,ad.profile_mode,ad.priority,ad.starts_at,ad.ends_at]);
     await client.query(`DELETE FROM ad_profile_targets WHERE ad_id=$1`,[id]);
     for(const targetId of ad.target_ids) await client.query(`INSERT INTO ad_profile_targets(ad_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING`,[id,targetId]);
     await client.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'advertising_update',$2)`,[req.user.id,JSON.stringify({id,name:ad.name,type:ad.creative_type,placements:ad.placements,profile_mode:ad.profile_mode}).slice(0,1000)]);
@@ -3316,7 +3341,7 @@ async function start() {
   await initDb();
   await syncSystemAccounts();
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.10.4 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.11.0 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {

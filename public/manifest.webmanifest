@@ -2,7 +2,7 @@
   "id": "/",
   "name": "Instant Admirers",
   "short_name": "Admirers",
-  "description": "Encuentra tu gente. Comparte tu mundo.",
+  "description": "Instant Admirers · Comunidad social / Social community.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
@@ -17,7 +17,6 @@
     "social",
     "lifestyle"
   ],
-  "lang": "es",
   "dir": "ltr",
   "icons": [
     {

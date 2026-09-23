@@ -317,6 +317,11 @@ ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('user','admin'
 
 -- V1.10.1: cuentas técnicas fuera de la red social.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS social_hidden BOOLEAN NOT NULL DEFAULT FALSE;
+-- V1.11.0: idioma preferido del usuario (vacío = detectar por navegador).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(5) NOT NULL DEFAULT '';
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_preferred_language_check;
+ALTER TABLE users ADD CONSTRAINT users_preferred_language_check CHECK (preferred_language IN ('','es','en'));
+
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status VARCHAR(20) NOT NULL DEFAULT 'active';
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_account_status_check;
@@ -585,6 +590,12 @@ CREATE TABLE IF NOT EXISTS ads (
 ALTER TABLE ads ADD COLUMN IF NOT EXISTS display_title VARCHAR(120);
 ALTER TABLE ads ADD COLUMN IF NOT EXISTS display_text VARCHAR(500);
 ALTER TABLE ads ADD COLUMN IF NOT EXISTS button_text VARCHAR(60);
+-- V1.11.0: copia visible bilingüe de publicidad. Si EN está vacío, se usa ES.
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS alt_text_en VARCHAR(240) NOT NULL DEFAULT '';
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS display_title_en VARCHAR(120) NOT NULL DEFAULT '';
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS display_text_en VARCHAR(500) NOT NULL DEFAULT '';
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS button_text_en VARCHAR(60) NOT NULL DEFAULT '';
+
 
 CREATE TABLE IF NOT EXISTS ad_profile_targets (
   ad_id BIGINT NOT NULL REFERENCES ads(id) ON DELETE CASCADE,

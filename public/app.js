@@ -1,6 +1,6 @@
-// V1.10.1 · Administrador como cuenta técnica del sistema
+// V1.11.0 · Español / English + Administrador como cuenta técnica del sistema
 const RESERVED_PROFILE_SLUGS = new Set([
-  'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
+  'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
   'feed','reels','discover','search','messages','notifications','bookmarks','friends','settings','profile',
   'invite','invites','help','support','about'
@@ -410,7 +410,7 @@ function adDevice() { return window.matchMedia('(max-width: 860px)').matches ? '
 
 async function fetchAdSlot(placement, profile='') {
   if(!state.token) return null;
-  const params=new URLSearchParams({placement,device:adDevice()});
+  const params=new URLSearchParams({placement,device:adDevice(),lang:window.IAI18N?.adLanguage?.() || 'es'});
   if(profile) params.set('profile',String(profile).replace(/^@/,''));
   try{
     const response=await fetch(`/api/ads/slot?${params.toString()}`,{headers:{Authorization:'Bearer '+state.token}});
@@ -454,7 +454,7 @@ function adVisibleCopyHtml(ad){
 }
 
 function adImageHtml(ad){
-  const image=`<img src="${escapeAttr(ad.image_url||'')}" alt="${escapeAttr(ad.alt_text||'Publicidad')}" loading="lazy" decoding="async">`;
+  const image=`<img src="${escapeAttr(ad.image_url||'')}" alt="${escapeAttr(ad.alt_text||(window.IAI18N?.t?.('Publicidad','Advertising')||'Publicidad'))}" loading="lazy" decoding="async">`;
   const creative=`<span class="ad-disclosure">Publicidad</span><div class="ad-image-wrap">${image}</div>${adVisibleCopyHtml(ad)}`;
   if(ad.link_url) return `<a class="ad-image-link" href="${escapeAttr(ad.link_url)}" target="_blank" rel="sponsored noopener noreferrer" onclick="trackAdClick(${Number(ad.id)})">${creative}</a>`;
   return `<div class="ad-image-link no-link">${creative}</div>`;
@@ -561,17 +561,19 @@ function timeAgo(date) {
   if (!date) return '';
   const diff = Date.now() - new Date(date).getTime();
   const sec = Math.max(0, Math.floor(diff / 1000));
-  if (sec < 60) return 'ahora';
-  const min = Math.floor(sec / 60); if (min < 60) return `${min} min`;
-  const h = Math.floor(min / 60); if (h < 24) return `${h} h`;
-  const d = Math.floor(h / 24); if (d < 7) return `${d} d`;
-  return new Intl.DateTimeFormat('es-ES', { day:'2-digit', month:'short' }).format(new Date(date));
+  const lang=window.IAI18N?.getLanguage?.() || 'es';
+  if (sec < 60) return lang==='en' ? 'now' : 'ahora';
+  const min = Math.floor(sec / 60); if (min < 60) return lang==='en' ? `${min} min ago` : `${min} min`;
+  const h = Math.floor(min / 60); if (h < 24) return lang==='en' ? `${h} h ago` : `${h} h`;
+  const d = Math.floor(h / 24); if (d < 7) return lang==='en' ? `${d} d ago` : `${d} d`;
+  return new Intl.DateTimeFormat(window.IAI18N?.locale?.() || 'es-ES', { day:'2-digit', month:'short' }).format(new Date(date));
 }
 
 
 function presenceText(u = {}) {
-  if (u.online) return 'En línea';
-  return u.last_seen_at ? `Última vez ${timeAgo(u.last_seen_at)}` : 'Desconectado';
+  const lang=window.IAI18N?.getLanguage?.() || 'es';
+  if (u.online) return lang==='en' ? 'Online' : 'En línea';
+  return u.last_seen_at ? `${lang==='en'?'Last seen':'Última vez'} ${timeAgo(u.last_seen_at)}` : (lang==='en'?'Offline':'Desconectado');
 }
 
 function presenceHtml(u = {}) {
@@ -731,7 +733,7 @@ window.register = async () => {
   try {
     if (btn) { btn.disabled = true; btn.textContent = 'Creando cuenta…'; }
     if (directProfile) { try { directProfile = await resolveDirectProfileUsername(directProfile); } catch (_) {} }
-    const d = await api('/api/auth/register', { method:'POST', body: JSON.stringify({ name: $('#regname').value, username: $('#reguser').value, email: $('#regemail').value, password: $('#regpass').value, age_confirmed:true, terms_accepted:true, terms_version:'2026-09-20', referral_code:localStorage.getItem('pendingReferralCode') || '', gate_code:localStorage.getItem('pendingGateCode') || '', campaign_code:currentGrowthCampaign() }) });
+    const d = await api('/api/auth/register', { method:'POST', body: JSON.stringify({ name: $('#regname').value, username: $('#reguser').value, email: $('#regemail').value, password: $('#regpass').value, age_confirmed:true, terms_accepted:true, terms_version:'2026-09-20', referral_code:localStorage.getItem('pendingReferralCode') || '', gate_code:localStorage.getItem('pendingGateCode') || '', campaign_code:currentGrowthCampaign(), language:(window.IAI18N?.getLanguage?.() || 'es') }) });
     localStorage.removeItem('pendingReferralCode'); localStorage.removeItem('pendingGateCode');
     if (d.verification_required) {
       modal(`<div class="modal-head"><h3>Confirma tu email</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="account-form"><div class="security-callout"><b>Cuenta creada</b><p>Te hemos enviado un enlace de verificación. Ábrelo antes de iniciar sesión.</p></div><button class="btn primary" onclick="closeModal();showAuth('login')">Volver a entrar</button></div>`);
@@ -901,7 +903,7 @@ window.go = async (view, opts = {}) => {
   if (isSystemAccount() && ['profile','friends','messages','notifications','bookmarks'].includes(view)) view='admin';
   state.view = view;
   if (view !== 'profile') {
-    document.title = 'Instant Admirers — Conecta. Comparte. Descubre.';
+    document.title = window.IAI18N?.t?.('Instant Admirers — Conecta. Comparte. Descubre.','Instant Admirers — Connect. Share. Discover.') || 'Instant Admirers — Conecta. Comparte. Descubre.';
     const canonical = document.querySelector('link[rel="canonical"]'); if (canonical) canonical.href = location.origin + '/';
     state.profile = null;
     if (opts.history !== false) setHomeBrowserUrl({ replace:Boolean(opts.replace) });
@@ -2464,6 +2466,7 @@ function connectRealtime() {
 
 async function refreshMe(rebuild = true) {
   state.me = await api('/api/me');
+  window.IAI18N?.syncFromAccount?.(state.me?.preferred_language);
   if (rebuild) layout();
   else loadRightbar();
 }
@@ -2548,6 +2551,10 @@ window.openAccountSettings = () => {
       <section class="settings-block">
         <div><b>Privacidad</b><small>Cuenta privada, mensajes, bloqueos y silencios.</small></div>
         <button class="btn ghost compact" onclick="closeModal();openPrivacySettings()">Abrir privacidad</button>
+      </section>
+      <section class="settings-block language-settings-block">
+        <div><b>Idioma</b><small>Se detecta automáticamente la primera vez y después se guarda en tu cuenta.</small></div>
+        ${window.IAI18N?.switcherHtml?.(false) || ''}
       </section>
       ${state.me?.is_admin ? `<section class="settings-block"><div><b>Administración</b><small>Revisa denuncias y actividad de moderación.</small></div><button class="btn ghost compact" onclick="closeModal();go('admin')">Abrir panel</button></section>` : ''}
       <section class="settings-block pwa-settings-block">
@@ -2643,10 +2650,10 @@ function adProfileModeLabel(value='') {
 }
 function adScheduleLabel(ad={}) {
   const now=Date.now(),start=ad.starts_at?new Date(ad.starts_at).getTime():null,end=ad.ends_at?new Date(ad.ends_at).getTime():null;
-  if(start && start>now) return `Programada · empieza ${new Date(ad.starts_at).toLocaleString('es-ES')}`;
-  if(end && end<=now) return `Finalizada · ${new Date(ad.ends_at).toLocaleString('es-ES')}`;
-  if(end) return `Activa hasta ${new Date(ad.ends_at).toLocaleString('es-ES')}`;
-  if(start) return `Desde ${new Date(ad.starts_at).toLocaleString('es-ES')}`;
+  if(start && start>now) return `Programada · empieza ${(window.IAI18N?.formatDateTime?.(ad.starts_at) || new Date(ad.starts_at).toLocaleString())}`;
+  if(end && end<=now) return `Finalizada · ${(window.IAI18N?.formatDateTime?.(ad.ends_at) || new Date(ad.ends_at).toLocaleString())}`;
+  if(end) return `Activa hasta ${(window.IAI18N?.formatDateTime?.(ad.ends_at) || new Date(ad.ends_at).toLocaleString())}`;
+  if(start) return `Desde ${(window.IAI18N?.formatDateTime?.(ad.starts_at) || new Date(ad.starts_at).toLocaleString())}`;
   return 'Sin fechas';
 }
 function adAdminCard(ad={}) {
@@ -2696,13 +2703,19 @@ window.previewAdminAd=(id)=>{
   if(ad.creative_type==='google'){
     modal(`<div class="modal-head"><h3>Vista previa · ${escapeHtml(ad.name)}</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="ad-preview-modal google-preview"><div class="google-preview-box"><b>Google AdSense</b><p>El bloque se cargará en su ubicación real cuando esté activo. Para no generar impresiones de prueba en Google, aquí no ejecutamos el anuncio.</p><small>Ubicaciones: ${(ad.placements||[]).map(adPlacementLabel).join(' · ')}</small></div></div>`);return;
   }
+  const english=(window.IAI18N?.getLanguage?.() || 'es')==='en';
   const legacyText=ad.display_text===null ? (ad.alt_text||'') : (ad.display_text||'');
-  const previewAd={...ad,display_text:legacyText};
-  modal(`<div class="modal-head"><h3>Vista previa · ${escapeHtml(ad.name)}</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="ad-preview-modal"><div class="ad-preview-card"><span class="ad-disclosure">Publicidad</span>${ad.image_url?`<img src="${escapeAttr(ad.image_url)}" alt="${escapeAttr(ad.alt_text||'')}">`:''}${adVisibleCopyHtml(previewAd)}</div>${ad.mobile_image_url?`<div class="ad-mobile-preview"><small>Imagen móvil</small><img src="${escapeAttr(ad.mobile_image_url)}" alt=""></div>`:''}</div>`);
+  const previewAd={...ad,
+    alt_text:english?(ad.alt_text_en||ad.alt_text||''):(ad.alt_text||''),
+    display_title:english?(ad.display_title_en||ad.display_title||''):(ad.display_title||''),
+    display_text:english?(ad.display_text_en||legacyText):legacyText,
+    button_text:english?(ad.button_text_en||ad.button_text||''):(ad.button_text||'')
+  };
+  modal(`<div class="modal-head"><h3>Vista previa · ${escapeHtml(ad.name)}</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="ad-preview-modal"><div class="ad-preview-card"><span class="ad-disclosure">Publicidad</span>${ad.image_url?`<img src="${escapeAttr(ad.image_url)}" alt="${escapeAttr(previewAd.alt_text||'')}">`:''}${adVisibleCopyHtml(previewAd)}</div>${ad.mobile_image_url?`<div class="ad-mobile-preview"><small>Imagen móvil</small><img src="${escapeAttr(ad.mobile_image_url)}" alt=""></div>`:''}</div>`);
 };
 
 window.openAdEditor=(id=0)=>{
-  const ad=currentAdminAd(id)||{id:0,name:'',active:true,creative_type:'image',image_url:'',image_provider:'',image_provider_id:'',mobile_image_url:'',mobile_image_provider:'',mobile_image_provider_id:'',link_url:'',google_code:'',alt_text:'',display_title:'',display_text:'',button_text:'',placements:['feed'],desktop_enabled:true,mobile_enabled:true,profile_mode:'all',priority:0,starts_at:null,ends_at:null,targets:[]};
+  const ad=currentAdminAd(id)||{id:0,name:'',active:true,creative_type:'image',image_url:'',image_provider:'',image_provider_id:'',mobile_image_url:'',mobile_image_provider:'',mobile_image_provider_id:'',link_url:'',google_code:'',alt_text:'',alt_text_en:'',display_title:'',display_title_en:'',display_text:'',display_text_en:'',button_text:'',button_text_en:'',placements:['feed'],desktop_enabled:true,mobile_enabled:true,profile_mode:'all',priority:0,starts_at:null,ends_at:null,targets:[]};
   state.adEditorTargets=[...(ad.targets||[])];
   state.adEditorId=Number(ad.id||0);
   modal(`<div class="modal-head"><h3>${ad.id?'Editar publicidad':'Crear publicidad'}</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
@@ -2715,11 +2728,11 @@ window.openAdEditor=(id=0)=>{
         <div id="adImageLivePreview" class="ad-editor-live-preview">${ad.image_url?`<img src="${escapeAttr(ad.image_url)}" alt="">`:''}</div>
         <div class="ad-editor-grid two"><label>Imagen móvil opcional<input id="adMobileImageFile" type="file" accept="image/*" onchange="previewAdLocalFile(this,'adMobileLivePreview')"></label><label>O URL móvil opcional<input id="adMobileImageUrl" type="url" value="${escapeAttr(ad.mobile_image_url||'')}" placeholder="Si está vacío usa la principal"></label></div>
         <div id="adMobileLivePreview" class="ad-editor-live-preview mobile">${ad.mobile_image_url?`<img src="${escapeAttr(ad.mobile_image_url)}" alt="">`:''}</div>
-        <div class="ad-editor-grid two"><label>Dirección al hacer clic<input id="adLinkUrl" type="url" value="${escapeAttr(ad.link_url||'')}" placeholder="https://..."></label><label>Texto alternativo (accesibilidad)<input id="adAltText" maxlength="240" value="${escapeAttr(ad.alt_text||'')}" placeholder="Describe la imagen para accesibilidad"><small class="ad-field-help">Este texto no se muestra visualmente.</small></label></div>
+        <div class="ad-editor-grid two"><label>Dirección al hacer clic<input id="adLinkUrl" type="url" value="${escapeAttr(ad.link_url||'')}" placeholder="https://..."></label><label>Texto alternativo (accesibilidad) · ES<input id="adAltText" maxlength="240" value="${escapeAttr(ad.alt_text||'')}" placeholder="Describe la imagen para accesibilidad"><small class="ad-field-help">Este texto no se muestra visualmente.</small></label></div>
         <div class="ad-visible-copy-editor">
-          <div class="ad-editor-block-head"><b>Texto visible del anuncio (opcional)</b><small>Este contenido sí aparece debajo de la imagen. Déjalo vacío si quieres mostrar solamente el banner.</small></div>
-          <div class="ad-editor-grid two"><label>Título visible<input id="adDisplayTitle" maxlength="120" value="${escapeAttr(ad.display_title||'')}" placeholder="¿Jugamos?"></label><label>Texto del botón<input id="adButtonText" maxlength="60" value="${escapeAttr(ad.button_text||'')}" placeholder="Entrar ahora"><small class="ad-field-help">El botón aparece si también hay una dirección de destino.</small></label></div>
-          <label>Texto visible<textarea id="adDisplayText" class="ad-copy-input" maxlength="500" rows="3" placeholder="Escribe aquí el mensaje que quieres que se vea en la publicidad">${escapeHtml(ad.display_text===null?(ad.alt_text||''):(ad.display_text||''))}</textarea></label>
+          <div class="ad-editor-block-head"><b>Texto visible del anuncio (opcional)</b><small>Configura español e inglés. Si el inglés queda vacío se utilizará el español.</small></div>
+          <div class="ad-language-copy-group" data-no-i18n><strong>🇪🇸 Español</strong><div class="ad-editor-grid two"><label>Título visible<input id="adDisplayTitle" maxlength="120" value="${escapeAttr(ad.display_title||'')}" placeholder="¿Jugamos?"></label><label>Texto del botón<input id="adButtonText" maxlength="60" value="${escapeAttr(ad.button_text||'')}" placeholder="Entrar ahora"><small class="ad-field-help">El botón aparece si también hay una dirección de destino.</small></label></div><label>Texto visible<textarea id="adDisplayText" class="ad-copy-input" maxlength="500" rows="3" placeholder="Escribe aquí el mensaje que quieres que se vea en la publicidad">${escapeHtml(ad.display_text===null?(ad.alt_text||''):(ad.display_text||''))}</textarea></label></div>
+          <div class="ad-language-copy-group" data-no-i18n><strong>🇬🇧 English</strong><div class="ad-editor-grid two"><label>Visible title<input id="adDisplayTitleEn" maxlength="120" value="${escapeAttr(ad.display_title_en||'')}" placeholder="Want to play?"></label><label>Button text<input id="adButtonTextEn" maxlength="60" value="${escapeAttr(ad.button_text_en||'')}" placeholder="Enter now"></label></div><label>Visible text<textarea id="adDisplayTextEn" class="ad-copy-input" maxlength="500" rows="3" placeholder="Write the English message here">${escapeHtml(ad.display_text_en||'')}</textarea></label><label>Alternative text (accessibility)<input id="adAltTextEn" maxlength="240" value="${escapeAttr(ad.alt_text_en||'')}" placeholder="Describe the image in English"></label></div>
         </div>
       </div>
       <div id="adGoogleFields" class="ad-editor-block">
@@ -2796,7 +2809,7 @@ window.saveAdminAd=async()=>{
     if(type==='google'){imageUrl='';mobileImageUrl='';imageProvider='';imageProviderId='';mobileProvider='';mobileProviderId='';}
     const starts=$('#adStartsAt')?.value||'',ends=$('#adEndsAt')?.value||'';
     if(starts&&ends&&new Date(ends)<=new Date(starts)) throw new Error('La fecha final debe ser posterior a la fecha de inicio.');
-    const payload={name,active:Boolean($('#adActive')?.checked),creative_type:type,image_url:imageUrl,image_provider:imageProvider,image_provider_id:imageProviderId,mobile_image_url:mobileImageUrl,mobile_image_provider:mobileProvider,mobile_image_provider_id:mobileProviderId,link_url:String($('#adLinkUrl')?.value||'').trim(),google_code:googleCode,alt_text:String($('#adAltText')?.value||'').trim(),display_title:String($('#adDisplayTitle')?.value||'').trim(),display_text:String($('#adDisplayText')?.value||'').trim(),button_text:String($('#adButtonText')?.value||'').trim(),placements,desktop_enabled:desktopEnabled,mobile_enabled:mobileEnabled,profile_mode:profileMode,priority:Number($('#adPriority')?.value||0),starts_at:starts?new Date(starts).toISOString():null,ends_at:ends?new Date(ends).toISOString():null,target_ids:(state.adEditorTargets||[]).map(t=>Number(t.id))};
+    const payload={name,active:Boolean($('#adActive')?.checked),creative_type:type,image_url:imageUrl,image_provider:imageProvider,image_provider_id:imageProviderId,mobile_image_url:mobileImageUrl,mobile_image_provider:mobileProvider,mobile_image_provider_id:mobileProviderId,link_url:String($('#adLinkUrl')?.value||'').trim(),google_code:googleCode,alt_text:String($('#adAltText')?.value||'').trim(),alt_text_en:String($('#adAltTextEn')?.value||'').trim(),display_title:String($('#adDisplayTitle')?.value||'').trim(),display_title_en:String($('#adDisplayTitleEn')?.value||'').trim(),display_text:String($('#adDisplayText')?.value||'').trim(),display_text_en:String($('#adDisplayTextEn')?.value||'').trim(),button_text:String($('#adButtonText')?.value||'').trim(),button_text_en:String($('#adButtonTextEn')?.value||'').trim(),placements,desktop_enabled:desktopEnabled,mobile_enabled:mobileEnabled,profile_mode:profileMode,priority:Number($('#adPriority')?.value||0),starts_at:starts?new Date(starts).toISOString():null,ends_at:ends?new Date(ends).toISOString():null,target_ids:(state.adEditorTargets||[]).map(t=>Number(t.id))};
     await api(id?`/api/admin/ads/${id}`:'/api/admin/ads',{method:id?'PATCH':'POST',body:JSON.stringify(payload),timeout:MEDIA_UPLOAD_TIMEOUT_MS});
     closeModal();toast(id?'Publicidad actualizada':'Publicidad creada');await renderAdmin();
   }catch(e){toast(e.message,'error');if(button){button.disabled=false;button.textContent=state.adEditorId?'Guardar cambios':'Crear anuncio';}}
@@ -3086,6 +3099,12 @@ async function init(options = {}) {
   if (!navigator.onLine) { renderOfflineLaunch(); updatePwaInstallUi(); return; }
   try {
     state.me = await api('/api/me');
+    const currentLanguage=window.IAI18N?.getLanguage?.() || 'es';
+    const manualLanguage=Boolean(window.IAI18N?.hasManualChoice?.());
+    if(manualLanguage){
+      if(state.me?.preferred_language!==currentLanguage) api('/api/me/language',{method:'PATCH',body:JSON.stringify({language:currentLanguage})}).then(()=>{ if(state.me) state.me.preferred_language=currentLanguage; }).catch(()=>{});
+    } else if(state.me?.preferred_language) window.IAI18N?.syncFromAccount?.(state.me.preferred_language);
+    else api('/api/me/language',{method:'PATCH',body:JSON.stringify({language:currentLanguage})}).then(()=>{ if(state.me) state.me.preferred_language=currentLanguage; }).catch(()=>{});
     await loadLaunchStatus();
     trackSessionActivity();
     connectRealtime();
