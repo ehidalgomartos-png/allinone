@@ -562,6 +562,9 @@ CREATE TABLE IF NOT EXISTS ads (
   link_url TEXT NOT NULL DEFAULT '',
   google_code TEXT NOT NULL DEFAULT '',
   alt_text VARCHAR(240) NOT NULL DEFAULT '',
+  display_title VARCHAR(120),
+  display_text VARCHAR(500),
+  button_text VARCHAR(60),
   placements TEXT[] NOT NULL DEFAULT ARRAY['feed']::TEXT[],
   desktop_enabled BOOLEAN NOT NULL DEFAULT TRUE,
   mobile_enabled BOOLEAN NOT NULL DEFAULT TRUE,
@@ -575,6 +578,13 @@ CREATE TABLE IF NOT EXISTS ads (
   CHECK (placements <@ ARRAY['right_sidebar','feed','profile']::TEXT[]),
   CHECK (ends_at IS NULL OR starts_at IS NULL OR ends_at > starts_at)
 );
+
+-- V1.10.3: texto visible opcional para banners. En instalaciones existentes las columnas nacen NULL;
+-- esto permite distinguir anuncios antiguos (pueden reutilizar temporalmente alt_text) de un texto visible
+-- vaciado expresamente por el administrador.
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS display_title VARCHAR(120);
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS display_text VARCHAR(500);
+ALTER TABLE ads ADD COLUMN IF NOT EXISTS button_text VARCHAR(60);
 
 CREATE TABLE IF NOT EXISTS ad_profile_targets (
   ad_id BIGINT NOT NULL REFERENCES ads(id) ON DELETE CASCADE,

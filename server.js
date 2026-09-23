@@ -464,6 +464,9 @@ function normalizeAdPayload(body={}) {
     link_url:linkUrl || '',
     google_code:googleCode,
     alt_text:String(body.alt_text || '').trim().slice(0,240),
+    display_title:String(body.display_title ?? '').trim().slice(0,120),
+    display_text:String(body.display_text ?? '').trim().slice(0,500),
+    button_text:String(body.button_text ?? '').trim().slice(0,60),
     placements,
     desktop_enabled:desktopEnabled,
     mobile_enabled:mobileEnabled,
@@ -959,7 +962,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.10.2', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','starter-prompts','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','system-admin-account','social-admin-exclusion'] });
+  res.json({ ok: true, version: '1.10.3', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','starter-prompts','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -2703,7 +2706,7 @@ app.get('/api/ads/slot', auth, asyncRoute(async (req,res) => {
   if(placement==='profile' && !profileId) return res.status(204).end();
 
   const {rows}=await pool.query(`
-    SELECT a.id,a.name,a.creative_type,a.image_url,a.mobile_image_url,a.link_url,a.google_code,a.alt_text,a.placements,a.profile_mode
+    SELECT a.id,a.name,a.creative_type,a.image_url,a.mobile_image_url,a.link_url,a.google_code,a.alt_text,a.display_title,a.display_text,a.button_text,a.placements,a.profile_mode
       FROM ads a
       JOIN ad_settings s ON s.id=1 AND s.enabled=TRUE
      WHERE a.active=TRUE
@@ -2729,6 +2732,12 @@ app.get('/api/ads/slot', auth, asyncRoute(async (req,res) => {
     link_url:row.link_url,
     google_code:row.google_code,
     alt_text:row.alt_text,
+    display_title:row.display_title || '',
+    // Compatibilidad con anuncios creados antes de V1.10.3: si display_text es NULL,
+    // el antiguo “Texto alternativo” se muestra una vez como texto visible. Al guardar
+    // el anuncio en V1.10.3, display_text pasa a ser explícito y puede dejarse vacío.
+    display_text:row.display_text === null ? (row.alt_text || '') : (row.display_text || ''),
+    button_text:row.button_text || '',
     placement
   });
 }));
@@ -3029,10 +3038,10 @@ app.post('/api/admin/ads', auth, adminOnly, asyncRoute(async (req,res) => {
   const result=await withTransaction(async client=>{
     const targetProfiles=await validateAdTargetUsers(ad.target_ids,client);
     const {rows}=await client.query(`
-      INSERT INTO ads(created_by,name,active,creative_type,image_url,image_provider,image_provider_id,image_resource_type,mobile_image_url,mobile_image_provider,mobile_image_provider_id,mobile_image_resource_type,link_url,google_code,alt_text,placements,desktop_enabled,mobile_enabled,profile_mode,priority,starts_at,ends_at)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::text[],$17,$18,$19,$20,$21,$22)
+      INSERT INTO ads(created_by,name,active,creative_type,image_url,image_provider,image_provider_id,image_resource_type,mobile_image_url,mobile_image_provider,mobile_image_provider_id,mobile_image_resource_type,link_url,google_code,alt_text,display_title,display_text,button_text,placements,desktop_enabled,mobile_enabled,profile_mode,priority,starts_at,ends_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19::text[],$20,$21,$22,$23,$24,$25)
       RETURNING *
-    `,[req.user.id,ad.name,ad.active,ad.creative_type,ad.image_url,ad.image_provider,ad.image_provider_id,ad.image_resource_type,ad.mobile_image_url,ad.mobile_image_provider,ad.mobile_image_provider_id,ad.mobile_image_resource_type,ad.link_url,ad.google_code,ad.alt_text,ad.placements,ad.desktop_enabled,ad.mobile_enabled,ad.profile_mode,ad.priority,ad.starts_at,ad.ends_at]);
+    `,[req.user.id,ad.name,ad.active,ad.creative_type,ad.image_url,ad.image_provider,ad.image_provider_id,ad.image_resource_type,ad.mobile_image_url,ad.mobile_image_provider,ad.mobile_image_provider_id,ad.mobile_image_resource_type,ad.link_url,ad.google_code,ad.alt_text,ad.display_title,ad.display_text,ad.button_text,ad.placements,ad.desktop_enabled,ad.mobile_enabled,ad.profile_mode,ad.priority,ad.starts_at,ad.ends_at]);
     const row=rows[0];
     for(const id of ad.target_ids) await client.query(`INSERT INTO ad_profile_targets(ad_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING`,[row.id,id]);
     await client.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'advertising_create',$2)`,[req.user.id,JSON.stringify({id:row.id,name:row.name,type:row.creative_type,placements:row.placements,profile_mode:row.profile_mode}).slice(0,1000)]);
@@ -3054,9 +3063,9 @@ app.patch('/api/admin/ads/:id', auth, adminOnly, asyncRoute(async (req,res) => {
     const {rows}=await client.query(`
       UPDATE ads SET name=$2,active=$3,creative_type=$4,image_url=$5,image_provider=$6,image_provider_id=$7,image_resource_type=$8,
         mobile_image_url=$9,mobile_image_provider=$10,mobile_image_provider_id=$11,mobile_image_resource_type=$12,link_url=$13,google_code=$14,alt_text=$15,
-        placements=$16::text[],desktop_enabled=$17,mobile_enabled=$18,profile_mode=$19,priority=$20,starts_at=$21,ends_at=$22,updated_at=NOW()
+        display_title=$16,display_text=$17,button_text=$18,placements=$19::text[],desktop_enabled=$20,mobile_enabled=$21,profile_mode=$22,priority=$23,starts_at=$24,ends_at=$25,updated_at=NOW()
       WHERE id=$1 RETURNING *
-    `,[id,ad.name,ad.active,ad.creative_type,ad.image_url,ad.image_provider,ad.image_provider_id,ad.image_resource_type,ad.mobile_image_url,ad.mobile_image_provider,ad.mobile_image_provider_id,ad.mobile_image_resource_type,ad.link_url,ad.google_code,ad.alt_text,ad.placements,ad.desktop_enabled,ad.mobile_enabled,ad.profile_mode,ad.priority,ad.starts_at,ad.ends_at]);
+    `,[id,ad.name,ad.active,ad.creative_type,ad.image_url,ad.image_provider,ad.image_provider_id,ad.image_resource_type,ad.mobile_image_url,ad.mobile_image_provider,ad.mobile_image_provider_id,ad.mobile_image_resource_type,ad.link_url,ad.google_code,ad.alt_text,ad.display_title,ad.display_text,ad.button_text,ad.placements,ad.desktop_enabled,ad.mobile_enabled,ad.profile_mode,ad.priority,ad.starts_at,ad.ends_at]);
     await client.query(`DELETE FROM ad_profile_targets WHERE ad_id=$1`,[id]);
     for(const targetId of ad.target_ids) await client.query(`INSERT INTO ad_profile_targets(ad_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING`,[id,targetId]);
     await client.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'advertising_update',$2)`,[req.user.id,JSON.stringify({id,name:ad.name,type:ad.creative_type,placements:ad.placements,profile_mode:ad.profile_mode}).slice(0,1000)]);
@@ -3307,7 +3316,7 @@ async function start() {
   await initDb();
   await syncSystemAccounts();
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.10.2 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.10.3 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {

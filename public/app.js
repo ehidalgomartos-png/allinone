@@ -445,9 +445,17 @@ function observeAdImpression(element,id){
   adImpressionObserver.observe(element);
 }
 
+function adVisibleCopyHtml(ad){
+  const title=String(ad?.display_title||'').trim();
+  const text=String(ad?.display_text||'').trim();
+  const button=String(ad?.button_text||'').trim();
+  if(!title&&!text&&!(button&&ad?.link_url)) return '';
+  return `<div class="ad-visible-copy">${title?`<b class="ad-visible-title">${escapeHtml(title)}</b>`:''}${text?`<p class="ad-visible-text">${escapeHtml(text)}</p>`:''}${button&&ad?.link_url?`<span class="ad-visible-cta">${escapeHtml(button)}</span>`:''}</div>`;
+}
+
 function adImageHtml(ad){
   const image=`<img src="${escapeAttr(ad.image_url||'')}" alt="${escapeAttr(ad.alt_text||'Publicidad')}" loading="lazy" decoding="async">`;
-  const creative=`<span class="ad-disclosure">Publicidad</span><div class="ad-image-wrap">${image}</div>`;
+  const creative=`<span class="ad-disclosure">Publicidad</span><div class="ad-image-wrap">${image}</div>${adVisibleCopyHtml(ad)}`;
   if(ad.link_url) return `<a class="ad-image-link" href="${escapeAttr(ad.link_url)}" target="_blank" rel="sponsored noopener noreferrer" onclick="trackAdClick(${Number(ad.id)})">${creative}</a>`;
   return `<div class="ad-image-link no-link">${creative}</div>`;
 }
@@ -2700,11 +2708,13 @@ window.previewAdminAd=(id)=>{
   if(ad.creative_type==='google'){
     modal(`<div class="modal-head"><h3>Vista previa · ${escapeHtml(ad.name)}</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="ad-preview-modal google-preview"><div class="google-preview-box"><b>Google AdSense</b><p>El bloque se cargará en su ubicación real cuando esté activo. Para no generar impresiones de prueba en Google, aquí no ejecutamos el anuncio.</p><small>Ubicaciones: ${(ad.placements||[]).map(adPlacementLabel).join(' · ')}</small></div></div>`);return;
   }
-  modal(`<div class="modal-head"><h3>Vista previa · ${escapeHtml(ad.name)}</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="ad-preview-modal"><span class="ad-disclosure">Publicidad</span>${ad.image_url?`<img src="${escapeAttr(ad.image_url)}" alt="${escapeAttr(ad.alt_text||'')}">`:''}${ad.mobile_image_url?`<div class="ad-mobile-preview"><small>Imagen móvil</small><img src="${escapeAttr(ad.mobile_image_url)}" alt=""></div>`:''}</div>`);
+  const legacyText=ad.display_text===null ? (ad.alt_text||'') : (ad.display_text||'');
+  const previewAd={...ad,display_text:legacyText};
+  modal(`<div class="modal-head"><h3>Vista previa · ${escapeHtml(ad.name)}</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="ad-preview-modal"><div class="ad-preview-card"><span class="ad-disclosure">Publicidad</span>${ad.image_url?`<img src="${escapeAttr(ad.image_url)}" alt="${escapeAttr(ad.alt_text||'')}">`:''}${adVisibleCopyHtml(previewAd)}</div>${ad.mobile_image_url?`<div class="ad-mobile-preview"><small>Imagen móvil</small><img src="${escapeAttr(ad.mobile_image_url)}" alt=""></div>`:''}</div>`);
 };
 
 window.openAdEditor=(id=0)=>{
-  const ad=currentAdminAd(id)||{id:0,name:'',active:true,creative_type:'image',image_url:'',image_provider:'',image_provider_id:'',mobile_image_url:'',mobile_image_provider:'',mobile_image_provider_id:'',link_url:'',google_code:'',alt_text:'',placements:['feed'],desktop_enabled:true,mobile_enabled:true,profile_mode:'all',priority:0,starts_at:null,ends_at:null,targets:[]};
+  const ad=currentAdminAd(id)||{id:0,name:'',active:true,creative_type:'image',image_url:'',image_provider:'',image_provider_id:'',mobile_image_url:'',mobile_image_provider:'',mobile_image_provider_id:'',link_url:'',google_code:'',alt_text:'',display_title:'',display_text:'',button_text:'',placements:['feed'],desktop_enabled:true,mobile_enabled:true,profile_mode:'all',priority:0,starts_at:null,ends_at:null,targets:[]};
   state.adEditorTargets=[...(ad.targets||[])];
   state.adEditorId=Number(ad.id||0);
   modal(`<div class="modal-head"><h3>${ad.id?'Editar publicidad':'Crear publicidad'}</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
@@ -2717,7 +2727,12 @@ window.openAdEditor=(id=0)=>{
         <div id="adImageLivePreview" class="ad-editor-live-preview">${ad.image_url?`<img src="${escapeAttr(ad.image_url)}" alt="">`:''}</div>
         <div class="ad-editor-grid two"><label>Imagen móvil opcional<input id="adMobileImageFile" type="file" accept="image/*" onchange="previewAdLocalFile(this,'adMobileLivePreview')"></label><label>O URL móvil opcional<input id="adMobileImageUrl" type="url" value="${escapeAttr(ad.mobile_image_url||'')}" placeholder="Si está vacío usa la principal"></label></div>
         <div id="adMobileLivePreview" class="ad-editor-live-preview mobile">${ad.mobile_image_url?`<img src="${escapeAttr(ad.mobile_image_url)}" alt="">`:''}</div>
-        <div class="ad-editor-grid two"><label>Dirección al hacer clic<input id="adLinkUrl" type="url" value="${escapeAttr(ad.link_url||'')}" placeholder="https://..."></label><label>Texto alternativo<input id="adAltText" maxlength="240" value="${escapeAttr(ad.alt_text||'')}" placeholder="Descripción del banner"></label></div>
+        <div class="ad-editor-grid two"><label>Dirección al hacer clic<input id="adLinkUrl" type="url" value="${escapeAttr(ad.link_url||'')}" placeholder="https://..."></label><label>Texto alternativo (accesibilidad)<input id="adAltText" maxlength="240" value="${escapeAttr(ad.alt_text||'')}" placeholder="Describe la imagen para accesibilidad"><small class="ad-field-help">Este texto no se muestra visualmente.</small></label></div>
+        <div class="ad-visible-copy-editor">
+          <div class="ad-editor-block-head"><b>Texto visible del anuncio (opcional)</b><small>Este contenido sí aparece debajo de la imagen. Déjalo vacío si quieres mostrar solamente el banner.</small></div>
+          <div class="ad-editor-grid two"><label>Título visible<input id="adDisplayTitle" maxlength="120" value="${escapeAttr(ad.display_title||'')}" placeholder="¿Jugamos?"></label><label>Texto del botón<input id="adButtonText" maxlength="60" value="${escapeAttr(ad.button_text||'')}" placeholder="Entrar ahora"><small class="ad-field-help">El botón aparece si también hay una dirección de destino.</small></label></div>
+          <label>Texto visible<textarea id="adDisplayText" class="ad-copy-input" maxlength="500" rows="3" placeholder="Escribe aquí el mensaje que quieres que se vea en la publicidad">${escapeHtml(ad.display_text===null?(ad.alt_text||''):(ad.display_text||''))}</textarea></label>
+        </div>
       </div>
       <div id="adGoogleFields" class="ad-editor-block">
         <div class="ad-editor-block-head"><b>Código de Google AdSense</b><small>Pega el bloque oficial completo. Solo se admite el código de AdSense, no JavaScript arbitrario.</small></div>
@@ -2793,7 +2808,7 @@ window.saveAdminAd=async()=>{
     if(type==='google'){imageUrl='';mobileImageUrl='';imageProvider='';imageProviderId='';mobileProvider='';mobileProviderId='';}
     const starts=$('#adStartsAt')?.value||'',ends=$('#adEndsAt')?.value||'';
     if(starts&&ends&&new Date(ends)<=new Date(starts)) throw new Error('La fecha final debe ser posterior a la fecha de inicio.');
-    const payload={name,active:Boolean($('#adActive')?.checked),creative_type:type,image_url:imageUrl,image_provider:imageProvider,image_provider_id:imageProviderId,mobile_image_url:mobileImageUrl,mobile_image_provider:mobileProvider,mobile_image_provider_id:mobileProviderId,link_url:String($('#adLinkUrl')?.value||'').trim(),google_code:googleCode,alt_text:String($('#adAltText')?.value||'').trim(),placements,desktop_enabled:desktopEnabled,mobile_enabled:mobileEnabled,profile_mode:profileMode,priority:Number($('#adPriority')?.value||0),starts_at:starts?new Date(starts).toISOString():null,ends_at:ends?new Date(ends).toISOString():null,target_ids:(state.adEditorTargets||[]).map(t=>Number(t.id))};
+    const payload={name,active:Boolean($('#adActive')?.checked),creative_type:type,image_url:imageUrl,image_provider:imageProvider,image_provider_id:imageProviderId,mobile_image_url:mobileImageUrl,mobile_image_provider:mobileProvider,mobile_image_provider_id:mobileProviderId,link_url:String($('#adLinkUrl')?.value||'').trim(),google_code:googleCode,alt_text:String($('#adAltText')?.value||'').trim(),display_title:String($('#adDisplayTitle')?.value||'').trim(),display_text:String($('#adDisplayText')?.value||'').trim(),button_text:String($('#adButtonText')?.value||'').trim(),placements,desktop_enabled:desktopEnabled,mobile_enabled:mobileEnabled,profile_mode:profileMode,priority:Number($('#adPriority')?.value||0),starts_at:starts?new Date(starts).toISOString():null,ends_at:ends?new Date(ends).toISOString():null,target_ids:(state.adEditorTargets||[]).map(t=>Number(t.id))};
     await api(id?`/api/admin/ads/${id}`:'/api/admin/ads',{method:id?'PATCH':'POST',body:JSON.stringify(payload),timeout:MEDIA_UPLOAD_TIMEOUT_MS});
     closeModal();toast(id?'Publicidad actualizada':'Publicidad creada');await renderAdmin();
   }catch(e){toast(e.message,'error');if(button){button.disabled=false;button.textContent=state.adEditorId?'Guardar cambios':'Crear anuncio';}}
