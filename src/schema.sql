@@ -117,11 +117,14 @@ CREATE TABLE IF NOT EXISTS bookmarks (
   PRIMARY KEY (user_id, post_id)
 );
 
+-- V1.10.2: IMPORTANTE. schema.sql se reejecuta en cada arranque.
+-- Todas las restricciones históricas de notifications.type deben aceptar el conjunto actual
+-- para no rechazar filas modernas durante pasos intermedios de migraciones antiguas.
 CREATE TABLE IF NOT EXISTS notifications (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   actor_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
-  type VARCHAR(30) NOT NULL CHECK (type IN ('follow','like','comment')),
+  type VARCHAR(30) NOT NULL CHECK (type IN ('follow','like','comment','friend_request','friend_accept','message','mention','repost','follow_request','follow_accept')),
   post_id BIGINT REFERENCES posts(id) ON DELETE CASCADE,
   text TEXT NOT NULL DEFAULT '',
   read_at TIMESTAMPTZ,
@@ -223,7 +226,7 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS shared_post_id BIGINT REFERENCES p
 
 ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
 ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
-  CHECK (type IN ('follow','like','comment','friend_request','friend_accept','message'));
+  CHECK (type IN ('follow','like','comment','friend_request','friend_accept','message','mention','repost','follow_request','follow_accept'));
 
 CREATE INDEX IF NOT EXISTS idx_friend_requests_to_status ON friend_requests(to_user_id,status,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_friend_requests_from_status ON friend_requests(from_user_id,status,created_at DESC);
@@ -242,7 +245,7 @@ ALTER TABLE posts ADD COLUMN IF NOT EXISTS repost_of_id BIGINT REFERENCES posts(
 
 ALTER TABLE notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
 ALTER TABLE notifications ADD CONSTRAINT notifications_type_check
-  CHECK (type IN ('follow','like','comment','friend_request','friend_accept','message','mention','repost'));
+  CHECK (type IN ('follow','like','comment','friend_request','friend_accept','message','mention','repost','follow_request','follow_accept'));
 
 CREATE INDEX IF NOT EXISTS idx_posts_repost_of ON posts(repost_of_id);
 

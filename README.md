@@ -1,9 +1,9 @@
-## Instant Admirers V1.10.1 — Administrador como cuenta técnica
+## Instant Admirers V1.10.2 — Migración segura de notificaciones
 
-Versión basada exclusivamente en **V1.10.0 — Sistema de Publicidad**.
+Versión basada exclusivamente en **V1.10.1 — Administrador como cuenta técnica del sistema**.
 
-La cuenta Administrador deja de formar parte de la red social: no aparece en Descubrir, búsquedas, sugerencias, seguidores, siguiendo, amistades, solicitudes, Stories, Reels, mensajes ni otras superficies sociales. Las acciones sociales de esa cuenta quedan desactivadas y la interfaz la identifica como **Cuenta técnica**.
+Corrige el arranque en PostgreSQL cuando existen notificaciones modernas y `schema.sql` vuelve a ejecutar migraciones históricas de `notifications_type_check`. No borra ni transforma las notificaciones actuales.
 
-El sistema de publicidad de V1.10.0 se mantiene completo.
+Se mantienen íntegros el **Sistema de Publicidad V1.10.0** y la exclusión social de la **cuenta técnica Administrador V1.10.1**.
 
-Consulta `README-V1.10.1.md`, `CHANGELOG-V1.10.1.md` y `ACTUALIZAR-A-V1.10.1.md`.
+Consulta `README-V1.10.2.md`, `CHANGELOG-V1.10.2.md` y `ACTUALIZAR-A-V1.10.2.md`.
