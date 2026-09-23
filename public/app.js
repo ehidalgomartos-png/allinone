@@ -1,4 +1,4 @@
-// V1.9.3 · Centro de conexiones y contadores sociales realmente interactivos
+// V1.9.4 · Personas: nombre claro para seguidores, siguiendo, amistades y solicitudes
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -1330,7 +1330,7 @@ async function renderProfile(username) {
   const privateLocked = !profileLocked && u.account_private && !u.own && !u.following;
   let actions = '';
   if (u.own) {
-    actions = `<div class="profile-desktop-actions"><button class="btn ghost compact" onclick="sharePublicProfile('${escapeAttr(u.username)}')">Compartir perfil</button><button class="btn ghost compact" onclick="go('friends')">Conexiones</button><button class="btn ghost compact" onclick="openFriendGateSettings()">🔐 Condición</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad</button><button class="btn ghost compact" onclick="openAccountSettings()">Ajustes</button>${state.me?.is_admin ? `<button class="btn ghost compact" onclick="go('admin')">Administración</button>` : ''}<button class="btn ghost compact" onclick="editProfile()">Editar perfil</button></div><div class="profile-mobile-actions"><button class="btn ghost compact profile-edit-mobile" onclick="editProfile()">Editar perfil</button><button class="icon-btn profile-own-more" title="Más opciones" aria-label="Más opciones de perfil" onclick="openOwnProfileMenu()">•••</button></div>`;
+    actions = `<div class="profile-desktop-actions"><button class="btn ghost compact" onclick="sharePublicProfile('${escapeAttr(u.username)}')">Compartir perfil</button><button class="btn ghost compact" onclick="go('friends')">Personas</button><button class="btn ghost compact" onclick="openFriendGateSettings()">🔐 Condición</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad</button><button class="btn ghost compact" onclick="openAccountSettings()">Ajustes</button>${state.me?.is_admin ? `<button class="btn ghost compact" onclick="go('admin')">Administración</button>` : ''}<button class="btn ghost compact" onclick="editProfile()">Editar perfil</button></div><div class="profile-mobile-actions"><button class="btn ghost compact profile-edit-mobile" onclick="editProfile()">Editar perfil</button><button class="icon-btn profile-own-more" title="Más opciones" aria-label="Más opciones de perfil" onclick="openOwnProfileMenu()">•••</button></div>`;
   } else if (u.blocked_by_me) {
     actions = `<button class="btn primary compact" onclick="toggleBlock(${u.id},'${escapeAttr(u.username)}')">Desbloquear</button>`;
   } else {
@@ -1561,7 +1561,7 @@ async function renderFriends() {
   ]);
   const incoming = requests.incoming || [], outgoing = requests.outgoing || [];
   const following = followingData.items || [], followers = followersData.items || [];
-  $('#main').innerHTML = `${pageHeader('Amigos y conexiones','Personas que sigues, seguidores, amistades y solicitudes')}
+  $('#main').innerHTML = `${pageHeader('Personas','Seguidores, personas que sigues, amistades y solicitudes')}
     <section class="card connections-explainer"><div><b>Seguir y ser amigos son cosas distintas</b><small>Al seguir a alguien verás mejor su contenido. La amistad se crea aparte mediante una solicitud.</small></div></section>
     <section class="card invite-friends-strip"><div><b>Haz crecer tu círculo</b><small>Invita a tus amigos a Instant Admirers con tu enlace personal.</small></div><button class="btn primary compact whatsapp-btn" onclick="openInviteFriends()">Invitar por WhatsApp</button></section>
     <section class="card friends-section connections-section"><div class="section-row"><h3>Siguiendo</h3><span>${Number(followingData.total || following.length)}</span></div>${following.length ? following.map(connectionFollowingRow).join('') : `<div class="empty compact-empty"><p>Aún no sigues a nadie.</p><button class="btn primary compact" onclick="go('discover')">Descubrir personas</button></div>`}${followingData.has_more ? `<button class="btn ghost compact connections-more" onclick="openFollowList('${escapeAttr(username)}','following')">Ver todos</button>` : ''}</section>
@@ -1596,7 +1596,7 @@ window.openOwnProfileMenu = () => {
   modal(`<div class="modal-head"><h3>Tu perfil</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
     <div class="post-menu own-profile-menu">
       <button onclick="closeModal();sharePublicProfile('${escapeAttr(state.me?.username || '')}')"><span>↗</span><div><b>Compartir mi perfil</b><small>instantadmirers.com/${escapeHtml(state.me?.username || '')}</small></div></button>
-      <button onclick="closeModal();go('friends')"><span>👥</span><div><b>Amigos y conexiones</b><small>Consulta a quién sigues, seguidores, amistades y solicitudes</small></div></button>
+      <button onclick="closeModal();go('friends')"><span>👥</span><div><b>Personas</b><small>Consulta a quién sigues, seguidores, amistades y solicitudes</small></div></button>
       <button onclick="closeModal();openInviteFriends()"><span>💬</span><div><b>Invitar amigos</b><small>Comparte tu enlace por WhatsApp y sigue tus referidos</small></div></button>
       <button onclick="closeModal();openFriendGateSettings()"><span>🔐</span><div><b>Acceso a mi perfil</b><small>Pide invitaciones antes de que puedan ver tu perfil</small></div></button>
       <button onclick="closeModal();openPrivacySettings()"><span>🔒</span><div><b>Privacidad</b><small>Cuenta privada, mensajes, bloqueos y silencios</small></div></button>
