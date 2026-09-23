@@ -1,4 +1,4 @@
-// V1.9.1 · Gestión de usuarios desde Administración sobre V1.9.0
+// V1.9.2 · Seguidores y siguiendo visibles desde el perfil sobre V1.9.1
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -447,7 +447,7 @@ function toast(message, kind = '') {
   toast.timer = setTimeout(() => box.classList.remove('show'), 2600);
 }
 
-function closeModal() { $('#modal-root').innerHTML = ''; }
+function closeModal() { if (state.followListContext) state.followListContext = null; $('#modal-root').innerHTML = ''; }
 window.closeModal = closeModal;
 
 function modal(html) {
@@ -1340,7 +1340,7 @@ async function renderProfile(username) {
       ${interests.length && !u.blocked_by_me ? `<div class="interest-chips">${interests.map(x=>`<button onclick="searchTag('#${escapeAttr(x.replace(/^#/,'').replace(/\s+/g,'_'))}')">${escapeHtml(x)}</button>`).join('')}</div>` : ''}
       ${profileLocked
         ? `<div class="profile-stats locked-profile-stats"><span>🔐 Perfil con acceso especial</span></div>`
-        : `<div class="profile-stats"><span><b>${u.posts_count}</b> publicaciones</span><span><b>${u.followers_count}</b> seguidores</span><span><b>${u.following_count}</b> siguiendo</span>${u.own ? `<button onclick="go('friends')"><b>${u.friends_count || 0}</b> amigos</button>` : `<span><b>${u.friends_count || 0}</b> amigos</span>`}</div>`}
+        : `<div class="profile-stats"><span><b>${u.posts_count}</b> publicaciones</span><button type="button" onclick="openFollowList('${escapeAttr(u.username)}','followers')" title="Ver seguidores"><b>${u.followers_count}</b> seguidores</button><button type="button" onclick="openFollowList('${escapeAttr(u.username)}','following')" title="Ver a quién sigue"><b>${u.following_count}</b> siguiendo</button>${u.own ? `<button onclick="go('friends')"><b>${u.friends_count || 0}</b> amigos</button>` : `<span><b>${u.friends_count || 0}</b> amigos</span>`}</div>`}
     </div>
   </section>
   ${friendGateBanner(u)}
@@ -1434,11 +1434,46 @@ window.toggleFollow = async (id, username = '') => {
     else toast('Ya no la sigues');
     await refreshMe(false);
     state.rightbarCache = null;
-    if (state.view === 'profile' && username) await renderProfile(username); else await renderView();
+    const followCtx = state.followListContext ? { ...state.followListContext } : null;
+    if (state.view === 'profile' && state.profile) await renderProfile(state.profile); else await renderView();
+    if (followCtx) await openFollowList(followCtx.username, followCtx.type);
   } catch (e) { toast(e.message, 'error'); }
 };
 
 
+
+
+// V1.9.2 · Seguidores / Siguiendo
+state.followListContext = null;
+
+function followListRow(u, ownerUsername, type) {
+  const isMe = Number(u.id) === Number(state.me?.id);
+  const action = isMe ? '' : followButtonHtml(u, 'btn primary compact');
+  return `<div class="follow-list-row" data-follow-user="${Number(u.id)}">
+    <button class="person-link" onclick="closeModal();openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small>${u.headline?`<em>${escapeHtml(u.headline).slice(0,70)}</em>`:''}</span></button>
+    ${action}
+  </div>`;
+}
+
+window.openFollowList = async (username, type='following', append=false) => {
+  type = type === 'followers' ? 'followers' : 'following';
+  const current = state.followListContext;
+  const offset = append && current && current.username === username && current.type === type ? Number(current.next_offset || 0) : 0;
+  try {
+    const data = await api(`/api/users/${encodeURIComponent(username)}/${type}?limit=30&offset=${offset}`);
+    let items = data.items || [];
+    if (append && current && current.username === username && current.type === type) items = [...(current.items || []), ...items];
+    state.followListContext = { username:data.username || username, type, items, total:Number(data.total || items.length), has_more:Boolean(data.has_more), next_offset:data.next_offset };
+    const c = state.followListContext;
+    const title = type === 'followers' ? 'Seguidores' : 'Siguiendo';
+    modal(`<div class="modal-head"><div><h3>${title}</h3><small>@${escapeHtml(c.username)} · ${c.total}</small></div><button class="icon-btn" onclick="closeFollowList()">×</button></div>
+      <div class="follow-list-tabs"><button class="${type==='followers'?'active':''}" onclick="openFollowList('${escapeAttr(c.username)}','followers')">Seguidores</button><button class="${type==='following'?'active':''}" onclick="openFollowList('${escapeAttr(c.username)}','following')">Siguiendo</button></div>
+      <div class="follow-list">${items.length ? items.map(u=>followListRow(u,c.username,type)).join('') : `<div class="empty compact-empty">${type==='following'?'Todavía no sigue a nadie.':'Todavía no tiene seguidores.'}</div>`}</div>
+      ${c.has_more ? `<button class="btn ghost follow-list-more" onclick="openFollowList('${escapeAttr(c.username)}','${type}',true)">Cargar más</button>` : ''}`);
+  } catch(e) { toast(e.message,'error'); }
+};
+
+window.closeFollowList = () => { state.followListContext = null; closeModal(); };
 
 window.openPrivacySettings = async () => {
   try {
@@ -1813,7 +1848,7 @@ async function loadRightbar() {
       state.rightbarCache = { at:Date.now(), suggestions, tags };
     }
     if (!box.isConnected) return;
-    box.innerHTML = `<div class="card side-card"><div class="side-title">Tu perfil</div><button class="profile-summary" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me)}<span><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></span></button><div class="mini-stats"><span><b>${state.me.posts_count || 0}</b>posts</span><span><b>${state.me.followers_count || 0}</b>seguidores</span><span><b>${state.me.following_count || 0}</b>siguiendo</span></div></div>
+    box.innerHTML = `<div class="card side-card"><div class="side-title">Tu perfil</div><button class="profile-summary" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me)}<span><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></span></button><div class="mini-stats"><span><b>${state.me.posts_count || 0}</b>posts</span><button type="button" onclick="openFollowList('${escapeAttr(state.me.username)}','followers')" title="Ver seguidores"><b>${state.me.followers_count || 0}</b>seguidores</button><button type="button" onclick="openFollowList('${escapeAttr(state.me.username)}','following')" title="Ver a quién sigues"><b>${state.me.following_count || 0}</b>siguiendo</button></div></div>
       <div class="card side-card"><div class="side-title">Personas para ti</div>${suggestions.length ? suggestions.map(u => `<div class="side-user suggested-side-user"><button onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small><em>✦ ${escapeHtml(u.recommendation_reason || 'Sugerido')}</em></span></button>${u.follow_requested?`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Solicitada</button>`:`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.account_private?'Solicitar':'Seguir'}</button>`}</div>`).join('') : '<p class="muted">Sigue interactuando y aparecerán sugerencias.</p>'}</div>
       <div class="card side-card"><div class="side-title">Tendencias · 7 días</div>${tags.length ? tags.map(t => `<button class="trend" onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} posts · ${t.authors || 1} personas · ${t.engagement || 0} interacciones</small></button>`).join('') : '<p class="muted">Los hashtags aparecerán aquí cuando se usen.</p>'}</div>
       <button class="logout-link" onclick="logout()">Cerrar sesión</button>`;

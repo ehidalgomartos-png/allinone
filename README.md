@@ -1,3 +1,3 @@
-## Instant Admirers V1.9.1 — Gestión de usuarios
+## Instant Admirers V1.9.2 — Seguidores y siguiendo
 
-Consulta `README-V1.9.1.md` y `ACTUALIZAR-A-V1.9.1.md` para esta versión.
+Consulta `README-V1.9.2.md` y `ACTUALIZAR-A-V1.9.2.md`.

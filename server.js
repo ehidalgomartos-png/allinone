@@ -797,7 +797,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.9.1', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','starter-prompts','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion'] });
+  res.json({ ok: true, version: '1.9.2', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','starter-prompts','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -1602,6 +1602,80 @@ app.get('/api/users/:username', auth, asyncRoute(async (req, res) => {
   }
 
   res.json({ ...safeUser(row), can_message:canMessage, followers_count: row.followers_count, following_count: row.following_count, posts_count: row.posts_count, friends_count: row.friends_count, following: Boolean(row.following), follow_requested:Boolean(row.follow_requested), muted:Boolean(row.muted), blocked_by_me:Boolean(row.blocked_by_me), friendship_status: row.friendship_status, friend_request_id: row.friend_request_id, friend_gate:friendGate, profile_locked:false, own: Boolean(row.own), online: isOnline(row.id), last_seen_at: row.last_seen_at });
+}));
+
+
+// V1.9.2: listas de seguidores y perfiles seguidos, accesibles desde los contadores del perfil.
+async function socialListAccess(viewerId, username) {
+  const { rows } = await pool.query(`
+    SELECT u.id, u.username, u.name, u.account_private, u.friend_gate_enabled,
+      EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=$1 AND f.followed_id=u.id) AS viewer_follows,
+      EXISTS(SELECT 1 FROM blocks b WHERE b.blocker_id=u.id AND b.blocked_id=$1) AS blocked_viewer,
+      EXISTS(SELECT 1 FROM blocks b WHERE b.blocker_id=$1 AND b.blocked_id=u.id) AS viewer_blocked
+    FROM users u
+    WHERE LOWER(u.username)=LOWER($2) AND u.account_status='active'
+    LIMIT 1
+  `,[viewerId, username]);
+  if (!rows[0] || (rows[0].blocked_viewer && Number(rows[0].id)!==Number(viewerId))) return null;
+  const target=rows[0];
+  if (Number(target.id)!==Number(viewerId)) {
+    if (target.viewer_blocked) return { denied:true, reason:'blocked' };
+    if (target.friend_gate_enabled) {
+      const pair=friendshipPair(viewerId,target.id);
+      const friendship=await pool.query('SELECT 1 FROM friendships WHERE user1_id=$1 AND user2_id=$2 LIMIT 1',pair);
+      if (!friendship.rowCount) {
+        const gate=await friendGateProgress(viewerId,target.id);
+        if (gate?.enabled && !gate.unlocked) return { denied:true, reason:'gate' };
+      }
+    }
+    if (target.account_private && !target.viewer_follows) return { denied:true, reason:'private' };
+  }
+  return { target };
+}
+
+async function socialListRows(viewerId, targetId, type, limit, offset) {
+  const join = type === 'followers'
+    ? 'JOIN follows rel ON rel.follower_id=u.id AND rel.followed_id=$2'
+    : 'JOIN follows rel ON rel.followed_id=u.id AND rel.follower_id=$2';
+  const countWhere = type === 'followers' ? 'followed_id=$1' : 'follower_id=$1';
+  const [list,total] = await Promise.all([
+    pool.query(`
+      SELECT u.id,u.username,u.name,u.avatar,u.headline,u.account_private,rel.created_at,
+        EXISTS(SELECT 1 FROM follows mine WHERE mine.follower_id=$1 AND mine.followed_id=u.id) AS following,
+        EXISTS(SELECT 1 FROM follow_requests frq WHERE frq.follower_id=$1 AND frq.followed_id=u.id) AS follow_requested,
+        (SELECT COUNT(*)::int FROM follows fc WHERE fc.followed_id=u.id) AS followers_count
+      FROM users u
+      ${join}
+      WHERE u.account_status='active'
+        AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=u.id) OR (bl.blocker_id=u.id AND bl.blocked_id=$1))
+      ORDER BY rel.created_at DESC,u.id DESC
+      LIMIT $3 OFFSET $4
+    `,[viewerId,targetId,limit+1,offset]),
+    pool.query(`SELECT COUNT(*)::int AS total FROM follows WHERE ${countWhere}`,[targetId])
+  ]);
+  const hasMore=list.rows.length>limit;
+  const items=list.rows.slice(0,limit).map(r=>({...r,following:Boolean(r.following),follow_requested:Boolean(r.follow_requested)}));
+  return {items,has_more:hasMore,next_offset:hasMore?offset+limit:null,total:Number(total.rows[0]?.total||0)};
+}
+
+app.get('/api/users/:username/followers', auth, asyncRoute(async (req,res)=>{
+  const access=await socialListAccess(req.user.id,req.params.username);
+  if (!access) return res.status(404).json({error:'Perfil no disponible'});
+  if (access.denied) return res.status(403).json({error:'Esta lista no está disponible'});
+  const limit=Math.min(50,Math.max(1,Number(req.query.limit)||30));
+  const offset=Math.max(0,Number(req.query.offset)||0);
+  const data=await socialListRows(req.user.id,access.target.id,'followers',limit,offset);
+  res.json({...data,username:access.target.username,type:'followers'});
+}));
+
+app.get('/api/users/:username/following', auth, asyncRoute(async (req,res)=>{
+  const access=await socialListAccess(req.user.id,req.params.username);
+  if (!access) return res.status(404).json({error:'Perfil no disponible'});
+  if (access.denied) return res.status(403).json({error:'Esta lista no está disponible'});
+  const limit=Math.min(50,Math.max(1,Number(req.query.limit)||30));
+  const offset=Math.max(0,Number(req.query.offset)||0);
+  const data=await socialListRows(req.user.id,access.target.id,'following',limit,offset);
+  res.json({...data,username:access.target.username,type:'following'});
 }));
 
 app.get('/api/users/:username/posts', auth, asyncRoute(async (req, res) => {
