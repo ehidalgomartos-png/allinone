@@ -1,4 +1,4 @@
-// V1.12.0 · Protección de contenido + Español / English
+// V1.12.1 · Protección de contenido + bloqueo reforzado + Español / English
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -1170,7 +1170,7 @@ function mediaWatermarkHtml(item) {
 function protectedMediaFrame(item, mediaHtml, className='') {
   if (!mediaHtml) return '';
   if (!item?.media_protected && !item?.watermarked) return mediaHtml;
-  return `<div class="protected-media-frame ${escapeAttr(className)}" data-protected-media-frame="1">${mediaHtml}${mediaWatermarkHtml(item)}</div>`;
+  return `<div class="protected-media-frame ${escapeAttr(className)}" data-protected-media-frame="1" oncontextmenu="return false" ondragstart="return false">${mediaHtml}${mediaWatermarkHtml(item)}</div>`;
 }
 
 function repostEmbed(r) {
@@ -3210,10 +3210,34 @@ registerInstantAdmirersPwa();
 init();
 
 
-// V1.12.0: frena las vías de descarga casual sobre multimedia protegida.
+// V1.12.1: bloqueo reforzado de descarga casual sobre multimedia protegida.
+const isProtectedMediaTarget = target => Boolean(target?.closest?.('[data-protected-media="1"],[data-protected-media-frame="1"]'));
+
 document.addEventListener('contextmenu', event => {
-  if (event.target?.closest?.('[data-protected-media="1"],[data-protected-media-frame="1"]')) event.preventDefault();
+  if (!isProtectedMediaTarget(event.target)) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
 }, true);
+
 document.addEventListener('dragstart', event => {
-  if (event.target?.closest?.('[data-protected-media="1"],[data-protected-media-frame="1"]')) event.preventDefault();
+  if (!isProtectedMediaTarget(event.target)) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}, true);
+
+document.addEventListener('mousedown', event => {
+  if (event.button !== 2 || !isProtectedMediaTarget(event.target)) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}, true);
+
+document.addEventListener('auxclick', event => {
+  if (!isProtectedMediaTarget(event.target)) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}, true);
+
+document.addEventListener('selectstart', event => {
+  if (!isProtectedMediaTarget(event.target)) return;
+  event.preventDefault();
 }, true);
