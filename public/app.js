@@ -1,4 +1,4 @@
-// V1.9.2 · Seguidores y siguiendo visibles desde el perfil sobre V1.9.1
+// V1.9.3 · Centro de conexiones y contadores sociales realmente interactivos
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -228,6 +228,15 @@ function registerInstantAdmirersPwa() {
     try {
       const registration = await navigator.serviceWorker.register('/sw.js', { scope:'/', updateViaCache:'none' });
       registration.update().catch(() => {});
+      if (!window.__iaSwControllerListener) {
+        window.__iaSwControllerListener = true;
+        let reloading = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (reloading) return;
+          reloading = true;
+          location.reload();
+        });
+      }
     } catch (error) {
       console.warn('No se pudo registrar el service worker', error);
     }
@@ -1321,7 +1330,7 @@ async function renderProfile(username) {
   const privateLocked = !profileLocked && u.account_private && !u.own && !u.following;
   let actions = '';
   if (u.own) {
-    actions = `<div class="profile-desktop-actions"><button class="btn ghost compact" onclick="sharePublicProfile('${escapeAttr(u.username)}')">Compartir perfil</button><button class="btn ghost compact" onclick="go('friends')">Amigos</button><button class="btn ghost compact" onclick="openFriendGateSettings()">🔐 Condición</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad</button><button class="btn ghost compact" onclick="openAccountSettings()">Ajustes</button>${state.me?.is_admin ? `<button class="btn ghost compact" onclick="go('admin')">Administración</button>` : ''}<button class="btn ghost compact" onclick="editProfile()">Editar perfil</button></div><div class="profile-mobile-actions"><button class="btn ghost compact profile-edit-mobile" onclick="editProfile()">Editar perfil</button><button class="icon-btn profile-own-more" title="Más opciones" aria-label="Más opciones de perfil" onclick="openOwnProfileMenu()">•••</button></div>`;
+    actions = `<div class="profile-desktop-actions"><button class="btn ghost compact" onclick="sharePublicProfile('${escapeAttr(u.username)}')">Compartir perfil</button><button class="btn ghost compact" onclick="go('friends')">Conexiones</button><button class="btn ghost compact" onclick="openFriendGateSettings()">🔐 Condición</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad</button><button class="btn ghost compact" onclick="openAccountSettings()">Ajustes</button>${state.me?.is_admin ? `<button class="btn ghost compact" onclick="go('admin')">Administración</button>` : ''}<button class="btn ghost compact" onclick="editProfile()">Editar perfil</button></div><div class="profile-mobile-actions"><button class="btn ghost compact profile-edit-mobile" onclick="editProfile()">Editar perfil</button><button class="icon-btn profile-own-more" title="Más opciones" aria-label="Más opciones de perfil" onclick="openOwnProfileMenu()">•••</button></div>`;
   } else if (u.blocked_by_me) {
     actions = `<button class="btn primary compact" onclick="toggleBlock(${u.id},'${escapeAttr(u.username)}')">Desbloquear</button>`;
   } else {
@@ -1543,13 +1552,32 @@ window.removeFriend = async (userId, username = '') => {
 };
 
 async function renderFriends() {
-  const [friends, requests] = await Promise.all([api('/api/friends'), api('/api/friends/requests')]);
+  const username = state.me?.username || '';
+  const [friends, requests, followingData, followersData] = await Promise.all([
+    api('/api/friends'),
+    api('/api/friends/requests'),
+    api(`/api/users/${encodeURIComponent(username)}/following?limit=100&offset=0`),
+    api(`/api/users/${encodeURIComponent(username)}/followers?limit=100&offset=0`)
+  ]);
   const incoming = requests.incoming || [], outgoing = requests.outgoing || [];
-  $('#main').innerHTML = `${pageHeader('Amigos','Solicitudes y personas con las que has conectado')}
+  const following = followingData.items || [], followers = followersData.items || [];
+  $('#main').innerHTML = `${pageHeader('Amigos y conexiones','Personas que sigues, seguidores, amistades y solicitudes')}
+    <section class="card connections-explainer"><div><b>Seguir y ser amigos son cosas distintas</b><small>Al seguir a alguien verás mejor su contenido. La amistad se crea aparte mediante una solicitud.</small></div></section>
     <section class="card invite-friends-strip"><div><b>Haz crecer tu círculo</b><small>Invita a tus amigos a Instant Admirers con tu enlace personal.</small></div><button class="btn primary compact whatsapp-btn" onclick="openInviteFriends()">Invitar por WhatsApp</button></section>
-    ${incoming.length ? `<section class="card friends-section"><div class="section-row"><h3>Solicitudes</h3><span>${incoming.length}</span></div>${incoming.map(friendRequestRow).join('')}</section>` : ''}
-    ${outgoing.length ? `<section class="card friends-section"><div class="section-row"><h3>Enviadas</h3></div>${outgoing.map(outgoingFriendRow).join('')}</section>` : ''}
-    <section class="card friends-section"><div class="section-row"><h3>Tus amigos</h3><span>${friends.length}</span></div>${friends.length ? friends.map(friendRow).join('') : `<div class="empty compact-empty"><p>Aún no has añadido amigos.</p><button class="btn primary compact" onclick="go('discover')">Descubrir personas</button></div>`}</section>`;
+    <section class="card friends-section connections-section"><div class="section-row"><h3>Siguiendo</h3><span>${Number(followingData.total || following.length)}</span></div>${following.length ? following.map(connectionFollowingRow).join('') : `<div class="empty compact-empty"><p>Aún no sigues a nadie.</p><button class="btn primary compact" onclick="go('discover')">Descubrir personas</button></div>`}${followingData.has_more ? `<button class="btn ghost compact connections-more" onclick="openFollowList('${escapeAttr(username)}','following')">Ver todos</button>` : ''}</section>
+    <section class="card friends-section connections-section"><div class="section-row"><h3>Te siguen</h3><span>${Number(followersData.total || followers.length)}</span></div>${followers.length ? followers.map(connectionFollowerRow).join('') : `<div class="empty compact-empty"><p>Todavía no tienes seguidores.</p></div>`}${followersData.has_more ? `<button class="btn ghost compact connections-more" onclick="openFollowList('${escapeAttr(username)}','followers')">Ver todos</button>` : ''}</section>
+    ${incoming.length ? `<section class="card friends-section"><div class="section-row"><h3>Solicitudes de amistad</h3><span>${incoming.length}</span></div>${incoming.map(friendRequestRow).join('')}</section>` : ''}
+    ${outgoing.length ? `<section class="card friends-section"><div class="section-row"><h3>Solicitudes enviadas</h3><span>${outgoing.length}</span></div>${outgoing.map(outgoingFriendRow).join('')}</section>` : ''}
+    <section class="card friends-section"><div class="section-row"><h3>Tus amigos</h3><span>${friends.length}</span></div>${friends.length ? friends.map(friendRow).join('') : `<div class="empty compact-empty"><p>Aún no has añadido amigos.</p><small>Seguir a una persona no la convierte automáticamente en amiga.</small></div>`}</section>`;
+}
+
+function connectionFollowingRow(u) {
+  return `<div class="friend-row connection-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small>${u.headline?`<em>${escapeHtml(u.headline).slice(0,70)}</em>`:''}</span></button><div class="friend-actions"><button class="btn ghost compact follow-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Siguiendo</button></div></div>`;
+}
+
+function connectionFollowerRow(u) {
+  const action = Number(u.id) === Number(state.me?.id) ? '' : followButtonHtml(u,'btn primary compact');
+  return `<div class="friend-row connection-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small>${u.headline?`<em>${escapeHtml(u.headline).slice(0,70)}</em>`:''}</span></button><div class="friend-actions">${action}</div></div>`;
 }
 
 function friendRequestRow(r) {
@@ -1568,7 +1596,7 @@ window.openOwnProfileMenu = () => {
   modal(`<div class="modal-head"><h3>Tu perfil</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
     <div class="post-menu own-profile-menu">
       <button onclick="closeModal();sharePublicProfile('${escapeAttr(state.me?.username || '')}')"><span>↗</span><div><b>Compartir mi perfil</b><small>instantadmirers.com/${escapeHtml(state.me?.username || '')}</small></div></button>
-      <button onclick="closeModal();go('friends')"><span>👥</span><div><b>Amigos</b><small>Gestiona amistades y solicitudes</small></div></button>
+      <button onclick="closeModal();go('friends')"><span>👥</span><div><b>Amigos y conexiones</b><small>Consulta a quién sigues, seguidores, amistades y solicitudes</small></div></button>
       <button onclick="closeModal();openInviteFriends()"><span>💬</span><div><b>Invitar amigos</b><small>Comparte tu enlace por WhatsApp y sigue tus referidos</small></div></button>
       <button onclick="closeModal();openFriendGateSettings()"><span>🔐</span><div><b>Acceso a mi perfil</b><small>Pide invitaciones antes de que puedan ver tu perfil</small></div></button>
       <button onclick="closeModal();openPrivacySettings()"><span>🔒</span><div><b>Privacidad</b><small>Cuenta privada, mensajes, bloqueos y silencios</small></div></button>
@@ -1848,7 +1876,7 @@ async function loadRightbar() {
       state.rightbarCache = { at:Date.now(), suggestions, tags };
     }
     if (!box.isConnected) return;
-    box.innerHTML = `<div class="card side-card"><div class="side-title">Tu perfil</div><button class="profile-summary" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me)}<span><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></span></button><div class="mini-stats"><span><b>${state.me.posts_count || 0}</b>posts</span><button type="button" onclick="openFollowList('${escapeAttr(state.me.username)}','followers')" title="Ver seguidores"><b>${state.me.followers_count || 0}</b>seguidores</button><button type="button" onclick="openFollowList('${escapeAttr(state.me.username)}','following')" title="Ver a quién sigues"><b>${state.me.following_count || 0}</b>siguiendo</button></div></div>
+    box.innerHTML = `<div class="card side-card"><div class="side-title">Tu perfil</div><button class="profile-summary" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me)}<span><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></span></button><div class="mini-stats"><button type="button" class="mini-stat-btn" onclick="openProfile('${escapeAttr(state.me.username)}')" title="Ver tus publicaciones"><b>${state.me.posts_count || 0}</b><span>posts</span></button><button type="button" class="mini-stat-btn social" onclick="openFollowList('${escapeAttr(state.me.username)}','followers')" title="Ver seguidores" aria-label="Ver seguidores"><b>${state.me.followers_count || 0}</b><span>seguidores ↗</span></button><button type="button" class="mini-stat-btn social" onclick="openFollowList('${escapeAttr(state.me.username)}','following')" title="Ver a quién sigues" aria-label="Ver a quién sigues"><b>${state.me.following_count || 0}</b><span>siguiendo ↗</span></button></div></div>
       <div class="card side-card"><div class="side-title">Personas para ti</div>${suggestions.length ? suggestions.map(u => `<div class="side-user suggested-side-user"><button onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small><em>✦ ${escapeHtml(u.recommendation_reason || 'Sugerido')}</em></span></button>${u.follow_requested?`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Solicitada</button>`:`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.account_private?'Solicitar':'Seguir'}</button>`}</div>`).join('') : '<p class="muted">Sigue interactuando y aparecerán sugerencias.</p>'}</div>
       <div class="card side-card"><div class="side-title">Tendencias · 7 días</div>${tags.length ? tags.map(t => `<button class="trend" onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} posts · ${t.authors || 1} personas · ${t.engagement || 0} interacciones</small></button>`).join('') : '<p class="muted">Los hashtags aparecerán aquí cuando se usen.</p>'}</div>
       <button class="logout-link" onclick="logout()">Cerrar sesión</button>`;
