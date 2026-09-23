@@ -1,7 +1,7 @@
 {
   "name": "instant-admirers-community",
-  "version": "1.10.3",
-  "description": "Instant Admirers V1.10.3 - Texto visible en publicidad",
+  "version": "1.10.4",
+  "description": "Instant Admirers V1.10.4 - Sin Rompe el hielo",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

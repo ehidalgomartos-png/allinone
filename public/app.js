@@ -1256,11 +1256,6 @@ function activationChecklistHtml(data) {
 }
 
 
-function communityPromptCard(community, compact=false){
-  if(!community?.prompts?.length) return '';
-  const prompts=community.prompts.slice(0,compact?3:4);
-  return `<section class="card community-starter ${compact?'compact':''}"><div class="community-starter-head"><div><small>ROMPE EL HIELO</small><h3>Empieza una conversación</h3><p>Ideas rápidas para que la comunidad te conozca de verdad.</p></div><span>✦</span></div><div class="community-prompt-list">${prompts.map(p=>`<button onclick="startCommunityPrompt('${safeEncode(p.text)}')"><i>${escapeHtml(p.emoji||'✦')}</i><span>${escapeHtml(p.text)}</span></button>`).join('')}</div></section>`;
-}
 
 function communityPulseHtml(community){
   if(!community || !['pilot','public'].includes(community.phase)) return '';
@@ -1269,11 +1264,6 @@ function communityPulseHtml(community){
   return `<div class="community-pulse">${founder}<span><b>${Number(m.members_total||0)}</b> miembros reales</span><span><b>${Number(m.posts_7d||0)}</b> posts esta semana</span><span><b>${Number(m.active_7d||0)}</b> activos 7 d</span></div>`;
 }
 
-window.startCommunityPrompt=(encoded)=>{
-  let text='';
-  try{text=decodeURIComponent(encoded||'');}catch(_){text=String(encoded||'');}
-  openComposerModal(false,text);
-};
 
 async function renderFeed() {
   resetLazyMediaObserver();
@@ -1287,8 +1277,7 @@ async function renderFeed() {
   const empty = mode === 'for-you'
     ? `<div class="card empty feed-empty"><div class="empty-icon">✦</div><h3>Estamos preparando tu Para ti</h3><p>Interactúa con publicaciones, sigue perfiles o añade intereses para afinarlo.</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button><button class="btn ghost compact" onclick="editProfile()">Mis intereses</button></div></div>`
     : `<div class="card empty feed-empty"><div class="empty-icon">⌂</div><h3>Tu feed está empezando</h3><p>${isSystemAccount()?'No hay publicaciones visibles en este momento.':'Sigue personas desde Descubrir o crea tu primera publicación.'}</p><div class="empty-actions"><button class="btn primary compact" onclick="go('discover')">Descubrir</button>${isSystemAccount()?'':`<button class="btn ghost compact" onclick="openComposerModal()">Publicar</button>`}</div></div>`;
-  const warmStart = !isSystemAccount() && rows.length < 6 ? communityPromptCard(community) : '';
-  $('#main').innerHTML = `<div class="feed-start">${isSystemAccount()?'':activationChecklistHtml(activation)}${communityPulseHtml(community)}${storyStrip(stories)}${composer()}${feedTabs()}${personalizeHint()}${warmStart}</div><div class="post-list" id="feedPostList">${rows.length ? rows.map(postHtml).join('') : empty}</div>${pagerHtml('feed', page.has_more)}`;
+  $('#main').innerHTML = `<div class="feed-start">${isSystemAccount()?'':activationChecklistHtml(activation)}${communityPulseHtml(community)}${storyStrip(stories)}${composer()}${feedTabs()}${personalizeHint()}</div><div class="post-list" id="feedPostList">${rows.length ? rows.map(postHtml).join('') : empty}</div>${pagerHtml('feed', page.has_more)}`;
   setupLazyMedia($('#main'));
   void mountFeedAd();
   installInfinitePager('feed', page, async pager => {
@@ -1335,8 +1324,7 @@ async function renderDiscover() {
   const trendStrip = trends.length ? `<div class="trend-strip">${trends.slice(0,8).map(t=>`<button onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} posts · ${t.authors} personas</small></button>`).join('')}</div>` : '';
   const newcomers = community?.settings?.newcomer_spotlight_enabled && community?.newcomers?.length ? `<section class="discover-people newcomer-spotlight"><div class="section-heading"><div><h3>Recién llegados</h3><p>Da la bienvenida a personas que acaban de unirse.</p></div></div><div class="suggestion-scroll">${community.newcomers.map(newcomerCard).join('')}</div></section>` : '';
   const people = suggestions.length ? `<section class="discover-people"><div class="section-heading"><div><h3>Personas para ti</h3><p>Perfiles recomendados según tu actividad e intereses.</p></div></div><div class="suggestion-scroll">${suggestions.map(suggestionCard).join('')}</div></section>` : '';
-  const prompts = rows.length < 8 ? communityPromptCard(community,true) : '';
-  $('#main').innerHTML = `${pageHeader('Descubrir','Encuentra personas, temas y contenido nuevo')}${communityPulseHtml(community)}${newcomers}${people}${prompts}${trendStrip}<div class="section-heading post-discover-heading"><div><h3>Popular ahora</h3><p>Publicaciones públicas con más conversación reciente.</p></div></div><div class="post-list" id="discoverPostList">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty"><div class="empty-icon">✦</div><h3>Aún no hay contenido público</h3><p>Cuando la comunidad publique contenido público, aparecerá aquí.</p><button class="btn primary compact" onclick="openComposerModal()">Publicar primero</button></div>`}</div>${pagerHtml('discover', page.has_more)}`;
+  $('#main').innerHTML = `${pageHeader('Descubrir','Encuentra personas, temas y contenido nuevo')}${communityPulseHtml(community)}${newcomers}${people}${trendStrip}<div class="section-heading post-discover-heading"><div><h3>Popular ahora</h3><p>Publicaciones públicas con más conversación reciente.</p></div></div><div class="post-list" id="discoverPostList">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty"><div class="empty-icon">✦</div><h3>Aún no hay contenido público</h3><p>Cuando la comunidad publique contenido público, aparecerá aquí.</p><button class="btn primary compact" onclick="openComposerModal()">Publicar primero</button></div>`}</div>${pagerHtml('discover', page.has_more)}`;
   setupLazyMedia($('#main'));
   installInfinitePager('discover', page, async pager => {
     if (state.view !== 'discover') return;
@@ -2879,11 +2867,9 @@ async function renderAdmin() {
       <div class="section-row"><div><h3>Comunidad inicial</h3><p>Warm-start para que los primeros usuarios encuentren gente y motivos para publicar sin contenido ficticio.</p></div><span class="community-ready-badge">V1.8</span></div>
       <div class="community-admin-metrics"><span><b>${communityLaunch.metrics.members_total||0}</b> miembros reales</span><span><b>${communityLaunch.metrics.members_7d||0}</b> altas 7 d</span><span><b>${communityLaunch.metrics.activated_members||0}</b> activados</span><span><b>${communityLaunch.metrics.posts_7d||0}</b> posts 7 d</span><span><b>${communityLaunch.metrics.active_7d||0}</b> activos 7 d</span></div>
       <div class="community-admin-settings">
-        <label><span><b>Ideas para publicar</b><small>Muestra prompts cuando el feed todavía tiene poco contenido.</small></span><input id="communityPromptsEnabled" type="checkbox" ${communityLaunch.settings.starter_prompts_enabled?'checked':''}></label>
         <label><span><b>Recién llegados</b><small>Destaca nuevos miembros verificados en Descubrir.</small></span><input id="communityNewcomersEnabled" type="checkbox" ${communityLaunch.settings.newcomer_spotlight_enabled?'checked':''}></label>
         <label class="community-limit"><span><b>Miembros fundadores</b><small>Primeras cuentas reales que reciben el distintivo de cohorte.</small></span><input id="communityFoundingLimit" type="number" min="10" max="10000" value="${Number(communityLaunch.settings.founding_member_limit||100)}"></label>
       </div>
-      <div class="community-admin-prompts"><small>${communityLaunch.prompt_count} ideas disponibles</small>${communityLaunch.prompts.slice(0,3).map(p=>`<span>${escapeHtml(p.emoji)} ${escapeHtml(p.text)}</span>`).join('')}</div>
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
@@ -2932,7 +2918,6 @@ window.toggleGrowthCampaign=async(id,active)=>{try{await api(`/api/admin/growth-
 
 window.saveCommunityLaunchSettings=async()=>{
   const payload={
-    starter_prompts_enabled:Boolean($('#communityPromptsEnabled')?.checked),
     newcomer_spotlight_enabled:Boolean($('#communityNewcomersEnabled')?.checked),
     founding_member_limit:Number($('#communityFoundingLimit')?.value||100)
   };
