@@ -1,4 +1,4 @@
-// V1.9.4 · Personas: nombre claro para seguidores, siguiendo, amistades y solicitudes
+// V1.10.0 · Publicidad administrable, Google AdSense y segmentación por perfil
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
@@ -401,6 +401,140 @@ function escapeHtml(value = '') {
 }
 
 function escapeAttr(value = '') { return escapeHtml(value).replace(/`/g, '&#096;'); }
+
+
+// --- V1.10.0: Publicidad ---------------------------------------------------
+function adDevice() { return window.matchMedia('(max-width: 860px)').matches ? 'mobile' : 'desktop'; }
+
+async function fetchAdSlot(placement, profile='') {
+  if(!state.token) return null;
+  const params=new URLSearchParams({placement,device:adDevice()});
+  if(profile) params.set('profile',String(profile).replace(/^@/,''));
+  try{
+    const response=await fetch(`/api/ads/slot?${params.toString()}`,{headers:{Authorization:'Bearer '+state.token}});
+    if(response.status===204) return null;
+    if(!response.ok) return null;
+    const data=await response.json().catch(()=>null);
+    return data?.id ? data : null;
+  }catch(_){return null;}
+}
+
+function trackAdEvent(id,type){
+  if(!state.token || !Number(id) || !['impression','click'].includes(type)) return;
+  try{fetch(`/api/ads/${Number(id)}/${type}`,{method:'POST',headers:{Authorization:'Bearer '+state.token,'Content-Type':'application/json'},body:'{}',keepalive:true}).catch(()=>{});}catch(_){}
+}
+window.trackAdClick=(id)=>trackAdEvent(id,'click');
+
+let adImpressionObserver=null;
+function observeAdImpression(element,id){
+  if(!element||!Number(id))return;
+  element.dataset.adImpressionId=String(id);
+  if(!('IntersectionObserver' in window)){trackAdEvent(id,'impression');return;}
+  if(!adImpressionObserver){
+    adImpressionObserver=new IntersectionObserver(entries=>{
+      entries.forEach(entry=>{
+        if(!entry.isIntersecting||entry.intersectionRatio<0.5)return;
+        const target=entry.target,adId=Number(target.dataset.adImpressionId||0);
+        if(adId&&!target.dataset.adImpressionSent){target.dataset.adImpressionSent='1';trackAdEvent(adId,'impression');}
+        adImpressionObserver.unobserve(target);
+      });
+    },{threshold:[0.5]});
+  }
+  adImpressionObserver.observe(element);
+}
+
+function adImageHtml(ad){
+  const image=`<img src="${escapeAttr(ad.image_url||'')}" alt="${escapeAttr(ad.alt_text||'Publicidad')}" loading="lazy" decoding="async">`;
+  const creative=`<span class="ad-disclosure">Publicidad</span><div class="ad-image-wrap">${image}</div>`;
+  if(ad.link_url) return `<a class="ad-image-link" href="${escapeAttr(ad.link_url)}" target="_blank" rel="sponsored noopener noreferrer" onclick="trackAdClick(${Number(ad.id)})">${creative}</a>`;
+  return `<div class="ad-image-link no-link">${creative}</div>`;
+}
+
+function ensureAdsenseScript(src=''){
+  const safeSrc=/^https:\/\/pagead2\.googlesyndication\.com\/pagead\/js\/adsbygoogle\.js(?:\?|$)/i.test(String(src||''))
+    ? String(src)
+    : 'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js';
+  let script=document.querySelector('script[data-ia-adsense]');
+  if(script) return script;
+  script=document.createElement('script');
+  script.async=true;
+  script.src=safeSrc;
+  script.crossOrigin='anonymous';
+  script.dataset.iaAdsense='1';
+  document.head.appendChild(script);
+  return script;
+}
+
+function mountGoogleAd(container,ad){
+  const code=String(ad.google_code||'');
+  const parsed=new DOMParser().parseFromString(code,'text/html');
+  const sourceIns=parsed.querySelector('ins.adsbygoogle');
+  if(!sourceIns){container.remove();return;}
+  const allowedAttrs=['style','data-ad-client','data-ad-slot','data-ad-format','data-full-width-responsive','data-ad-layout','data-ad-layout-key','data-ad-channel'];
+  const ins=document.createElement('ins');
+  ins.className='adsbygoogle';
+  for(const name of allowedAttrs){const value=sourceIns.getAttribute(name);if(value!==null)ins.setAttribute(name,value);}
+  if(!ins.style.display) ins.style.display='block';
+  container.innerHTML='<span class="ad-disclosure">Publicidad</span>';
+  container.appendChild(ins);
+  const sourceScript=[...parsed.querySelectorAll('script[src]')].find(el=>/googlesyndication\.com\/pagead\/js\/adsbygoogle\.js/i.test(el.src||el.getAttribute('src')||''));
+  const script=ensureAdsenseScript(sourceScript?.getAttribute('src')||'');
+  let pushed=false;
+  const push=()=>{if(pushed)return;pushed=true;try{(window.adsbygoogle=window.adsbygoogle||[]).push({});}catch(_){}};
+  if(script.dataset.iaLoaded==='1') setTimeout(push,0);
+  else {
+    script.addEventListener('load',()=>{script.dataset.iaLoaded='1';push();},{once:true});
+    // Si Google ya lo había cargado antes de que añadiéramos el listener.
+    setTimeout(()=>{if(window.adsbygoogle){script.dataset.iaLoaded='1';push();}},1200);
+  }
+}
+
+function renderAdInto(container,ad,placement){
+  if(!container || !ad?.id) return;
+  container.className=`ad-slot ad-slot-${placement} ad-${ad.creative_type}`;
+  container.dataset.adId=String(ad.id);
+  if(ad.creative_type==='google') mountGoogleAd(container,ad);
+  else container.innerHTML=adImageHtml(ad);
+  observeAdImpression(container,ad.id);
+}
+
+async function mountFeedAd(){
+  if(state.view!=='feed') return;
+  const ad=await fetchAdSlot('feed');
+  if(!ad || state.view!=='feed') return;
+  const list=document.getElementById('feedPostList');
+  const posts=list ? [...list.children].filter(el=>el.classList.contains('post')) : [];
+  if(!list || !posts.length) return;
+  const slot=document.createElement('div');
+  const after=posts[Math.min(2,posts.length-1)];
+  after.after(slot);
+  renderAdInto(slot,ad,'feed');
+}
+
+async function mountProfileAd(username){
+  if(state.view!=='profile') return;
+  const canonical=String(username||'');
+  const ad=await fetchAdSlot('profile',canonical);
+  if(!ad || state.view!=='profile' || String(state.profile||'').toLowerCase()!==canonical.toLowerCase()) return;
+  const profileCard=document.querySelector('#main .profile-card');
+  if(!profileCard) return;
+  const slot=document.createElement('div');
+  profileCard.after(slot);
+  renderAdInto(slot,ad,'profile');
+}
+
+async function mountRightbarAd(){
+  if(adDevice()==='mobile') return;
+  const box=document.getElementById('rightbar');
+  if(!box) return;
+  const profile=state.view==='profile' ? String(state.profile||'') : '';
+  const ad=await fetchAdSlot('right_sidebar',profile);
+  if(!ad || !box.isConnected) return;
+  const slot=document.createElement('div');
+  const trends=document.getElementById('rightbarTrends');
+  if(trends) trends.before(slot); else box.appendChild(slot);
+  renderAdInto(slot,ad,'right_sidebar');
+}
 
 function safeEncode(value = '') { return encodeURIComponent(String(value)).replace(/'/g, '%27'); }
 
@@ -907,6 +1041,7 @@ function resetLazyMediaObserver() {
 function resetViewObservers() {
   if (state.infiniteObserver) { state.infiniteObserver.disconnect(); state.infiniteObserver = null; }
   if (state.reelObserver) { state.reelObserver.disconnect(); state.reelObserver = null; }
+  if (adImpressionObserver) { adImpressionObserver.disconnect(); adImpressionObserver = null; }
   resetLazyMediaObserver();
 }
 
@@ -1143,6 +1278,7 @@ async function renderFeed() {
   const warmStart = rows.length < 6 ? communityPromptCard(community) : '';
   $('#main').innerHTML = `<div class="feed-start">${activationChecklistHtml(activation)}${communityPulseHtml(community)}${storyStrip(stories)}${composer()}${feedTabs()}${personalizeHint()}${warmStart}</div><div class="post-list" id="feedPostList">${rows.length ? rows.map(postHtml).join('') : empty}</div>${pagerHtml('feed', page.has_more)}`;
   setupLazyMedia($('#main'));
+  void mountFeedAd();
   installInfinitePager('feed', page, async pager => {
     if (state.view !== 'feed' || state.feedMode !== mode) return;
     const nextRaw = await api(pageUrl(endpoint, pager, 15));
@@ -1356,6 +1492,7 @@ async function renderProfile(username) {
   ${privateLocked ? `<div class="card private-profile-lock"><div>🔒</div><h3>Esta cuenta es privada</h3><p>Envía una solicitud para ver sus publicaciones y Stories.</p>${u.follow_requested ? '<span>Solicitud de seguimiento enviada</span>' : followButtonHtml(u)}</div>` : ''}
   ${!u.blocked_by_me && !privateLocked && !profileLocked ? `<div class="profile-section-title">Publicaciones</div><div class="post-list" id="profilePostList">${posts.length ? posts.map(postHtml).join('') : `<div class="card empty profile-empty"><div class="empty-icon">▧</div><h3>Sin publicaciones todavía</h3><p>${u.own ? 'Tu primera publicación aparecerá aquí.' : 'Cuando publique algo, aparecerá aquí.'}</p>${u.own ? '<button class="btn primary compact" onclick="openComposerModal()">Crear publicación</button>' : ''}</div>`}</div>${pagerHtml('profile', postPage.has_more)}` : ''}`;
   setupLazyMedia($('#main'));
+  void mountProfileAd(u.username);
   if (!u.blocked_by_me && !privateLocked && !profileLocked) {
     const canonicalUsername = u.username;
     installInfinitePager('profile', postPage, async pager => {
@@ -1878,8 +2015,9 @@ async function loadRightbar() {
     if (!box.isConnected) return;
     box.innerHTML = `<div class="card side-card"><div class="side-title">Tu perfil</div><button class="profile-summary" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me)}<span><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></span></button><div class="mini-stats"><button type="button" class="mini-stat-btn" onclick="openProfile('${escapeAttr(state.me.username)}')" title="Ver tus publicaciones"><b>${state.me.posts_count || 0}</b><span>posts</span></button><button type="button" class="mini-stat-btn social" onclick="openFollowList('${escapeAttr(state.me.username)}','followers')" title="Ver seguidores" aria-label="Ver seguidores"><b>${state.me.followers_count || 0}</b><span>seguidores ↗</span></button><button type="button" class="mini-stat-btn social" onclick="openFollowList('${escapeAttr(state.me.username)}','following')" title="Ver a quién sigues" aria-label="Ver a quién sigues"><b>${state.me.following_count || 0}</b><span>siguiendo ↗</span></button></div></div>
       <div class="card side-card"><div class="side-title">Personas para ti</div>${suggestions.length ? suggestions.map(u => `<div class="side-user suggested-side-user"><button onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small><em>✦ ${escapeHtml(u.recommendation_reason || 'Sugerido')}</em></span></button>${u.follow_requested?`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Solicitada</button>`:`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.account_private?'Solicitar':'Seguir'}</button>`}</div>`).join('') : '<p class="muted">Sigue interactuando y aparecerán sugerencias.</p>'}</div>
-      <div class="card side-card"><div class="side-title">Tendencias · 7 días</div>${tags.length ? tags.map(t => `<button class="trend" onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} posts · ${t.authors || 1} personas · ${t.engagement || 0} interacciones</small></button>`).join('') : '<p class="muted">Los hashtags aparecerán aquí cuando se usen.</p>'}</div>
+      <div id="rightbarTrends" class="card side-card"><div class="side-title">Tendencias · 7 días</div>${tags.length ? tags.map(t => `<button class="trend" onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} posts · ${t.authors || 1} personas · ${t.engagement || 0} interacciones</small></button>`).join('') : '<p class="muted">Los hashtags aparecerán aquí cuando se usen.</p>'}</div>
       <button class="logout-link" onclick="logout()">Cerrar sesión</button>`;
+    void mountRightbarAd();
   } catch {
     if (box.isConnected) box.innerHTML = '';
   }
@@ -2493,12 +2631,172 @@ function reportReasonLabel(reason='') {
   return ({spam:'Spam',harassment:'Acoso',impersonation:'Suplantación',nudity:'Desnudos / contenido sexual',violence:'Violencia',hate:'Odio',scam:'Estafa',other:'Otro'})[reason] || reason;
 }
 
+function adPlacementLabel(value='') {
+  return ({right_sidebar:'Columna derecha',feed:'Dentro del feed',profile:'Perfiles'})[value] || value;
+}
+function adProfileModeLabel(value='') {
+  return ({all:'Todos los perfiles',include:'Solo perfiles seleccionados',exclude:'Todos excepto seleccionados'})[value] || value;
+}
+function adScheduleLabel(ad={}) {
+  const now=Date.now(),start=ad.starts_at?new Date(ad.starts_at).getTime():null,end=ad.ends_at?new Date(ad.ends_at).getTime():null;
+  if(start && start>now) return `Programada · empieza ${new Date(ad.starts_at).toLocaleString('es-ES')}`;
+  if(end && end<=now) return `Finalizada · ${new Date(ad.ends_at).toLocaleString('es-ES')}`;
+  if(end) return `Activa hasta ${new Date(ad.ends_at).toLocaleString('es-ES')}`;
+  if(start) return `Desde ${new Date(ad.starts_at).toLocaleString('es-ES')}`;
+  return 'Sin fechas';
+}
+function adAdminCard(ad={}) {
+  const impressions=Number(ad.impressions||0),clicks=Number(ad.clicks||0),ctr=impressions?((clicks/impressions)*100).toFixed(2):'0.00';
+  const targets=Array.isArray(ad.targets)?ad.targets:[];
+  return `<article class="admin-ad-card ${ad.active?'':'inactive'}">
+    <div class="admin-ad-preview">${ad.creative_type==='image'&&ad.image_url?`<img src="${escapeAttr(ad.image_url)}" alt="">`:`<div class="google-ad-mark">G<span>Google</span></div>`}</div>
+    <div class="admin-ad-body">
+      <div class="admin-ad-title"><div><b>${escapeHtml(ad.name)}</b><span>${ad.creative_type==='google'?'Google AdSense':'Banner de imagen'} · ${ad.active?'Activo':'Desactivado'}</span></div><em class="${ad.active?'active':''}">${ad.active?'ACTIVO':'PAUSADO'}</em></div>
+      <div class="admin-ad-tags">${(ad.placements||[]).map(x=>`<span>${escapeHtml(adPlacementLabel(x))}</span>`).join('')}<span>${ad.desktop_enabled?'PC':''}${ad.desktop_enabled&&ad.mobile_enabled?' + ':''}${ad.mobile_enabled?'Móvil':''}</span><span>${escapeHtml(adProfileModeLabel(ad.profile_mode))}</span></div>
+      ${targets.length?`<div class="admin-ad-targets"><small>Perfiles:</small>${targets.slice(0,8).map(t=>`<span>@${escapeHtml(t.username)}</span>`).join('')}${targets.length>8?`<span>+${targets.length-8}</span>`:''}</div>`:''}
+      <div class="admin-ad-meta"><span>${escapeHtml(adScheduleLabel(ad))}</span><span>Prioridad ${Number(ad.priority||0)}</span>${ad.creative_type==='image'?`<span>${impressions} impresiones · ${clicks} clics · CTR ${ctr}%</span>`:'<span>Rendimiento de clics: Google AdSense</span>'}</div>
+      <div class="admin-ad-actions"><button class="btn ghost compact" onclick="previewAdminAd(${Number(ad.id)})">Vista previa</button><button class="btn ghost compact" onclick="openAdEditor(${Number(ad.id)})">Editar</button><button class="btn ${ad.active?'ghost':'primary'} compact" onclick="toggleAdminAd(${Number(ad.id)},${ad.active?'false':'true'})">${ad.active?'Desactivar':'Activar'}</button><button class="btn danger compact" onclick="deleteAdminAd(${Number(ad.id)})">Eliminar</button></div>
+    </div>
+  </article>`;
+}
+function advertisingAdminHtml(data={}) {
+  const ads=Array.isArray(data.ads)?data.ads:[];
+  const enabled=Boolean(data.settings?.enabled);
+  return `<section class="card admin-section advertising-admin">
+    <div class="section-row"><div><h3>Publicidad</h3><p>Banners propios o Google AdSense, con ubicaciones, dispositivos, fechas y segmentación por perfiles.</p></div><span class="advertising-master-badge ${enabled?'active':''}">${enabled?'ACTIVA':'APAGADA'}</span></div>
+    <div class="advertising-master-row"><label><span><b>Sistema de publicidad</b><small>Si está apagado no aparece ningún anuncio ni ningún hueco publicitario.</small></span><input type="checkbox" id="advertisingSystemEnabled" ${enabled?'checked':''} onchange="toggleAdvertisingSystem(this.checked)"></label><button class="btn primary compact" onclick="openAdEditor(0)">+ Crear anuncio</button></div>
+    <div class="admin-ad-list">${ads.length?ads.map(adAdminCard).join(''):'<div class="advertising-empty"><b>No hay publicidad configurada</b><p>La plataforma no muestra ningún espacio vacío. Crea un anuncio cuando quieras empezar.</p><button class="btn primary compact" onclick="openAdEditor(0)">Crear primer anuncio</button></div>'}</div>
+  </section>`;
+}
+function toDateTimeLocal(value){
+  if(!value) return '';
+  const date=new Date(value);if(Number.isNaN(date.getTime()))return '';
+  const local=new Date(date.getTime()-date.getTimezoneOffset()*60000);
+  return local.toISOString().slice(0,16);
+}
+function currentAdminAd(id){return (state.adminAdsData?.ads||[]).find(a=>Number(a.id)===Number(id))||null;}
+
+window.toggleAdvertisingSystem=async(enabled)=>{
+  try{await api('/api/admin/ads/settings',{method:'PATCH',body:JSON.stringify({enabled:Boolean(enabled)})});toast(enabled?'Publicidad activada':'Publicidad desactivada');await renderAdmin();}catch(e){toast(e.message,'error');await renderAdmin();}
+};
+window.toggleAdminAd=async(id,active)=>{
+  try{await api(`/api/admin/ads/${Number(id)}/status`,{method:'PATCH',body:JSON.stringify({active:Boolean(active)})});toast(active?'Anuncio activado':'Anuncio desactivado');await renderAdmin();}catch(e){toast(e.message,'error');}
+};
+window.deleteAdminAd=async(id)=>{
+  const ad=currentAdminAd(id);if(!ad)return;
+  if(!confirm(`¿Eliminar definitivamente la publicidad “${ad.name}”?`))return;
+  try{await api(`/api/admin/ads/${Number(id)}`,{method:'DELETE'});toast('Anuncio eliminado');await renderAdmin();}catch(e){toast(e.message,'error');}
+};
+window.previewAdminAd=(id)=>{
+  const ad=currentAdminAd(id);if(!ad)return;
+  if(ad.creative_type==='google'){
+    modal(`<div class="modal-head"><h3>Vista previa · ${escapeHtml(ad.name)}</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="ad-preview-modal google-preview"><div class="google-preview-box"><b>Google AdSense</b><p>El bloque se cargará en su ubicación real cuando esté activo. Para no generar impresiones de prueba en Google, aquí no ejecutamos el anuncio.</p><small>Ubicaciones: ${(ad.placements||[]).map(adPlacementLabel).join(' · ')}</small></div></div>`);return;
+  }
+  modal(`<div class="modal-head"><h3>Vista previa · ${escapeHtml(ad.name)}</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="ad-preview-modal"><span class="ad-disclosure">Publicidad</span>${ad.image_url?`<img src="${escapeAttr(ad.image_url)}" alt="${escapeAttr(ad.alt_text||'')}">`:''}${ad.mobile_image_url?`<div class="ad-mobile-preview"><small>Imagen móvil</small><img src="${escapeAttr(ad.mobile_image_url)}" alt=""></div>`:''}</div>`);
+};
+
+window.openAdEditor=(id=0)=>{
+  const ad=currentAdminAd(id)||{id:0,name:'',active:true,creative_type:'image',image_url:'',image_provider:'',image_provider_id:'',mobile_image_url:'',mobile_image_provider:'',mobile_image_provider_id:'',link_url:'',google_code:'',alt_text:'',placements:['feed'],desktop_enabled:true,mobile_enabled:true,profile_mode:'all',priority:0,starts_at:null,ends_at:null,targets:[]};
+  state.adEditorTargets=[...(ad.targets||[])];
+  state.adEditorId=Number(ad.id||0);
+  modal(`<div class="modal-head"><h3>${ad.id?'Editar publicidad':'Crear publicidad'}</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <div class="ad-editor">
+      <div class="ad-editor-grid two"><label>Nombre interno<input id="adName" maxlength="120" value="${escapeAttr(ad.name||'')}" placeholder="Banner septiembre"></label><label>Tipo<select id="adCreativeType" onchange="adEditorRefresh()"><option value="image" ${ad.creative_type==='image'?'selected':''}>Banner de imagen</option><option value="google" ${ad.creative_type==='google'?'selected':''}>Google AdSense (código)</option></select></label></div>
+      <label class="ad-active-line"><span><b>Anuncio activo</b><small>Puede estar configurado y dejarse pausado.</small></span><input id="adActive" type="checkbox" ${ad.active?'checked':''}></label>
+      <div id="adImageFields" class="ad-editor-block">
+        <div class="ad-editor-block-head"><b>Creatividad de imagen</b><small>Puedes subirla desde tu ordenador o pegar una URL.</small></div>
+        <div class="ad-editor-grid two"><label>Imagen principal desde ordenador<input id="adImageFile" type="file" accept="image/*" onchange="previewAdLocalFile(this,'adImageLivePreview')"></label><label>O URL de imagen<input id="adImageUrl" type="url" value="${escapeAttr(ad.image_url||'')}" placeholder="https://..."></label></div>
+        <div id="adImageLivePreview" class="ad-editor-live-preview">${ad.image_url?`<img src="${escapeAttr(ad.image_url)}" alt="">`:''}</div>
+        <div class="ad-editor-grid two"><label>Imagen móvil opcional<input id="adMobileImageFile" type="file" accept="image/*" onchange="previewAdLocalFile(this,'adMobileLivePreview')"></label><label>O URL móvil opcional<input id="adMobileImageUrl" type="url" value="${escapeAttr(ad.mobile_image_url||'')}" placeholder="Si está vacío usa la principal"></label></div>
+        <div id="adMobileLivePreview" class="ad-editor-live-preview mobile">${ad.mobile_image_url?`<img src="${escapeAttr(ad.mobile_image_url)}" alt="">`:''}</div>
+        <div class="ad-editor-grid two"><label>Dirección al hacer clic<input id="adLinkUrl" type="url" value="${escapeAttr(ad.link_url||'')}" placeholder="https://..."></label><label>Texto alternativo<input id="adAltText" maxlength="240" value="${escapeAttr(ad.alt_text||'')}" placeholder="Descripción del banner"></label></div>
+      </div>
+      <div id="adGoogleFields" class="ad-editor-block">
+        <div class="ad-editor-block-head"><b>Código de Google AdSense</b><small>Pega el bloque oficial completo. Solo se admite el código de AdSense, no JavaScript arbitrario.</small></div>
+        <textarea id="adGoogleCode" rows="9" spellcheck="false" placeholder="Pega aquí el código de Google AdSense">${escapeHtml(ad.google_code||'')}</textarea>
+      </div>
+      <div class="ad-editor-block"><div class="ad-editor-block-head"><b>Dónde mostrarlo</b><small>Si una ubicación no tiene ningún anuncio activo, no aparece ningún hueco.</small></div>
+        <div class="ad-check-grid"><label><input id="adPlaceRight" type="checkbox" ${(ad.placements||[]).includes('right_sidebar')?'checked':''}><span><b>Columna derecha</b><small>Solo ordenador · entre Personas para ti y Tendencias.</small></span></label><label><input id="adPlaceFeed" type="checkbox" ${(ad.placements||[]).includes('feed')?'checked':''}><span><b>Dentro del feed</b><small>Tras las primeras publicaciones, en PC y móvil.</small></span></label><label><input id="adPlaceProfile" type="checkbox" ${(ad.placements||[]).includes('profile')?'checked':''}><span><b>En perfiles</b><small>Debajo de la cabecera del perfil.</small></span></label></div>
+      </div>
+      <div class="ad-editor-grid two"><div class="ad-editor-block"><div class="ad-editor-block-head"><b>Dispositivos</b></div><div class="ad-device-checks"><label><input id="adDesktopEnabled" type="checkbox" ${ad.desktop_enabled?'checked':''}> Ordenador</label><label><input id="adMobileEnabled" type="checkbox" ${ad.mobile_enabled?'checked':''}> Móvil</label></div></div><div class="ad-editor-block"><div class="ad-editor-block-head"><b>Prioridad</b><small>Los valores altos se eligen primero.</small></div><input id="adPriority" type="number" min="-1000" max="1000" value="${Number(ad.priority||0)}"></div></div>
+      <div class="ad-editor-block"><div class="ad-editor-block-head"><b>Segmentación por perfil</b><small>Permite que una publicidad aparezca solo al visitar @usuarios concretos o que los excluya. Las campañas limitadas a perfiles no aparecen en el feed general.</small></div>
+        <select id="adProfileMode" onchange="adEditorRefresh()"><option value="all" ${ad.profile_mode==='all'?'selected':''}>Todos los perfiles / sin restricción</option><option value="include" ${ad.profile_mode==='include'?'selected':''}>Solo perfiles seleccionados</option><option value="exclude" ${ad.profile_mode==='exclude'?'selected':''}>Todos excepto perfiles seleccionados</option></select>
+        <div id="adProfileTargetsBox" class="ad-target-box"><div class="ad-target-search"><input id="adTargetSearch" maxlength="80" placeholder="Buscar @usuario o nombre" onkeydown="if(event.key==='Enter'){event.preventDefault();searchAdTargetProfiles()}"><button class="btn ghost compact" onclick="searchAdTargetProfiles()">Buscar</button></div><div id="adTargetResults" class="ad-target-results"></div><div id="adTargetChips" class="ad-target-chips"></div></div>
+      </div>
+      <div class="ad-editor-block"><div class="ad-editor-block-head"><b>Programación opcional</b><small>Déjalo vacío para mostrarlo mientras esté activo.</small></div><div class="ad-editor-grid two"><label>Empieza<input id="adStartsAt" type="datetime-local" value="${escapeAttr(toDateTimeLocal(ad.starts_at))}"></label><label>Termina<input id="adEndsAt" type="datetime-local" value="${escapeAttr(toDateTimeLocal(ad.ends_at))}"></label></div></div>
+      <div class="ad-editor-actions"><button class="btn ghost" onclick="closeModal()">Cancelar</button><button id="saveAdButton" class="btn primary" onclick="saveAdminAd()">${ad.id?'Guardar cambios':'Crear anuncio'}</button></div>
+    </div>`);
+  adEditorRefresh();renderAdTargetChips();
+};
+window.adEditorRefresh=()=>{
+  const type=$('#adCreativeType')?.value||'image',mode=$('#adProfileMode')?.value||'all';
+  if($('#adImageFields'))$('#adImageFields').hidden=type!=='image';
+  if($('#adGoogleFields'))$('#adGoogleFields').hidden=type!=='google';
+  if($('#adProfileTargetsBox'))$('#adProfileTargetsBox').hidden=mode==='all';
+};
+window.previewAdLocalFile=(input,previewId)=>{
+  const file=input?.files?.[0];if(!file)return;
+  if(!String(file.type||'').startsWith('image/')){toast('Selecciona una imagen','error');input.value='';return;}
+  if(file.size>10*1024*1024){toast('La imagen supera 10 MB','error');input.value='';return;}
+  const box=document.getElementById(previewId);if(box)box.innerHTML=`<img src="${URL.createObjectURL(file)}" alt="Vista previa">`;
+};
+function renderAdTargetChips(){
+  const box=$('#adTargetChips');if(!box)return;
+  box.innerHTML=state.adEditorTargets?.length?state.adEditorTargets.map(t=>`<span>@${escapeHtml(t.username)} <button type="button" onclick="removeAdTargetProfile(${Number(t.id)})">×</button></span>`).join(''):'<small>No hay perfiles seleccionados.</small>';
+}
+window.removeAdTargetProfile=(id)=>{state.adEditorTargets=(state.adEditorTargets||[]).filter(t=>Number(t.id)!==Number(id));renderAdTargetChips();};
+window.addAdTargetProfile=(id,encodedUsername,encodedName)=>{
+  const username=decodeURIComponent(encodedUsername||''),name=decodeURIComponent(encodedName||'');
+  if(!(state.adEditorTargets||[]).some(t=>Number(t.id)===Number(id))) state.adEditorTargets.push({id:Number(id),username,name});
+  renderAdTargetChips();const results=$('#adTargetResults');if(results)results.innerHTML='';
+};
+window.searchAdTargetProfiles=async()=>{
+  const q=String($('#adTargetSearch')?.value||'').trim();if(q.length<1)return;
+  try{const data=await api(`/api/admin/users?limit=15&q=${encodeURIComponent(q)}`);const results=$('#adTargetResults');if(!results)return;results.innerHTML=data.users.length?data.users.map(u=>`<button type="button" onclick="addAdTargetProfile(${Number(u.id)},'${safeEncode(u.username)}','${safeEncode(u.name||'')}')"><b>@${escapeHtml(u.username)}</b><span>${escapeHtml(u.name||'')}</span></button>`).join(''):'<small>No se encontraron perfiles.</small>';}catch(e){toast(e.message,'error');}
+};
+async function uploadAdminAdImage(file){
+  if(!file)return null;const fd=new FormData();fd.append('file',file);return api('/api/admin/ads/upload',{method:'POST',body:fd,timeout:MEDIA_UPLOAD_TIMEOUT_MS});
+}
+window.saveAdminAd=async()=>{
+  const button=$('#saveAdButton');
+  try{
+    const id=Number(state.adEditorId||0),existing=id?currentAdminAd(id):null,type=$('#adCreativeType')?.value||'image';
+    const name=String($('#adName')?.value||'').trim();
+    const profileMode=$('#adProfileMode')?.value||'all';
+    const desktopEnabled=Boolean($('#adDesktopEnabled')?.checked),mobileEnabled=Boolean($('#adMobileEnabled')?.checked);
+    const placements=[];if($('#adPlaceRight')?.checked)placements.push('right_sidebar');if($('#adPlaceFeed')?.checked)placements.push('feed');if($('#adPlaceProfile')?.checked)placements.push('profile');
+    const mainFile=$('#adImageFile')?.files?.[0]||null,mobileFile=$('#adMobileImageFile')?.files?.[0]||null;
+    let imageUrl=String($('#adImageUrl')?.value||'').trim(),mobileImageUrl=String($('#adMobileImageUrl')?.value||'').trim();
+    const googleCode=String($('#adGoogleCode')?.value||'').trim();
+    if(name.length<2) throw new Error('Escribe un nombre interno para el anuncio.');
+    if(!placements.length) throw new Error('Selecciona al menos una ubicación.');
+    if(!desktopEnabled&&!mobileEnabled) throw new Error('Selecciona ordenador, móvil o ambos.');
+    if(profileMode==='include'&&!(state.adEditorTargets||[]).length) throw new Error('Selecciona al menos un perfil para mostrar esta publicidad.');
+    if(type==='image'&&desktopEnabled&&!mainFile&&!imageUrl) throw new Error('Selecciona una imagen principal desde el ordenador o mediante URL.');
+    if(type==='image'&&mobileEnabled&&!mobileFile&&!mobileImageUrl&&!mainFile&&!imageUrl) throw new Error('Selecciona una imagen para móvil o una imagen principal reutilizable.');
+    if(type==='google'&&!googleCode) throw new Error('Pega el código oficial de Google AdSense.');
+    if(button){button.disabled=true;button.textContent='Guardando…';}
+
+    let imageProvider=existing?.image_provider||'',imageProviderId=existing?.image_provider_id||'',mobileProvider=existing?.mobile_image_provider||'',mobileProviderId=existing?.mobile_image_provider_id||'';
+    if(existing && imageUrl!==String(existing.image_url||'')){imageProvider='';imageProviderId='';}
+    if(existing && mobileImageUrl!==String(existing.mobile_image_url||'')){mobileProvider='';mobileProviderId='';}
+    if(mainFile){const uploaded=await uploadAdminAdImage(mainFile);imageUrl=uploaded.url;imageProvider=uploaded.provider;imageProviderId=uploaded.provider_id;}
+    if(mobileFile){const uploaded=await uploadAdminAdImage(mobileFile);mobileImageUrl=uploaded.url;mobileProvider=uploaded.provider;mobileProviderId=uploaded.provider_id;}
+    if(type==='google'){imageUrl='';mobileImageUrl='';imageProvider='';imageProviderId='';mobileProvider='';mobileProviderId='';}
+    const starts=$('#adStartsAt')?.value||'',ends=$('#adEndsAt')?.value||'';
+    if(starts&&ends&&new Date(ends)<=new Date(starts)) throw new Error('La fecha final debe ser posterior a la fecha de inicio.');
+    const payload={name,active:Boolean($('#adActive')?.checked),creative_type:type,image_url:imageUrl,image_provider:imageProvider,image_provider_id:imageProviderId,mobile_image_url:mobileImageUrl,mobile_image_provider:mobileProvider,mobile_image_provider_id:mobileProviderId,link_url:String($('#adLinkUrl')?.value||'').trim(),google_code:googleCode,alt_text:String($('#adAltText')?.value||'').trim(),placements,desktop_enabled:desktopEnabled,mobile_enabled:mobileEnabled,profile_mode:profileMode,priority:Number($('#adPriority')?.value||0),starts_at:starts?new Date(starts).toISOString():null,ends_at:ends?new Date(ends).toISOString():null,target_ids:(state.adEditorTargets||[]).map(t=>Number(t.id))};
+    await api(id?`/api/admin/ads/${id}`:'/api/admin/ads',{method:id?'PATCH':'POST',body:JSON.stringify(payload),timeout:MEDIA_UPLOAD_TIMEOUT_MS});
+    closeModal();toast(id?'Publicidad actualizada':'Publicidad creada');await renderAdmin();
+  }catch(e){toast(e.message,'error');if(button){button.disabled=false;button.textContent=state.adEditorId?'Guardar cambios':'Crear anuncio';}}
+};
+
 async function renderAdmin() {
   if(!state.me?.is_admin){
     $('#main').innerHTML=`<div class="card empty"><h3>Acceso no disponible</h3><p>Este panel está reservado a administración.</p></div>`;
     return;
   }
-  const [stats,reports,actions,security,launch,demo,readiness,communityLaunch,growth,adminUsers]=await Promise.all([
+  const [stats,reports,actions,security,launch,demo,readiness,communityLaunch,growth,adminUsers,advertising]=await Promise.all([
     api('/api/admin/stats'),
     api('/api/admin/reports?status=all'),
     api('/api/admin/actions'),
@@ -2508,8 +2806,10 @@ async function renderAdmin() {
     api('/api/admin/launch-readiness'),
     api('/api/admin/community-launch'),
     api('/api/admin/growth-engine'),
-    api('/api/admin/users?limit=50')
+    api('/api/admin/users?limit=50'),
+    api('/api/admin/ads')
   ]);
+  state.adminAdsData=advertising;
   $('#main').innerHTML=`${pageHeader('Administración','Moderación y estado general de Instant Admirers')}
     <div class="admin-stats">
       <div class="card admin-stat"><b>${stats.users}</b><span>Usuarios</span><small>+${stats.new_users_7d} esta semana</small></div>
@@ -2523,6 +2823,7 @@ async function renderAdmin() {
       <div id="adminUserList" class="admin-user-list">${adminUsers.users.length?adminUsers.users.map(adminUserHtml).join(''):'<div class="empty compact-empty">No hay usuarios.</div>'}</div>
       <p class="admin-users-note">Eliminar una cuenta es definitivo: se borran sus publicaciones, mensajes, relaciones, referidos y multimedia asociada mediante las reglas de la base de datos. Se conserva una entrada de auditoría de la acción administrativa.</p>
     </section>
+    ${advertisingAdminHtml(advertising)}
     <section class="card admin-section launch-dashboard">
       <div class="section-row"><div><h3>Lanzamiento controlado</h3><p>Altas, activación, actividad y errores reales.</p></div><span class="launch-mode-badge">${escapeHtml(launch.settings.registration_mode)}</span></div>
       <div class="launch-control-row"><label>Registro<select id="launchRegistrationMode"><option value="open" ${launch.settings.registration_mode==='open'?'selected':''}>Abierto</option><option value="invite_only" ${launch.settings.registration_mode==='invite_only'?'selected':''}>Solo invitación</option><option value="paused" ${launch.settings.registration_mode==='paused'?'selected':''}>Pausado</option></select></label><button class="btn primary compact" onclick="saveLaunchRegistrationMode()">Aplicar</button></div>

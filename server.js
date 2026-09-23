@@ -334,6 +334,119 @@ async function adminOnly(req, res, next) {
   }
 }
 
+
+// --- V1.10.0: Publicidad ---------------------------------------------------
+const AD_PLACEMENTS = new Set(['right_sidebar','feed','profile']);
+const AD_PROFILE_MODES = new Set(['all','include','exclude']);
+const AD_CREATIVE_TYPES = new Set(['image','google']);
+
+function normalizeHttpUrl(value='', { allowEmpty=true }={}) {
+  const raw=String(value || '').trim();
+  if(!raw && allowEmpty) return '';
+  try {
+    const url=new URL(raw);
+    if(!['http:','https:'].includes(url.protocol)) return null;
+    return url.toString();
+  } catch (_) { return null; }
+}
+
+function normalizeAdDate(value) {
+  if(value===null || value===undefined || String(value).trim()==='') return null;
+  const date=new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+function normalizeAdPlacements(value) {
+  const values=Array.isArray(value) ? value : [];
+  return [...new Set(values.map(v=>String(v||'').trim()).filter(v=>AD_PLACEMENTS.has(v)))];
+}
+
+function validateGoogleAdCode(value='') {
+  const code=String(value || '').trim();
+  if(code.length < 20 || code.length > 20000) return { ok:false, error:'Pega el código completo del bloque de Google AdSense.' };
+  if(!/adsbygoogle/i.test(code) || !/data-ad-client\s*=\s*["'][^"']+["']/i.test(code) || !/data-ad-slot\s*=\s*["'][^"']+["']/i.test(code)) {
+    return { ok:false, error:'El código no parece un bloque válido de Google AdSense.' };
+  }
+  const forbidden=[/<iframe\b/i,/javascript\s*:/i,/\son\w+\s*=/i,/document\s*\./i,/localStorage/i,/sessionStorage/i,/document\.cookie/i,/XMLHttpRequest/i,/\bfetch\s*\(/i];
+  if(forbidden.some(rx=>rx.test(code))) return { ok:false, error:'El código contiene elementos no permitidos. Usa únicamente el bloque oficial de Google AdSense.' };
+  const srcs=[...code.matchAll(/<script[^>]+src\s*=\s*["']([^"']+)["'][^>]*>/gi)].map(m=>m[1]);
+  if(srcs.some(src=>!/^https:\/\/pagead2\.googlesyndication\.com\/pagead\/js\/adsbygoogle\.js(?:\?|$)/i.test(src))) {
+    return { ok:false, error:'Solo se permite el script oficial de Google AdSense.' };
+  }
+  return { ok:true, code };
+}
+
+function normalizeAdPayload(body={}) {
+  const creativeType=String(body.creative_type || 'image').trim().toLowerCase();
+  const profileMode=String(body.profile_mode || 'all').trim().toLowerCase();
+  const placements=normalizeAdPlacements(body.placements);
+  const desktopEnabled=body.desktop_enabled !== false;
+  const mobileEnabled=body.mobile_enabled !== false;
+  const imageUrl=normalizeHttpUrl(body.image_url || '');
+  const mobileImageUrl=normalizeHttpUrl(body.mobile_image_url || '');
+  const linkUrl=normalizeHttpUrl(body.link_url || '');
+  const startsAt=normalizeAdDate(body.starts_at);
+  const endsAt=normalizeAdDate(body.ends_at);
+  const targetIds=[...new Set((Array.isArray(body.target_ids)?body.target_ids:[]).map(Number).filter(v=>Number.isInteger(v)&&v>0))].slice(0,500);
+
+  if(!AD_CREATIVE_TYPES.has(creativeType)) throw Object.assign(new Error('Tipo de publicidad no válido'),{status:400});
+  if(!AD_PROFILE_MODES.has(profileMode)) throw Object.assign(new Error('Segmentación por perfil no válida'),{status:400});
+  if(!placements.length) throw Object.assign(new Error('Selecciona al menos una ubicación para el anuncio'),{status:400});
+  if(!desktopEnabled && !mobileEnabled) throw Object.assign(new Error('El anuncio debe mostrarse al menos en ordenador o móvil'),{status:400});
+  if(imageUrl===null || mobileImageUrl===null || linkUrl===null) throw Object.assign(new Error('Las direcciones del anuncio deben ser URLs http o https válidas'),{status:400});
+  if(startsAt===undefined || endsAt===undefined) throw Object.assign(new Error('La fecha de inicio o final no es válida'),{status:400});
+  if(startsAt && endsAt && new Date(endsAt) <= new Date(startsAt)) throw Object.assign(new Error('La fecha final debe ser posterior a la fecha de inicio'),{status:400});
+  if(profileMode==='include' && !targetIds.length) throw Object.assign(new Error('Selecciona al menos un perfil para la segmentación'),{status:400});
+
+  let googleCode='';
+  if(creativeType==='google') {
+    const checked=validateGoogleAdCode(body.google_code || '');
+    if(!checked.ok) throw Object.assign(new Error(checked.error),{status:400});
+    googleCode=checked.code;
+  } else {
+    if(desktopEnabled && !imageUrl) throw Object.assign(new Error('Selecciona o indica una imagen para ordenador'),{status:400});
+    if(mobileEnabled && !(mobileImageUrl || imageUrl)) throw Object.assign(new Error('Selecciona una imagen para móvil o usa la misma imagen principal'),{status:400});
+  }
+
+  return {
+    name:String(body.name || '').trim().slice(0,120),
+    active:body.active !== false,
+    creative_type:creativeType,
+    image_url:imageUrl || '',
+    image_provider:String(body.image_provider || '').trim().slice(0,40),
+    image_provider_id:String(body.image_provider_id || '').trim().slice(0,500),
+    image_resource_type:'image',
+    mobile_image_url:mobileImageUrl || '',
+    mobile_image_provider:String(body.mobile_image_provider || '').trim().slice(0,40),
+    mobile_image_provider_id:String(body.mobile_image_provider_id || '').trim().slice(0,500),
+    mobile_image_resource_type:'image',
+    link_url:linkUrl || '',
+    google_code:googleCode,
+    alt_text:String(body.alt_text || '').trim().slice(0,240),
+    placements,
+    desktop_enabled:desktopEnabled,
+    mobile_enabled:mobileEnabled,
+    profile_mode:profileMode,
+    priority:Math.max(-1000,Math.min(1000,Math.floor(Number(body.priority)||0))),
+    starts_at:startsAt,
+    ends_at:endsAt,
+    target_ids:targetIds
+  };
+}
+
+async function validateAdTargetUsers(targetIds, client=pool) {
+  if(!targetIds.length) return [];
+  const {rows}=await client.query(`SELECT id,username,name,avatar FROM users WHERE id=ANY($1::bigint[]) AND account_status='active' AND COALESCE(is_demo,FALSE)=FALSE ORDER BY username`,[targetIds]);
+  if(rows.length!==targetIds.length) throw Object.assign(new Error('Uno o más perfiles seleccionados ya no están disponibles'),{status:400});
+  return rows;
+}
+
+function uploadedAdAsset(row, mobile=false) {
+  return mobile
+    ? {provider:row?.mobile_image_provider,provider_id:row?.mobile_image_provider_id,resource_type:row?.mobile_image_resource_type || 'image'}
+    : {provider:row?.image_provider,provider_id:row?.image_provider_id,resource_type:row?.image_resource_type || 'image'};
+}
+
 function safeUser(row, includePrivate = false) {
   if (!row) return null;
   const user = {
@@ -797,7 +910,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.9.4', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','starter-prompts','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh'] });
+  res.json({ ok: true, version: '1.10.0', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','direct-cdn-media','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','starter-prompts','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -2506,6 +2619,66 @@ app.delete('/api/account', auth, asyncRoute(async (req, res) => {
   res.json({ ok:true });
 }));
 
+
+// V1.10.0: entrega de publicidad activa. Si no hay nada aplicable devuelve 204.
+app.get('/api/ads/slot', auth, asyncRoute(async (req,res) => {
+  const placement=String(req.query.placement || '').trim();
+  const device=String(req.query.device || '').trim()==='mobile' ? 'mobile' : 'desktop';
+  const profileUsername=String(req.query.profile || '').trim().replace(/^@/,'').slice(0,30);
+  if(!AD_PLACEMENTS.has(placement)) return res.status(400).json({error:'Ubicación publicitaria no válida'});
+
+  let profileId=null;
+  if(profileUsername){
+    const profileResult=await pool.query(`SELECT id FROM users WHERE LOWER(username)=LOWER($1) AND account_status='active' LIMIT 1`,[profileUsername]);
+    profileId=profileResult.rows[0]?.id || null;
+  }
+  if(placement==='profile' && !profileId) return res.status(204).end();
+
+  const {rows}=await pool.query(`
+    SELECT a.id,a.name,a.creative_type,a.image_url,a.mobile_image_url,a.link_url,a.google_code,a.alt_text,a.placements,a.profile_mode
+      FROM ads a
+      JOIN ad_settings s ON s.id=1 AND s.enabled=TRUE
+     WHERE a.active=TRUE
+       AND $1::text=ANY(a.placements)
+       AND ($2::text='mobile' AND a.mobile_enabled=TRUE OR $2::text='desktop' AND a.desktop_enabled=TRUE)
+       AND (a.starts_at IS NULL OR a.starts_at<=NOW())
+       AND (a.ends_at IS NULL OR a.ends_at>NOW())
+       AND (
+         a.profile_mode='all'
+         OR (a.profile_mode='include' AND $3::bigint IS NOT NULL AND EXISTS(SELECT 1 FROM ad_profile_targets apt WHERE apt.ad_id=a.id AND apt.user_id=$3))
+         OR (a.profile_mode='exclude' AND ($3::bigint IS NULL OR NOT EXISTS(SELECT 1 FROM ad_profile_targets apt WHERE apt.ad_id=a.id AND apt.user_id=$3)))
+       )
+     ORDER BY a.priority DESC,RANDOM()
+     LIMIT 1
+  `,[placement,device,profileId]);
+  const row=rows[0];
+  if(!row) return res.status(204).end();
+  res.json({
+    id:row.id,
+    name:row.name,
+    creative_type:row.creative_type,
+    image_url:device==='mobile' && row.mobile_image_url ? row.mobile_image_url : row.image_url,
+    link_url:row.link_url,
+    google_code:row.google_code,
+    alt_text:row.alt_text,
+    placement
+  });
+}));
+
+app.post('/api/ads/:id/impression', auth, asyncRoute(async (req,res) => {
+  const id=Number(req.params.id);
+  if(!Number.isInteger(id)||id<=0) return res.status(400).json({error:'Anuncio no válido'});
+  await pool.query(`INSERT INTO ad_daily_stats(ad_id,day,impressions) SELECT id,CURRENT_DATE,1 FROM ads WHERE id=$1 ON CONFLICT(ad_id,day) DO UPDATE SET impressions=ad_daily_stats.impressions+1`,[id]);
+  res.json({ok:true});
+}));
+
+app.post('/api/ads/:id/click', auth, asyncRoute(async (req,res) => {
+  const id=Number(req.params.id);
+  if(!Number.isInteger(id)||id<=0) return res.status(400).json({error:'Anuncio no válido'});
+  await pool.query(`INSERT INTO ad_daily_stats(ad_id,day,clicks) SELECT id,CURRENT_DATE,1 FROM ads WHERE id=$1 AND creative_type='image' ON CONFLICT(ad_id,day) DO UPDATE SET clicks=ad_daily_stats.clicks+1`,[id]);
+  res.json({ok:true});
+}));
+
 app.get('/api/admin/stats', auth, adminOnly, asyncRoute(async (_req, res) => {
   const { rows } = await pool.query(`
     SELECT
@@ -2743,6 +2916,115 @@ app.patch('/api/admin/growth-campaigns/:id', auth, adminOnly, asyncRoute(async (
   res.json(rows[0]);
 }));
 
+
+// --- V1.10.0: Administración de publicidad -------------------------------
+app.get('/api/admin/ads', auth, adminOnly, asyncRoute(async (_req,res) => {
+  const settingsResult=await pool.query(`SELECT enabled,updated_at FROM ad_settings WHERE id=1`);
+  const {rows}=await pool.query(`
+    SELECT a.*,
+      COALESCE((SELECT SUM(impressions)::bigint FROM ad_daily_stats ds WHERE ds.ad_id=a.id),0)::bigint AS impressions,
+      COALESCE((SELECT SUM(clicks)::bigint FROM ad_daily_stats ds WHERE ds.ad_id=a.id),0)::bigint AS clicks,
+      COALESCE((SELECT SUM(impressions)::bigint FROM ad_daily_stats ds WHERE ds.ad_id=a.id AND ds.day>=CURRENT_DATE-29),0)::bigint AS impressions_30d,
+      COALESCE((SELECT SUM(clicks)::bigint FROM ad_daily_stats ds WHERE ds.ad_id=a.id AND ds.day>=CURRENT_DATE-29),0)::bigint AS clicks_30d
+    FROM ads a ORDER BY a.created_at DESC
+  `);
+  const ids=rows.map(r=>r.id);
+  let targets=[];
+  if(ids.length){
+    const result=await pool.query(`SELECT apt.ad_id,u.id,u.username,u.name,u.avatar FROM ad_profile_targets apt JOIN users u ON u.id=apt.user_id WHERE apt.ad_id=ANY($1::bigint[]) ORDER BY u.username`,[ids]);
+    targets=result.rows;
+  }
+  const byAd=new Map();
+  targets.forEach(t=>{if(!byAd.has(String(t.ad_id)))byAd.set(String(t.ad_id),[]);byAd.get(String(t.ad_id)).push({id:t.id,username:t.username,name:t.name,avatar:t.avatar});});
+  res.json({settings:settingsResult.rows[0] || {enabled:false},ads:rows.map(r=>({...r,targets:byAd.get(String(r.id))||[]}))});
+}));
+
+app.patch('/api/admin/ads/settings', auth, adminOnly, asyncRoute(async (req,res) => {
+  const enabled=Boolean(req.body?.enabled);
+  const {rows}=await pool.query(`UPDATE ad_settings SET enabled=$1,updated_by=$2,updated_at=NOW() WHERE id=1 RETURNING enabled,updated_at`,[enabled,req.user.id]);
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'advertising_settings',$2)`,[req.user.id,JSON.stringify({enabled}).slice(0,1000)]);
+  res.json(rows[0]);
+}));
+
+app.post('/api/admin/ads/upload', auth, adminOnly, upload.single('file'), asyncRoute(async (req,res) => {
+  if(!req.file) return res.status(400).json({error:'Selecciona una imagen'});
+  if(!String(req.file.mimetype||'').startsWith('image/')) return res.status(400).json({error:'Para publicidad solo se permiten imágenes'});
+  if(req.file.size>MAX_IMAGE_UPLOAD_BYTES) return res.status(413).json({error:'La imagen supera el límite de 10 MB'});
+  if(!cloudinaryConfigured()) return res.status(503).json({error:'Cloudinary debe estar configurado para subir banners desde el ordenador'});
+  const uploaded=await uploadMediaBuffer(req.file.buffer,{mimeType:req.file.mimetype,originalName:req.file.originalname,userId:req.user.id});
+  res.json({url:uploaded.secureUrl,provider:uploaded.provider,provider_id:uploaded.providerId,resource_type:uploaded.resourceType || 'image',width:uploaded.width,height:uploaded.height});
+}));
+
+app.post('/api/admin/ads', auth, adminOnly, asyncRoute(async (req,res) => {
+  const ad=normalizeAdPayload(req.body || {});
+  if(ad.name.length<2) return res.status(400).json({error:'Escribe un nombre interno para el anuncio'});
+  const result=await withTransaction(async client=>{
+    const targetProfiles=await validateAdTargetUsers(ad.target_ids,client);
+    const {rows}=await client.query(`
+      INSERT INTO ads(created_by,name,active,creative_type,image_url,image_provider,image_provider_id,image_resource_type,mobile_image_url,mobile_image_provider,mobile_image_provider_id,mobile_image_resource_type,link_url,google_code,alt_text,placements,desktop_enabled,mobile_enabled,profile_mode,priority,starts_at,ends_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16::text[],$17,$18,$19,$20,$21,$22)
+      RETURNING *
+    `,[req.user.id,ad.name,ad.active,ad.creative_type,ad.image_url,ad.image_provider,ad.image_provider_id,ad.image_resource_type,ad.mobile_image_url,ad.mobile_image_provider,ad.mobile_image_provider_id,ad.mobile_image_resource_type,ad.link_url,ad.google_code,ad.alt_text,ad.placements,ad.desktop_enabled,ad.mobile_enabled,ad.profile_mode,ad.priority,ad.starts_at,ad.ends_at]);
+    const row=rows[0];
+    for(const id of ad.target_ids) await client.query(`INSERT INTO ad_profile_targets(ad_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING`,[row.id,id]);
+    await client.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'advertising_create',$2)`,[req.user.id,JSON.stringify({id:row.id,name:row.name,type:row.creative_type,placements:row.placements,profile_mode:row.profile_mode}).slice(0,1000)]);
+    return {...row,targets:targetProfiles};
+  });
+  res.json(result);
+}));
+
+app.patch('/api/admin/ads/:id', auth, adminOnly, asyncRoute(async (req,res) => {
+  const id=Number(req.params.id);
+  if(!Number.isInteger(id)||id<=0) return res.status(400).json({error:'Anuncio no válido'});
+  const ad=normalizeAdPayload(req.body || {});
+  if(ad.name.length<2) return res.status(400).json({error:'Escribe un nombre interno para el anuncio'});
+  const result=await withTransaction(async client=>{
+    const oldResult=await client.query(`SELECT * FROM ads WHERE id=$1 FOR UPDATE`,[id]);
+    const old=oldResult.rows[0];
+    if(!old) throw Object.assign(new Error('Anuncio no encontrado'),{status:404});
+    const targetProfiles=await validateAdTargetUsers(ad.target_ids,client);
+    const {rows}=await client.query(`
+      UPDATE ads SET name=$2,active=$3,creative_type=$4,image_url=$5,image_provider=$6,image_provider_id=$7,image_resource_type=$8,
+        mobile_image_url=$9,mobile_image_provider=$10,mobile_image_provider_id=$11,mobile_image_resource_type=$12,link_url=$13,google_code=$14,alt_text=$15,
+        placements=$16::text[],desktop_enabled=$17,mobile_enabled=$18,profile_mode=$19,priority=$20,starts_at=$21,ends_at=$22,updated_at=NOW()
+      WHERE id=$1 RETURNING *
+    `,[id,ad.name,ad.active,ad.creative_type,ad.image_url,ad.image_provider,ad.image_provider_id,ad.image_resource_type,ad.mobile_image_url,ad.mobile_image_provider,ad.mobile_image_provider_id,ad.mobile_image_resource_type,ad.link_url,ad.google_code,ad.alt_text,ad.placements,ad.desktop_enabled,ad.mobile_enabled,ad.profile_mode,ad.priority,ad.starts_at,ad.ends_at]);
+    await client.query(`DELETE FROM ad_profile_targets WHERE ad_id=$1`,[id]);
+    for(const targetId of ad.target_ids) await client.query(`INSERT INTO ad_profile_targets(ad_id,user_id) VALUES($1,$2) ON CONFLICT DO NOTHING`,[id,targetId]);
+    await client.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'advertising_update',$2)`,[req.user.id,JSON.stringify({id,name:ad.name,type:ad.creative_type,placements:ad.placements,profile_mode:ad.profile_mode}).slice(0,1000)]);
+    return {row:{...rows[0],targets:targetProfiles},old};
+  });
+  const cleanups=[];
+  if(result.old.image_provider_id && result.old.image_provider_id!==result.row.image_provider_id) cleanups.push(destroyRemoteAsset(uploadedAdAsset(result.old,false)));
+  if(result.old.mobile_image_provider_id && result.old.mobile_image_provider_id!==result.row.mobile_image_provider_id) cleanups.push(destroyRemoteAsset(uploadedAdAsset(result.old,true)));
+  if(cleanups.length) await Promise.allSettled(cleanups);
+  res.json(result.row);
+}));
+
+app.patch('/api/admin/ads/:id/status', auth, adminOnly, asyncRoute(async (req,res) => {
+  const id=Number(req.params.id),active=Boolean(req.body?.active);
+  if(!Number.isInteger(id)||id<=0) return res.status(400).json({error:'Anuncio no válido'});
+  const {rows}=await pool.query(`UPDATE ads SET active=$2,updated_at=NOW() WHERE id=$1 RETURNING id,name,active`,[id,active]);
+  if(!rows[0]) return res.status(404).json({error:'Anuncio no encontrado'});
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'advertising_status',$2)`,[req.user.id,JSON.stringify({id,active}).slice(0,1000)]);
+  res.json(rows[0]);
+}));
+
+app.delete('/api/admin/ads/:id', auth, adminOnly, asyncRoute(async (req,res) => {
+  const id=Number(req.params.id);
+  if(!Number.isInteger(id)||id<=0) return res.status(400).json({error:'Anuncio no válido'});
+  const result=await withTransaction(async client=>{
+    const oldResult=await client.query(`SELECT * FROM ads WHERE id=$1 FOR UPDATE`,[id]);
+    const old=oldResult.rows[0];
+    if(!old) throw Object.assign(new Error('Anuncio no encontrado'),{status:404});
+    await client.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'advertising_delete',$2)`,[req.user.id,JSON.stringify({id,name:old.name}).slice(0,1000)]);
+    await client.query(`DELETE FROM ads WHERE id=$1`,[id]);
+    return old;
+  });
+  await Promise.allSettled([destroyRemoteAsset(uploadedAdAsset(result,false)),destroyRemoteAsset(uploadedAdAsset(result,true))]);
+  res.json({ok:true,id});
+}));
+
 app.get('/api/admin/reports', auth, adminOnly, asyncRoute(async (req, res) => {
   const status = String(req.query.status || 'open');
   const allowed = ['open','reviewing','closed','all'];
@@ -2956,7 +3238,7 @@ app.use((err, req, res, _next) => {
 async function start() {
   await initDb();
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
-  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.7.1 en http://localhost:${PORT}`));
+  httpServer.listen(PORT, '0.0.0.0', () => console.log(`Instant Admirers V1.10.0 en http://localhost:${PORT}`));
 }
 
 start().catch((err) => {

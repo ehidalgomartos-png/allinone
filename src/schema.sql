@@ -528,3 +528,62 @@ CREATE TABLE IF NOT EXISTS friend_gate_sessions (
 CREATE INDEX IF NOT EXISTS idx_friend_gate_sessions_gate ON friend_gate_sessions(gate_user_id, first_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_friend_gate_sessions_campaign ON friend_gate_sessions(campaign_id, first_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_friend_gate_sessions_completed ON friend_gate_sessions(gate_user_id, completed_at DESC) WHERE completed_at IS NOT NULL;
+
+-- V1.10.0: sistema de publicidad administrable y segmentación por perfil.
+CREATE TABLE IF NOT EXISTS ad_settings (
+  id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO ad_settings(id, enabled) VALUES(1, FALSE) ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS ads (
+  id BIGSERIAL PRIMARY KEY,
+  created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  name VARCHAR(120) NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  creative_type VARCHAR(20) NOT NULL DEFAULT 'image' CHECK (creative_type IN ('image','google')),
+  image_url TEXT NOT NULL DEFAULT '',
+  image_provider VARCHAR(40) NOT NULL DEFAULT '',
+  image_provider_id TEXT NOT NULL DEFAULT '',
+  image_resource_type VARCHAR(20) NOT NULL DEFAULT 'image',
+  mobile_image_url TEXT NOT NULL DEFAULT '',
+  mobile_image_provider VARCHAR(40) NOT NULL DEFAULT '',
+  mobile_image_provider_id TEXT NOT NULL DEFAULT '',
+  mobile_image_resource_type VARCHAR(20) NOT NULL DEFAULT 'image',
+  link_url TEXT NOT NULL DEFAULT '',
+  google_code TEXT NOT NULL DEFAULT '',
+  alt_text VARCHAR(240) NOT NULL DEFAULT '',
+  placements TEXT[] NOT NULL DEFAULT ARRAY['feed']::TEXT[],
+  desktop_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  mobile_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  profile_mode VARCHAR(20) NOT NULL DEFAULT 'all' CHECK (profile_mode IN ('all','include','exclude')),
+  priority INTEGER NOT NULL DEFAULT 0 CHECK (priority BETWEEN -1000 AND 1000),
+  starts_at TIMESTAMPTZ,
+  ends_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (cardinality(placements) >= 1),
+  CHECK (placements <@ ARRAY['right_sidebar','feed','profile']::TEXT[]),
+  CHECK (ends_at IS NULL OR starts_at IS NULL OR ends_at > starts_at)
+);
+
+CREATE TABLE IF NOT EXISTS ad_profile_targets (
+  ad_id BIGINT NOT NULL REFERENCES ads(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  PRIMARY KEY (ad_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS ad_daily_stats (
+  ad_id BIGINT NOT NULL REFERENCES ads(id) ON DELETE CASCADE,
+  day DATE NOT NULL DEFAULT CURRENT_DATE,
+  impressions INTEGER NOT NULL DEFAULT 0,
+  clicks INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (ad_id, day)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ads_active_schedule ON ads(active, starts_at, ends_at, priority DESC);
+CREATE INDEX IF NOT EXISTS idx_ads_placements ON ads USING GIN(placements);
+CREATE INDEX IF NOT EXISTS idx_ad_profile_targets_user ON ad_profile_targets(user_id, ad_id);
+CREATE INDEX IF NOT EXISTS idx_ad_daily_stats_day ON ad_daily_stats(day DESC, ad_id);
