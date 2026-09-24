@@ -1,4 +1,4 @@
-// Instant Admirers V1.12.4 · Español / English
+// Instant Admirers V1.12.6 · Español / English
 (() => {
   const STORAGE_KEY = 'iaLanguage';
   const SUPPORTED = new Set(['es','en']);
@@ -44,7 +44,9 @@
     'Sin referrer externo detectado':'No external referrer detected',
     'Sin visitas recientes.':'No recent visits.',
     'histórico sin origen':'historical without source',
-    'Campaña actualizada':'Campaign updated'
+    'Campaña actualizada':'Campaign updated',
+    'Procesando vídeo…':'Processing video…',
+    'Estará disponible en unos momentos.':'It will be available in a few moments.'
   });
   const EN_ES = Object.fromEntries(Object.entries(ES_EN).map(([es,en]) => [en,es]));
   const normalized = obj => {

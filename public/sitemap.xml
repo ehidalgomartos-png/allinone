@@ -1,14 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url><loc>https://instantadmirers.com/</loc></url>
-  <url><loc>https://instantadmirers.com/legal/</loc></url>
-  <url><loc>https://instantadmirers.com/privacy/</loc></url>
-  <url><loc>https://instantadmirers.com/cookies/</loc></url>
-  <url><loc>https://instantadmirers.com/terms/</loc></url>
-  <url><loc>https://instantadmirers.com/community-guidelines/</loc></url>
-  <url><loc>https://instantadmirers.com/en/legal/</loc></url>
-  <url><loc>https://instantadmirers.com/en/privacy/</loc></url>
-  <url><loc>https://instantadmirers.com/en/cookies/</loc></url>
-  <url><loc>https://instantadmirers.com/en/terms/</loc></url>
-  <url><loc>https://instantadmirers.com/en/community-guidelines/</loc></url>
-</urlset>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <sitemap><loc>https://instantadmirers.com/sitemap-core.xml</loc><lastmod>2026-09-24</lastmod></sitemap>
+  <sitemap><loc>https://instantadmirers.com/sitemap-landings.xml</loc><lastmod>2026-09-24</lastmod></sitemap>
+</sitemapindex>

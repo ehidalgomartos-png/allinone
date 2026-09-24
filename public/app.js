@@ -1,7 +1,7 @@
-// V1.12.4 · Growth Engine Attribution + mensajes de acceso por campaña + Protección de contenido
+// V1.12.6 · Bunny Media + SEO 40 Landings + Growth Engine Attribution + Protección de contenido
 const RESERVED_PROFILE_SLUGS = new Set([
-  'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en',
-  'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
+  'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en','ciudades','guias',
+  'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','sitemap-core.xml','sitemap-landings.xml','login','register','logout','admin',
   'feed','reels','discover','search','messages','notifications','bookmarks','friends','settings','profile',
   'invite','invites','help','support','about'
 ]);
@@ -715,7 +715,12 @@ function authScreen() {
         <div class="auth-mobile-footer-note">18+ · Comunidad privada · Instant Admirers</div>
       </section>
     </div>`;
-  showAuth('login');
+  let requestedAuth='login';
+  try {
+    const authParam=String(new URLSearchParams(location.search).get('auth') || '').toLowerCase();
+    if (authParam === 'register' || location.pathname === '/register') requestedAuth='register';
+  } catch (_) {}
+  showAuth(requestedAuth);
   loadLaunchStatus();
   if (directProfile) void loadPendingProfileAccessCard();
   const authNotice=sessionStorage.getItem('authNotice'); if(authNotice){sessionStorage.removeItem('authNotice');setTimeout(()=>toast(authNotice),80);}
@@ -1078,6 +1083,7 @@ function appendPostItems(containerId, items) {
 }
 
 function setupLazyMedia(root = document) {
+  setupBunnyStreams(root);
   const videos = [...root.querySelectorAll('video[data-lazy-video="1"]')].filter(v => !v.dataset.lazyObserved);
   if (!videos.length) return;
   if (!('IntersectionObserver' in window)) {
@@ -1216,6 +1222,47 @@ function mediaProtectionAttrs(item, {video=false} = {}) {
     : ' data-protected-media="1" draggable="false" oncontextmenu="return false"';
 }
 
+function mediaVideoSourceAttrs(item) {
+  const url=String(item?.media_url || '');
+  if (!url) return '';
+  if (item?.media_streaming) return ` data-bunny-stream="1" data-stream-src="${escapeAttr(url)}"`;
+  return ` src="${escapeAttr(url)}"`;
+}
+
+function setupBunnyStreamVideo(video) {
+  if (!video || video.dataset.bunnyStream !== '1' || video.dataset.streamAttached === '1') return;
+  const source=String(video.dataset.streamSrc || '');
+  if (!source) return;
+  video.dataset.streamAttached='1';
+  if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    video.src=source;
+    return;
+  }
+  if (window.Hls?.isSupported?.()) {
+    const hls=new window.Hls({ enableWorker:true, lowLatencyMode:false, maxBufferLength:30, maxMaxBufferLength:60 });
+    hls.loadSource(source);
+    hls.attachMedia(video);
+    video._iaHls=hls;
+    hls.on(window.Hls.Events.ERROR, (_event,data) => {
+      if (!data?.fatal) return;
+      if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+        try { hls.startLoad(); } catch (_) {}
+      } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+        try { hls.recoverMediaError(); } catch (_) {}
+      } else {
+        try { hls.destroy(); } catch (_) {}
+        video.dataset.streamAttached='error';
+      }
+    });
+    return;
+  }
+  video.dataset.streamAttached='unsupported';
+}
+
+function setupBunnyStreams(root=document) {
+  root.querySelectorAll?.('video[data-bunny-stream="1"]').forEach(setupBunnyStreamVideo);
+}
+
 function mediaWatermarkHtml(item) {
   if (!item?.watermarked) return '';
   const username=state.me?.username ? `@${state.me.username}` : 'Instant Admirers';
@@ -1224,6 +1271,7 @@ function mediaWatermarkHtml(item) {
 }
 
 function protectedMediaFrame(item, mediaHtml, className='') {
+  if (!mediaHtml && item?.media_processing) return `<div class="media-processing"><span>◌</span><b>${escapeHtml(window.IAI18N?.t?.('Procesando vídeo…','Processing video…') || 'Procesando vídeo…')}</b><small>${escapeHtml(window.IAI18N?.t?.('Estará disponible en unos momentos.','It will be available in a few moments.') || 'Estará disponible en unos momentos.')}</small></div>`;
   if (!mediaHtml) return '';
   if (!item?.media_protected && !item?.watermarked) return mediaHtml;
   return `<div class="protected-media-frame ${escapeAttr(className)}" data-protected-media-frame="1" oncontextmenu="return false" ondragstart="return false">${mediaHtml}${mediaWatermarkHtml(item)}</div>`;
@@ -1233,7 +1281,7 @@ function repostEmbed(r) {
   if (!r) return '';
   if (r.unavailable) return `<div class="repost-embed unavailable">Esta publicación ya no está disponible.</div>`;
   const rawMedia = r.media_url ? (r.media_type === 'video'
-    ? `<video class="repost-media" src="${escapeAttr(r.media_url)}" controls playsinline preload="none" data-lazy-video="1"${mediaProtectionAttrs(r,{video:true})}></video>`
+    ? `<video class="repost-media"${mediaVideoSourceAttrs(r)} controls playsinline preload="none" data-lazy-video="1"${mediaProtectionAttrs(r,{video:true})}></video>`
     : `<img class="repost-media" src="${escapeAttr(r.media_url)}" loading="lazy" decoding="async" alt=""${mediaProtectionAttrs(r)}>` ) : '';
   const media = protectedMediaFrame(r,rawMedia,'repost-protected-media');
   return `<div class="repost-embed">
@@ -1245,7 +1293,7 @@ function repostEmbed(r) {
 
 function postHtml(p) {
   const rawMedia = p.media_url ? (p.media_type === 'video'
-    ? `<video class="post-media" src="${escapeAttr(p.media_url)}" controls playsinline preload="none" data-lazy-video="1"${mediaProtectionAttrs(p,{video:true})}></video>`
+    ? `<video class="post-media"${mediaVideoSourceAttrs(p)} controls playsinline preload="none" data-lazy-video="1"${mediaProtectionAttrs(p,{video:true})}></video>`
     : `<img class="post-media" src="${escapeAttr(p.media_url)}" loading="lazy" decoding="async" alt="Publicación de ${escapeAttr(p.username)}"${mediaProtectionAttrs(p)}>` ) : '';
   const media = protectedMediaFrame(p,rawMedia,'post-protected-media');
   const privacy = p.visibility === 'followers' ? ' · 👥' : '';
@@ -2228,9 +2276,9 @@ async function showStory() {
   const viewer = state.storyViewer; if (!viewer) return;
   const s = viewer.items[viewer.index]; if (!s) return closeStoryViewer();
   if (!s.own) api(`/api/stories/${s.id}/view`, { method:'POST' }).catch(()=>{});
-  const rawMedia = s.media_type === 'video'
-    ? `<video id="storyMedia" class="story-media" src="${escapeAttr(s.media_url)}" autoplay playsinline controls${mediaProtectionAttrs(s,{video:true})}></video>`
-    : `<img class="story-media" src="${escapeAttr(s.media_url)}" alt="Story"${mediaProtectionAttrs(s)}>`;
+  const rawMedia = s.media_processing ? '' : (s.media_type === 'video'
+    ? `<video id="storyMedia" class="story-media"${mediaVideoSourceAttrs(s)} autoplay playsinline controls${mediaProtectionAttrs(s,{video:true})}></video>`
+    : `<img class="story-media" src="${escapeAttr(s.media_url)}" alt="Story"${mediaProtectionAttrs(s)}>`);
   const media = protectedMediaFrame(s,rawMedia,'story-protected-media');
   $('#modal-root').innerHTML = `<div class="story-backdrop"><div class="story-viewer">
     <div class="story-progress">${viewer.items.map((_,i)=>`<span class="${i < viewer.index ? 'done' : i === viewer.index ? 'active' : ''}"><i></i></span>`).join('')}</div>
@@ -2239,7 +2287,8 @@ async function showStory() {
     ${s.own ? `<div class="story-owner-tools"><button onclick="showStoryViewers(${s.id})">👁 ${s.views_count || 0} visualizaciones</button><button class="danger-text" onclick="deleteStory(${s.id})">Eliminar</button></div>` : ''}
   </div></div>`;
 
-  if (s.media_type === 'video') {
+  if (s.media_type === 'video' && !s.media_processing) {
+    setupBunnyStreams($('#modal-root') || document);
     const video = $('#storyMedia');
     if (video) {
       video.addEventListener('loadedmetadata', () => setStoryProgress(0), { once:true });
@@ -2295,7 +2344,7 @@ async function renderReels() {
 }
 
 function reelHtml(p) {
-  const rawMedia=`<video class="reel-video" src="${escapeAttr(p.media_url)}" loop muted playsinline preload="none" data-reel-video="1" onclick="toggleReelSound(this)"${mediaProtectionAttrs(p,{video:true})}></video>`;
+  const rawMedia=p.media_processing?'':`<video class="reel-video"${mediaVideoSourceAttrs(p)} loop muted playsinline preload="none" data-reel-video="1" onclick="toggleReelSound(this)"${mediaProtectionAttrs(p,{video:true})}></video>`;
   const media=protectedMediaFrame(p,rawMedia,'reel-protected-media');
   return `<article class="reel-card" data-reel="${p.id}">
     ${media}
@@ -2306,6 +2355,7 @@ function reelHtml(p) {
 }
 
 function setupReels() {
+  setupBunnyStreams(document);
   const videos = $$('.reel-video');
   if (state.reelObserver) { state.reelObserver.disconnect(); state.reelObserver = null; }
   if (!videos.length) return;
@@ -2418,14 +2468,14 @@ function chatPanelHtml(c, messages, isMobile) {
 }
 
 function messageHtml(m) {
-  const rawMedia = m.media_url ? (m.media_type === 'video' ? `<video class="message-media" src="${escapeAttr(m.media_url)}" controls playsinline preload="none" data-lazy-video="1"${mediaProtectionAttrs(m,{video:true})}></video>` : `<img class="message-media" src="${escapeAttr(m.media_url)}" loading="lazy" decoding="async" alt=""${mediaProtectionAttrs(m)}>` ) : '';
+  const rawMedia = m.media_url ? (m.media_type === 'video' ? `<video class="message-media"${mediaVideoSourceAttrs(m)} controls playsinline preload="none" data-lazy-video="1"${mediaProtectionAttrs(m,{video:true})}></video>` : `<img class="message-media" src="${escapeAttr(m.media_url)}" loading="lazy" decoding="async" alt=""${mediaProtectionAttrs(m)}>` ) : '';
   const media = protectedMediaFrame(m,rawMedia,'message-protected-media');
   const reply = m.reply ? `<div class="message-reply"><b>${escapeHtml(m.reply.name || m.reply.username || 'Mensaje')}</b><span>${escapeHtml(m.reply.text || (m.reply.media_type==='image'?'📷 Foto':m.reply.media_type==='video'?'🎬 Vídeo':'Mensaje')).slice(0,120)}</span></div>` : '';
   let shared = '';
   if (m.shared_post?.unavailable) shared = `<div class="shared-post unavailable">Esta publicación ya no está disponible para ti.</div>`;
   else if (m.shared_post) {
     const sp=m.shared_post;
-    const rawSharedMedia=sp.media_url ? (sp.media_type==='video'?`<video class="shared-protected-media-item" src="${escapeAttr(sp.media_url)}" controls playsinline preload="none" data-lazy-video="1"${mediaProtectionAttrs(sp,{video:true})}></video>`:`<img class="shared-protected-media-item" src="${escapeAttr(sp.media_url)}" loading="lazy" decoding="async" alt=""${mediaProtectionAttrs(sp)}>` ) : '';
+    const rawSharedMedia=sp.media_url ? (sp.media_type==='video'?`<video class="shared-protected-media-item"${mediaVideoSourceAttrs(sp)} controls playsinline preload="none" data-lazy-video="1"${mediaProtectionAttrs(sp,{video:true})}></video>`:`<img class="shared-protected-media-item" src="${escapeAttr(sp.media_url)}" loading="lazy" decoding="async" alt=""${mediaProtectionAttrs(sp)}>` ) : '';
     const smedia=protectedMediaFrame(sp,rawSharedMedia,'shared-protected-media');
     shared = `<div class="shared-post"><div class="shared-author">${avatar(sp,'small')}<span><b>${escapeHtml(sp.name || sp.username)}</b><small>@${escapeHtml(sp.username || '')}</small></span></div>${sp.text?`<p>${formatText(sp.text)}</p>`:''}${smedia}</div>`;
   }
@@ -2754,7 +2804,7 @@ function adAdminCard(ad={}) {
   const impressions=Number(ad.impressions||0),clicks=Number(ad.clicks||0),ctr=impressions?((clicks/impressions)*100).toFixed(2):'0.00';
   const targets=Array.isArray(ad.targets)?ad.targets:[];
   return `<article class="admin-ad-card ${ad.active?'':'inactive'}">
-    <div class="admin-ad-preview">${ad.creative_type==='image'&&ad.image_url?`<img src="${escapeAttr(ad.image_url)}" alt="">`:`<div class="google-ad-mark">G<span>Google</span></div>`}</div>
+    <div class="admin-ad-preview">${ad.creative_type==='image'&&(ad.image_display_url||ad.image_url)?`<img src="${escapeAttr(ad.image_display_url||ad.image_url)}" alt="">`:`<div class="google-ad-mark">G<span>Google</span></div>`}</div>
     <div class="admin-ad-body">
       <div class="admin-ad-title"><div><b>${escapeHtml(ad.name)}</b><span>${ad.creative_type==='google'?'Google AdSense':'Banner de imagen'} · ${ad.active?'Activo':'Desactivado'}</span></div><em class="${ad.active?'active':''}">${ad.active?'ACTIVO':'PAUSADO'}</em></div>
       <div class="admin-ad-tags">${(ad.placements||[]).map(x=>`<span>${escapeHtml(adPlacementLabel(x))}</span>`).join('')}<span>${ad.desktop_enabled?'PC':''}${ad.desktop_enabled&&ad.mobile_enabled?' + ':''}${ad.mobile_enabled?'Móvil':''}</span><span>${escapeHtml(adProfileModeLabel(ad.profile_mode))}</span></div>
@@ -2805,7 +2855,7 @@ window.previewAdminAd=(id)=>{
     display_text:english?(ad.display_text_en||legacyText):legacyText,
     button_text:english?(ad.button_text_en||ad.button_text||''):(ad.button_text||'')
   };
-  modal(`<div class="modal-head"><h3>Vista previa · ${escapeHtml(ad.name)}</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="ad-preview-modal"><div class="ad-preview-card"><span class="ad-disclosure">Publicidad</span>${ad.image_url?`<img src="${escapeAttr(ad.image_url)}" alt="${escapeAttr(previewAd.alt_text||'')}">`:''}${adVisibleCopyHtml(previewAd)}</div>${ad.mobile_image_url?`<div class="ad-mobile-preview"><small>Imagen móvil</small><img src="${escapeAttr(ad.mobile_image_url)}" alt=""></div>`:''}</div>`);
+  modal(`<div class="modal-head"><h3>Vista previa · ${escapeHtml(ad.name)}</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="ad-preview-modal"><div class="ad-preview-card"><span class="ad-disclosure">Publicidad</span>${(ad.image_display_url||ad.image_url)?`<img src="${escapeAttr(ad.image_display_url||ad.image_url)}" alt="${escapeAttr(previewAd.alt_text||'')}">`:''}${adVisibleCopyHtml(previewAd)}</div>${(ad.mobile_image_display_url||ad.mobile_image_url)?`<div class="ad-mobile-preview"><small>Imagen móvil</small><img src="${escapeAttr(ad.mobile_image_display_url||ad.mobile_image_url)}" alt=""></div>`:''}</div>`);
 };
 
 window.openAdEditor=(id=0)=>{
@@ -2819,9 +2869,9 @@ window.openAdEditor=(id=0)=>{
       <div id="adImageFields" class="ad-editor-block">
         <div class="ad-editor-block-head"><b>Creatividad de imagen</b><small>Puedes subirla desde tu ordenador o pegar una URL.</small></div>
         <div class="ad-editor-grid two"><label>Imagen principal desde ordenador<input id="adImageFile" type="file" accept="image/*" onchange="previewAdLocalFile(this,'adImageLivePreview')"></label><label>O URL de imagen<input id="adImageUrl" type="url" value="${escapeAttr(ad.image_url||'')}" placeholder="https://..."></label></div>
-        <div id="adImageLivePreview" class="ad-editor-live-preview">${ad.image_url?`<img src="${escapeAttr(ad.image_url)}" alt="">`:''}</div>
+        <div id="adImageLivePreview" class="ad-editor-live-preview">${(ad.image_display_url||ad.image_url)?`<img src="${escapeAttr(ad.image_display_url||ad.image_url)}" alt="">`:''}</div>
         <div class="ad-editor-grid two"><label>Imagen móvil opcional<input id="adMobileImageFile" type="file" accept="image/*" onchange="previewAdLocalFile(this,'adMobileLivePreview')"></label><label>O URL móvil opcional<input id="adMobileImageUrl" type="url" value="${escapeAttr(ad.mobile_image_url||'')}" placeholder="Si está vacío usa la principal"></label></div>
-        <div id="adMobileLivePreview" class="ad-editor-live-preview mobile">${ad.mobile_image_url?`<img src="${escapeAttr(ad.mobile_image_url)}" alt="">`:''}</div>
+        <div id="adMobileLivePreview" class="ad-editor-live-preview mobile">${(ad.mobile_image_display_url||ad.mobile_image_url)?`<img src="${escapeAttr(ad.mobile_image_display_url||ad.mobile_image_url)}" alt="">`:''}</div>
         <div class="ad-editor-grid two"><label>Dirección al hacer clic<input id="adLinkUrl" type="url" value="${escapeAttr(ad.link_url||'')}" placeholder="https://..."></label><label>Texto alternativo (accesibilidad) · ES<input id="adAltText" maxlength="240" value="${escapeAttr(ad.alt_text||'')}" placeholder="Describe la imagen para accesibilidad"><small class="ad-field-help">Este texto no se muestra visualmente.</small></label></div>
         <div class="ad-visible-copy-editor">
           <div class="ad-editor-block-head"><b>Texto visible del anuncio (opcional)</b><small>Configura español e inglés. Si el inglés queda vacío se utilizará el español.</small></div>
@@ -2997,7 +3047,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.4</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.6</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>
