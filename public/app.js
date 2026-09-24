@@ -1,4 +1,4 @@
-// V1.12.8 · Bunny Media + SEO 40 Landings + Growth Engine Attribution + Protección de contenido
+// V1.12.9 · Bunny Media + SEO 40 Landings + Growth Engine Attribution + Protección de contenido
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en','ciudades','guias',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','sitemap-core.xml','sitemap-landings.xml','login','register','logout','admin',
@@ -123,7 +123,7 @@ async function loadPendingProfileAccessCard() {
     const canonical = String(data?.username || username).trim();
     if (canonical) rememberPendingProfile(canonical);
 
-    // V1.12.8 · Los enlaces válidos de Growth Engine presentan primero a la persona
+    // V1.12.9 · Los enlaces válidos de Growth Engine presentan primero a la persona
     // que invita, tanto en Entrar como en Crear cuenta. El bloque vive fuera de
     // #authbox, así que no desaparece al cambiar de pestaña.
     if (data?.growth_campaign_preview && data?.profile_preview) {
@@ -1281,17 +1281,50 @@ function mediaVideoSourceAttrs(item) {
   return ` src="${escapeAttr(url)}"`;
 }
 
+function hlsStartupBandwidthEstimate() {
+  const connection=navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  if (connection?.saveData) return 650000;
+
+  const effectiveType=String(connection?.effectiveType || '').toLowerCase();
+  if (effectiveType === 'slow-2g' || effectiveType === '2g') return 650000;
+  if (effectiveType === '3g') return 1400000;
+
+  const downlink=Number(connection?.downlink || 0);
+  if (Number.isFinite(downlink) && downlink > 0) {
+    // Usamos solo una parte prudente del ancho de banda anunciado por el navegador.
+    return Math.round(Math.max(1200000, Math.min(6500000, downlink * 1000000 * 0.68)));
+  }
+
+  // En navegadores que no exponen Network Information (p. ej. Safari), evitamos
+  // el antiguo arranque ultraconservador de 500 kbps sin forzar 1080p.
+  return window.matchMedia?.('(min-width: 760px)')?.matches ? 3800000 : 2800000;
+}
+
 function setupBunnyStreamVideo(video) {
   if (!video || video.dataset.bunnyStream !== '1' || video.dataset.streamAttached === '1') return;
   const source=String(video.dataset.streamSrc || '');
   if (!source) return;
   video.dataset.streamAttached='1';
   if (video.canPlayType('application/vnd.apple.mpegurl')) {
+    // Safari/iOS usan HLS nativo y gestionan la calidad adaptativa directamente.
     video.src=source;
     return;
   }
   if (window.Hls?.isSupported?.()) {
-    const hls=new window.Hls({ enableWorker:true, lowLatencyMode:false, maxBufferLength:30, maxMaxBufferLength:60 });
+    const startupEstimate=hlsStartupBandwidthEstimate();
+    const hls=new window.Hls({
+      enableWorker:true,
+      lowLatencyMode:false,
+      maxBufferLength:30,
+      maxMaxBufferLength:60,
+      capLevelToPlayerSize:true,
+      startLevel:-1,
+      testBandwidth:false,
+      abrEwmaDefaultEstimate:startupEstimate,
+      abrEwmaDefaultEstimateMax:6500000,
+      abrBandWidthFactor:0.90,
+      abrBandWidthUpFactor:0.80
+    });
     hls.loadSource(source);
     hls.attachMedia(video);
     video._iaHls=hls;
@@ -3099,7 +3132,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.8</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.9</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>

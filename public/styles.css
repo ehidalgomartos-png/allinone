@@ -840,14 +840,14 @@ body{
 @media(max-width:900px){.growth-create-grid-v124{grid-template-columns:1fr 1fr}.growth-create-grid-v124 label,.growth-message-create,.growth-create-button{grid-column:auto;grid-row:auto}.growth-message-create{grid-column:1/-1}.growth-create-button{grid-column:1/-1}.growth-campaign-edit-grid{grid-template-columns:1fr 1fr}.growth-campaign-edit-grid .btn{grid-column:1/-1}.growth-recent-visit{grid-template-columns:1fr auto}.growth-recent-visit span:nth-child(2){grid-column:1}}
 @media(max-width:520px){.growth-create-grid-v124{grid-template-columns:1fr}.growth-create-grid-v124 label,.growth-message-create,.growth-create-button{grid-column:1}.growth-source-row{grid-template-columns:1fr .7fr .7fr}.growth-source-row span:last-child{display:none}.growth-source-row.head span:last-child{display:none}.growth-campaign-edit-grid{grid-template-columns:1fr}.growth-campaign-edit-grid .btn{grid-column:auto}.growth-recent-visit{grid-template-columns:1fr}.growth-recent-visit span:nth-child(2){grid-column:auto}}
 
-/* V1.12.8 · Bunny Stream mientras transcodifica */
+/* V1.12.9 · Bunny Stream mientras transcodifica */
 .media-processing{min-height:190px;border:1px solid var(--line,#2a2d3b);border-radius:16px;background:linear-gradient(135deg,rgba(255,42,161,.08),rgba(124,60,255,.08));display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:28px;text-align:center;color:var(--text,#f7f7fb)}
 .media-processing span{font-size:28px;animation:ia-media-spin 1.2s linear infinite}
 .media-processing b{font-size:15px}.media-processing small{color:var(--muted,#999db0);font-size:12px}
 @keyframes ia-media-spin{to{transform:rotate(360deg)}}
 
 
-/* V1.12.8 · Growth Engine Profile Preview en Entrar / Crear cuenta */
+/* V1.12.9 · Growth Engine Profile Preview en Entrar / Crear cuenta */
 .profile-auth-preview-card{
   position:relative;
   z-index:1;
@@ -1050,7 +1050,7 @@ body{
 }
 
 
-/* V1.12.8 · aviso legal compacto visible en Entrar y Crear cuenta */
+/* V1.12.9 · aviso legal compacto visible en Entrar y Crear cuenta */
 .auth-consent-note{
   position:relative;
   z-index:1;
