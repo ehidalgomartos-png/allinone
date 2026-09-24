@@ -1129,7 +1129,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.12.6', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default'] });
+  res.json({ ok: true, version: '1.12.8', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -2191,12 +2191,12 @@ app.get('/api/users', auth, asyncRoute(async (req, res) => {
   res.json(rows.map(r => ({ ...r, online: isOnline(r.id) })));
 }));
 
-// V1.12.4: resolución pública mínima de URLs /usuario con mensaje específico de campaña.
+// V1.12.8: resolución pública de /usuario + vista previa visual segura para campañas Growth Engine.
 app.get('/api/public/profile/:username', asyncRoute(async (req, res) => {
   const username = String(req.params.username || '').trim().replace(/^@/, '');
   if (!/^[a-zA-Z0-9_.]{3,30}$/.test(username)) return res.status(404).json({ error:'Perfil no encontrado' });
   const { rows } = await pool.query(
-    `SELECT id,username, name, friend_gate_enabled, friend_gate_message
+    `SELECT id,username,name,bio,avatar,headline,cover,friend_gate_enabled,friend_gate_message
        FROM users
       WHERE LOWER(username)=LOWER($1) AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE
       LIMIT 1`,
@@ -2204,12 +2204,18 @@ app.get('/api/public/profile/:username', asyncRoute(async (req, res) => {
   );
   const target=rows[0];
   if (!target) return res.status(404).json({ error:'Perfil no encontrado' });
+
   let campaignMessage='';
+  let growthPreview=false;
   const campaignSlug=normalizeCampaignSlug(req.query?.campaign || '');
   if(campaignSlug){
     const campaign=await growthCampaignBySlug(campaignSlug);
-    if(campaign && Number(campaign.target_user_id)===Number(target.id)) campaignMessage=String(campaign.access_message || '').trim().slice(0,220);
+    if(campaign && Number(campaign.target_user_id)===Number(target.id)){
+      growthPreview=true;
+      campaignMessage=String(campaign.access_message || '').trim().slice(0,220);
+    }
   }
+
   const profileMessage=String(target.friend_gate_message || '').trim().slice(0,220);
   res.json({
     exists:true,
@@ -2218,7 +2224,16 @@ app.get('/api/public/profile/:username', asyncRoute(async (req, res) => {
     friend_gate_enabled:Boolean(target.friend_gate_enabled),
     friend_gate_message:target.friend_gate_enabled ? profileMessage : '',
     access_message:target.friend_gate_enabled ? (campaignMessage || profileMessage) : '',
-    access_message_source:campaignMessage ? 'campaign' : (profileMessage ? 'profile' : 'default')
+    access_message_source:campaignMessage ? 'campaign' : (profileMessage ? 'profile' : 'default'),
+    growth_campaign_preview:growthPreview,
+    profile_preview:growthPreview ? {
+      username:target.username,
+      name:String(target.name || '').slice(0,100),
+      headline:String(target.headline || '').slice(0,140),
+      bio:String(target.bio || '').slice(0,500),
+      avatar:String(target.avatar || '').slice(0,2000),
+      cover:String(target.cover || '').slice(0,2000)
+    } : null
   });
 }));
 
@@ -4038,7 +4053,7 @@ async function start() {
   await syncSystemAccounts();
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Instant Admirers V1.12.6 en http://localhost:${PORT}`);
+    console.log(`Instant Admirers V1.12.8 en http://localhost:${PORT}`);
     void hardenLegacyCloudinaryMedia().catch(err => console.error('Protección multimedia heredada:', err.message));
     void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message));
     const bunnyStatusTimer=setInterval(() => void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message)),30000);
