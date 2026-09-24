@@ -26,3 +26,8 @@
 - Los enlaces legales son clicables y respetan ES/EN.
 - El registro conserva además su casilla de aceptación explícita de 18+, términos, privacidad y normas de la comunidad.
 
+
+### Ajuste legal de autenticación
+- El aviso de aceptación de Términos, Privacidad y mayoría de edad se muestra únicamente en **Entrar**.
+- En **Crear cuenta** se mantiene solo el checkbox legal obligatorio, evitando duplicar el mismo mensaje.
+- El texto del aviso de Entrar se ha ajustado a «Al iniciar sesión y usar Instant Admirers…» (y equivalente en inglés).
