@@ -14,7 +14,7 @@ const { Server } = require('socket.io');
 require('dotenv').config();
 
 const { pool, initDb, withTransaction } = require('./src/db');
-const { configured: cloudinaryConfigured, uploadBuffer: uploadMediaBuffer, deliveryUrl: cloudinaryDeliveryUrl, hardenAsset: hardenRemoteAsset, destroyAsset: destroyRemoteAsset } = require('./src/mediaStorage');
+const { configured: mediaStorageConfigured, cloudinaryConfigured, cloudinaryUploadFallbackAllowed, imageUploadConfigured, videoUploadConfigured, bunnyStorageConfigured, bunnyStreamConfigured, providerSummary: mediaProviderSummary, uploadBuffer: uploadMediaBuffer, deliveryUrl: remoteDeliveryUrl, cloudinaryDeliveryUrl, getBunnyStreamVideo, hardenAsset: hardenRemoteAsset, destroyAsset: destroyRemoteAsset } = require('./src/mediaStorage');
 const { createDemoEnvironment, clearDemoEnvironment, demoStatus } = require('./src/demoLab');
 
 const app = express();
@@ -48,6 +48,9 @@ app.use((req,res,next) => {
 app.use('/api', (_req,res,next) => { res.set('Cache-Control','no-store'); next(); });
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
+app.use('/vendor/hls', express.static(path.join(__dirname, 'node_modules', 'hls.js', 'dist'), {
+  etag:true, lastModified:true, maxAge:'7d'
+}));
 app.use(express.static(publicDir, {
   etag: true,
   lastModified: true,
@@ -563,6 +566,14 @@ function uploadedAdAsset(row, mobile=false) {
     : {provider:row?.image_provider,provider_id:row?.image_provider_id,resource_type:row?.image_resource_type || 'image'};
 }
 
+function adDisplayUrl(row, mobile=false, ttlSeconds=3600) {
+  const asset = uploadedAdAsset(row,mobile);
+  if (asset.provider === 'bunny_storage' && asset.provider_id) {
+    return remoteDeliveryUrl({ ...asset, secure_url: mobile ? row?.mobile_image_url : row?.image_url }, ttlSeconds) || '';
+  }
+  return String(mobile ? (row?.mobile_image_url || '') : (row?.image_url || ''));
+}
+
 function safeUser(row, includePrivate = false) {
   if (!row) return null;
   const user = {
@@ -728,7 +739,7 @@ async function cleanupMediaIfUnused(mediaId) {
   const item = rows[0];
   if (!item) return false;
   await pool.query('DELETE FROM media WHERE id=$1', [mediaId]);
-  if (item.provider === 'cloudinary') await destroyRemoteAsset(item);
+  if (['cloudinary','bunny_storage','bunny_stream'].includes(String(item.provider || ''))) await destroyRemoteAsset(item);
   return true;
 }
 
@@ -838,7 +849,7 @@ async function attachProtectedMediaUrls(items = [], viewerId) {
   const ids = [...new Set(items.map(item => Number(item.media_id)).filter(Number.isSafeInteger))];
   if (!ids.length || !viewerId) return items;
   const { rows } = await pool.query(`
-    SELECT m.id,m.user_id,u.friend_gate_enabled,u.content_watermark_mode
+    SELECT m.id,m.user_id,m.provider,m.provider_status,u.friend_gate_enabled,u.content_watermark_mode
       FROM media m
       JOIN users u ON u.id=m.user_id
      WHERE m.id = ANY($1::bigint[])
@@ -849,10 +860,15 @@ async function attachProtectedMediaUrls(items = [], viewerId) {
     if (!m) return item;
     const mode = String(m.content_watermark_mode || 'exclusive');
     const watermarked = Number(m.user_id) !== Number(viewerId) && (mode === 'all' || (mode === 'exclusive' && Boolean(m.friend_gate_enabled)));
+    const streaming = String(m.provider || '') === 'bunny_stream';
+    const processing = streaming && String(m.provider_status || '') !== 'ready';
     return {
       ...item,
-      media_url: protectedMediaUrl(item.media_id, viewerId),
+      media_url: processing ? '' : protectedMediaUrl(item.media_id, viewerId),
       media_protected: true,
+      media_provider: String(m.provider || ''),
+      media_streaming: streaming,
+      media_processing: processing,
       watermarked
     };
   });
@@ -886,7 +902,7 @@ async function enrichReposts(userId, posts = []) {
   if (!ids.length) return posts;
   const { rows } = await pool.query(`
     SELECT p.id,p.user_id,p.text,p.media_id,p.media_type,p.visibility,p.created_at,p.edited_at,
-           u.username,u.name,u.avatar,u.friend_gate_enabled,u.content_watermark_mode,
+           u.username,u.name,u.avatar,u.friend_gate_enabled,u.content_watermark_mode,pm.provider AS media_provider,pm.provider_status AS media_provider_status,
            (u.account_status='active' AND COALESCE(u.social_hidden,FALSE)=FALSE AND (p.user_id=$1 OR (NOT u.account_private) OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
             AND (
               p.user_id=$1 OR NOT u.friend_gate_enabled OR
@@ -906,6 +922,7 @@ async function enrichReposts(userId, posts = []) {
             AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=p.user_id))) AS can_view
       FROM posts p
       JOIN users u ON u.id=p.user_id
+      LEFT JOIN media pm ON pm.id=p.media_id
      WHERE p.id = ANY($2::bigint[])
   `,[userId,ids]);
   const map = new Map(rows.map(r => [Number(r.id), r]));
@@ -916,8 +933,11 @@ async function enrichReposts(userId, posts = []) {
     return { ...post, repost: {
       id:Number(original.id), user_id:Number(original.user_id), text:original.text || '',
       media_type:original.media_type || 'none',
-      media_url:original.media_id ? protectedMediaUrl(original.media_id,userId) : '',
+      media_url:original.media_id && !(String(original.media_provider || '')==='bunny_stream' && String(original.media_provider_status || '')!=='ready') ? protectedMediaUrl(original.media_id,userId) : '',
       media_protected:Boolean(original.media_id),
+      media_provider:String(original.media_provider || ''),
+      media_streaming:String(original.media_provider || '')==='bunny_stream',
+      media_processing:String(original.media_provider || '')==='bunny_stream' && String(original.media_provider_status || '')!=='ready',
       watermarked:Boolean(original.media_id) && Number(original.user_id)!==Number(userId) && (String(original.content_watermark_mode||'exclusive')==='all' || (String(original.content_watermark_mode||'exclusive')==='exclusive' && Boolean(original.friend_gate_enabled))),
       visibility:original.visibility, created_at:original.created_at, edited_at:original.edited_at,
       username:original.username, name:original.name, avatar:original.avatar || ''
@@ -1109,7 +1129,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.12.4', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: { configured: cloudinaryConfigured(), provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' }, features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','authenticated-cloudinary-uploads','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details'] });
+  res.json({ ok: true, version: '1.12.6', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -1193,8 +1213,8 @@ app.post('/api/growth/campaign/visit', asyncRoute(async (req,res) => {
 }));
 
 const RESERVED_PROFILE_SLUGS = new Set([
-  'api','media','protected-media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en',
-  'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','login','register','logout','admin',
+  'api','media','protected-media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en','ciudades','guias',
+  'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','sitemap-core.xml','sitemap-landings.xml','login','register','logout','admin',
   'feed','reels','discover','search','messages','notifications','bookmarks','friends','settings','profile',
   'invite','invites','help','support','about'
 ]);
@@ -1512,7 +1532,7 @@ async function canUserAccessMedia(mediaId, viewerId) {
 async function mediaRecord(mediaId) {
   const { rows } = await pool.query(`
     SELECT id,user_id,mime_type,original_name,size_bytes,data,provider,provider_id,secure_url,
-           resource_type,delivery_type,format
+           resource_type,delivery_type,format,provider_status,provider_meta
       FROM media WHERE id=$1
   `,[mediaId]);
   return rows[0] || null;
@@ -1659,6 +1679,20 @@ async function proxyCloudinaryMedia(req, res, item, cacheControl) {
 
 async function serveMedia(req, res, item, cacheControl='private, no-store') {
   if (!item) return res.status(404).end();
+  if ((item.provider === 'bunny_storage' || item.provider === 'bunny_stream') && item.provider_id) {
+    if (item.provider === 'bunny_stream' && String(item.provider_status || '') !== 'ready') {
+      res.set('Retry-After','8');
+      return res.status(425).end();
+    }
+    const ttl = String(cacheControl || '').includes('public')
+      ? 3600
+      : (item.provider === 'bunny_stream' ? MEDIA_URL_TTL_SECONDS : Math.min(900, MEDIA_URL_TTL_SECONDS));
+    const target = remoteDeliveryUrl(item, ttl);
+    if (!target) return res.status(503).end();
+    res.set('Cache-Control','no-store');
+    res.set('X-Robots-Tag','noindex, nofollow, noarchive');
+    return res.redirect(302,target);
+  }
   if (item.provider === 'cloudinary' && item.provider_id) return proxyCloudinaryMedia(req,res,item,cacheControl);
   if (item.provider === 'demo' && /^\/assets\/demo\/[a-z0-9._-]+$/i.test(String(item.secure_url || ''))) {
     const demoPath = path.join(publicDir, String(item.secure_url).replace(/^\//,''));
@@ -1682,7 +1716,9 @@ app.get('/protected-media/:id', asyncRoute(async (req,res) => {
   if (!(await canUserAccessMedia(signed.mediaId,signed.viewerId))) return res.status(404).end();
   const item = await mediaRecord(signed.mediaId);
   res.set('X-Robots-Tag','noindex, nofollow, noarchive');
-  res.set('Referrer-Policy','same-origin');
+  // Bunny puede aplicar Allowed Referrers. Conservamos solo el origen al saltar al CDN;
+  // no exponemos la URL completa de la página y mantenemos compatibilidad con HLS.
+  res.set('Referrer-Policy','strict-origin-when-cross-origin');
   return serveMedia(req,res,item,'private, no-store, max-age=0');
 }));
 
@@ -1702,7 +1738,8 @@ app.post('/api/upload', auth, upload.single('file'), asyncRoute(async (req, res)
 
   let mediaId;
   let provider = 'postgresql';
-  if (cloudinaryConfigured()) {
+  const remoteAvailable = isVideo ? videoUploadConfigured() : imageUploadConfigured();
+  if (remoteAvailable) {
     const uploaded = await uploadMediaBuffer(req.file.buffer, {
       mimeType: req.file.mimetype,
       originalName: req.file.originalname,
@@ -1712,15 +1749,15 @@ app.post('/api/upload', auth, upload.single('file'), asyncRoute(async (req, res)
     const { rows } = await pool.query(`
       INSERT INTO media (
         user_id,mime_type,original_name,size_bytes,data,provider,provider_id,secure_url,
-        resource_type,delivery_type,width,height,duration_seconds,format,migrated_at
-      ) VALUES ($1,$2,$3,$4,NULL,'cloudinary',$5,$6,$7,$8,$9,$10,$11,$12,NOW()) RETURNING id
+        resource_type,delivery_type,width,height,duration_seconds,format,migrated_at,provider_status,provider_meta
+      ) VALUES ($1,$2,$3,$4,NULL,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),$14,$15::jsonb) RETURNING id
     `, [
       req.user.id, req.file.mimetype, req.file.originalname, uploaded.sizeBytes || req.file.size,
-      uploaded.providerId, uploaded.secureUrl, uploaded.resourceType, uploaded.deliveryType || 'authenticated', uploaded.width, uploaded.height,
-      uploaded.durationSeconds, uploaded.format
+      uploaded.provider, uploaded.providerId, uploaded.secureUrl, uploaded.resourceType, uploaded.deliveryType || '', uploaded.width, uploaded.height,
+      uploaded.durationSeconds, uploaded.format, uploaded.providerStatus || 'ready', JSON.stringify({ uploaded_at:new Date().toISOString() })
     ]);
     mediaId = rows[0].id;
-    provider = 'cloudinary';
+    provider = uploaded.provider;
   } else {
     const { rows } = await pool.query(`
       INSERT INTO media (user_id, mime_type, original_name, size_bytes, data, provider)
@@ -2987,6 +3024,7 @@ app.get('/api/conversations/:id/messages', auth, asyncRoute(async (req, res) => 
     SELECT * FROM (
       SELECT m.id, m.conversation_id, m.sender_id, m.text, m.media_id, m.media_type, m.reply_to_id, m.shared_post_id, m.created_at,
              u.username, u.name, u.avatar, (m.sender_id = $2) AS own,
+             mm.provider AS media_provider, mm.provider_status AS media_provider_status,
              rm.text AS reply_text, rm.media_type AS reply_media_type, ru.name AS reply_name, ru.username AS reply_username,
              CASE WHEN sp.id IS NOT NULL AND (
                COALESCE(spu.social_hidden,FALSE)=FALSE AND (sp.user_id=$2 OR NOT spu.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$2 AND pf.followed_id=sp.user_id))
@@ -3053,12 +3091,15 @@ app.get('/api/conversations/:id/messages', auth, asyncRoute(async (req, res) => 
                (sp.visibility='followers' AND EXISTS(SELECT 1 FROM follows sf WHERE sf.follower_id=$2 AND sf.followed_id=sp.user_id)))
              ) THEN sp.media_type ELSE NULL END AS shared_media_type,
              spu.username AS shared_username, spu.name AS shared_name, spu.avatar AS shared_avatar,
-             spu.friend_gate_enabled AS shared_gate_enabled, spu.content_watermark_mode AS shared_watermark_mode
+             spu.friend_gate_enabled AS shared_gate_enabled, spu.content_watermark_mode AS shared_watermark_mode,
+             smm.provider AS shared_media_provider, smm.provider_status AS shared_media_provider_status
         FROM messages m
         JOIN users u ON u.id = m.sender_id
+        LEFT JOIN media mm ON mm.id=m.media_id
         LEFT JOIN messages rm ON rm.id=m.reply_to_id AND rm.conversation_id=m.conversation_id
         LEFT JOIN users ru ON ru.id=rm.sender_id
         LEFT JOIN posts sp ON sp.id=m.shared_post_id
+        LEFT JOIN media smm ON smm.id=sp.media_id
         LEFT JOIN users spu ON spu.id=sp.user_id
        WHERE m.conversation_id = $1
        ORDER BY m.created_at DESC, m.id DESC LIMIT 150
@@ -3066,9 +3107,9 @@ app.get('/api/conversations/:id/messages', auth, asyncRoute(async (req, res) => 
   `, [req.params.id, req.user.id]);
   res.json(rows.map(r => ({
     id:r.id, conversation_id:r.conversation_id, sender_id:r.sender_id, text:r.text, media_id:r.media_id, media_type:r.media_type,
-    media_url:r.media_id ? protectedMediaUrl(r.media_id,req.user.id) : '', media_protected:Boolean(r.media_id), watermarked:false, created_at:r.created_at, username:r.username, name:r.name, avatar:r.avatar, own:Boolean(r.own),
+    media_url:r.media_id && !(String(r.media_provider||'')==='bunny_stream'&&String(r.media_provider_status||'')!=='ready') ? protectedMediaUrl(r.media_id,req.user.id) : '', media_protected:Boolean(r.media_id), media_provider:String(r.media_provider||''), media_streaming:String(r.media_provider||'')==='bunny_stream', media_processing:String(r.media_provider||'')==='bunny_stream'&&String(r.media_provider_status||'')!=='ready', watermarked:false, created_at:r.created_at, username:r.username, name:r.name, avatar:r.avatar, own:Boolean(r.own),
     reply: r.reply_to_id ? { id:r.reply_to_id, name:r.reply_name, username:r.reply_username, text:r.reply_text || '', media_type:r.reply_media_type || 'none' } : null,
-    shared_post: r.shared_visible_id ? { id:r.shared_visible_id, text:r.shared_text || '', media_type:r.shared_media_type || 'none', media_url:r.shared_media_id ? protectedMediaUrl(r.shared_media_id,req.user.id) : '', media_protected:Boolean(r.shared_media_id), watermarked:Boolean(r.shared_media_id) && String(r.shared_watermark_mode||'exclusive')!=='off' && (String(r.shared_watermark_mode||'exclusive')==='all' || Boolean(r.shared_gate_enabled)), username:r.shared_username, name:r.shared_name, avatar:r.shared_avatar } : (r.shared_post_id ? { unavailable:true } : null)
+    shared_post: r.shared_visible_id ? { id:r.shared_visible_id, text:r.shared_text || '', media_type:r.shared_media_type || 'none', media_url:r.shared_media_id && !(String(r.shared_media_provider||'')==='bunny_stream'&&String(r.shared_media_provider_status||'')!=='ready') ? protectedMediaUrl(r.shared_media_id,req.user.id) : '', media_protected:Boolean(r.shared_media_id), media_provider:String(r.shared_media_provider||''), media_streaming:String(r.shared_media_provider||'')==='bunny_stream', media_processing:String(r.shared_media_provider||'')==='bunny_stream'&&String(r.shared_media_provider_status||'')!=='ready', watermarked:Boolean(r.shared_media_id) && String(r.shared_watermark_mode||'exclusive')!=='off' && (String(r.shared_watermark_mode||'exclusive')==='all' || Boolean(r.shared_gate_enabled)), username:r.shared_username, name:r.shared_name, avatar:r.shared_avatar } : (r.shared_post_id ? { unavailable:true } : null)
   })));
 }));
 
@@ -3220,7 +3261,7 @@ app.delete('/api/account', auth, asyncRoute(async (req, res) => {
   const { rows } = await pool.query('SELECT password_hash FROM users WHERE id=$1', [req.user.id]);
   if (!rows[0] || !(await bcrypt.compare(password, rows[0].password_hash))) return res.status(400).json({ error:'La contraseña no es correcta' });
   await securityEvent(req,'account_deleted',req.user.id);
-  const mediaRows = await pool.query(`SELECT provider,provider_id,resource_type,delivery_type FROM media WHERE user_id=$1 AND provider='cloudinary' AND provider_id<>''`, [req.user.id]);
+  const mediaRows = await pool.query(`SELECT provider,provider_id,resource_type,delivery_type FROM media WHERE user_id=$1 AND provider IN ('cloudinary','bunny_storage','bunny_stream') AND provider_id<>''`, [req.user.id]);
   await pool.query('DELETE FROM users WHERE id=$1', [req.user.id]);
   await Promise.allSettled(mediaRows.rows.map(item => destroyRemoteAsset(item)));
   res.json({ ok:true });
@@ -3243,7 +3284,7 @@ app.get('/api/ads/slot', auth, asyncRoute(async (req,res) => {
   if(placement==='profile' && !profileId) return res.status(204).end();
 
   const {rows}=await pool.query(`
-    SELECT a.id,a.name,a.creative_type,a.image_url,a.mobile_image_url,a.link_url,a.google_code,a.alt_text,a.alt_text_en,a.display_title,a.display_title_en,a.display_text,a.display_text_en,a.button_text,a.button_text_en,a.placements,a.profile_mode
+    SELECT a.id,a.name,a.creative_type,a.image_url,a.image_provider,a.image_provider_id,a.image_resource_type,a.mobile_image_url,a.mobile_image_provider,a.mobile_image_provider_id,a.mobile_image_resource_type,a.link_url,a.google_code,a.alt_text,a.alt_text_en,a.display_title,a.display_title_en,a.display_text,a.display_text_en,a.button_text,a.button_text_en,a.placements,a.profile_mode
       FROM ads a
       JOIN ad_settings s ON s.id=1 AND s.enabled=TRUE
      WHERE a.active=TRUE
@@ -3265,7 +3306,7 @@ app.get('/api/ads/slot', auth, asyncRoute(async (req,res) => {
     id:row.id,
     name:row.name,
     creative_type:row.creative_type,
-    image_url:device==='mobile' && row.mobile_image_url ? row.mobile_image_url : row.image_url,
+    image_url:device==='mobile' && row.mobile_image_url ? adDisplayUrl(row,true) : adDisplayUrl(row,false),
     link_url:row.link_url,
     google_code:row.google_code,
     alt_text:language==='en' ? (row.alt_text_en || row.alt_text || '') : (row.alt_text || ''),
@@ -3370,7 +3411,7 @@ app.get('/api/admin/launch-readiness', auth, adminOnly, asyncRoute(async (req,re
   const checks = [
     { id:'database', label:'PostgreSQL operativo', ok:true, level:'blocker', detail:'La base de datos responde correctamente.' },
     { id:'email', label:'Email transaccional', ok:emailConfigured(), level:'blocker', detail:emailConfigured()?'Resend está configurado.':'Falta configurar Resend.' },
-    { id:'media', label:'Multimedia externa', ok:cloudinaryConfigured(), level:'blocker', detail:cloudinaryConfigured()?'Cloudinary está activo.':'Cloudinary no está configurado.' },
+    { id:'media', label:'Multimedia externa', ok:bunnyStorageConfigured() && bunnyStreamConfigured(), level:'blocker', detail:bunnyStorageConfigured() && bunnyStreamConfigured()?'Bunny Storage + Bunny Stream activos.':cloudinaryConfigured()?'Cloudinary solo conserva compatibilidad con archivos antiguos; faltan credenciales Bunny para nuevas subidas.':'Configura Bunny Storage y Bunny Stream.' },
     { id:'pwa', label:'PWA instalable', ok:pwaReady, level:'blocker', detail:pwaReady?'Manifest, Service Worker y modo offline presentes.':'Faltan archivos de la PWA.' },
     { id:'legal', label:'Páginas legales', ok:legalReady, level:'blocker', detail:legalReady?'Aviso legal, privacidad, cookies, términos y normas presentes.':'Falta alguna página legal.' },
     { id:'demo', label:'Laboratorio limpio', ok:Number(m.demo_profiles||0)===0, level:'blocker', detail:Number(m.demo_profiles||0)===0?'No quedan perfiles TEST.':`${m.demo_profiles} perfiles TEST siguen activos.` },
@@ -3589,7 +3630,7 @@ app.get('/api/admin/ads', auth, adminOnly, asyncRoute(async (_req,res) => {
   }
   const byAd=new Map();
   targets.forEach(t=>{if(!byAd.has(String(t.ad_id)))byAd.set(String(t.ad_id),[]);byAd.get(String(t.ad_id)).push({id:t.id,username:t.username,name:t.name,avatar:t.avatar});});
-  res.json({settings:settingsResult.rows[0] || {enabled:false},ads:rows.map(r=>({...r,targets:byAd.get(String(r.id))||[]}))});
+  res.json({settings:settingsResult.rows[0] || {enabled:false},ads:rows.map(r=>({...r,image_display_url:adDisplayUrl(r,false),mobile_image_display_url:adDisplayUrl(r,true),targets:byAd.get(String(r.id))||[]}))});
 }));
 
 app.patch('/api/admin/ads/settings', auth, adminOnly, asyncRoute(async (req,res) => {
@@ -3603,9 +3644,12 @@ app.post('/api/admin/ads/upload', auth, adminOnly, upload.single('file'), asyncR
   if(!req.file) return res.status(400).json({error:'Selecciona una imagen'});
   if(!String(req.file.mimetype||'').startsWith('image/')) return res.status(400).json({error:'Para publicidad solo se permiten imágenes'});
   if(req.file.size>MAX_IMAGE_UPLOAD_BYTES) return res.status(413).json({error:'La imagen supera el límite de 10 MB'});
-  if(!cloudinaryConfigured()) return res.status(503).json({error:'Cloudinary debe estar configurado para subir banners desde el ordenador'});
+  if(!imageUploadConfigured()) return res.status(503).json({error:'Configura Bunny Storage para subir imágenes. Cloudinary queda solo como compatibilidad de contenido antiguo.'});
   const uploaded=await uploadMediaBuffer(req.file.buffer,{mimeType:req.file.mimetype,originalName:req.file.originalname,userId:req.user.id});
-  res.json({url:uploaded.secureUrl,provider:uploaded.provider,provider_id:uploaded.providerId,resource_type:uploaded.resourceType || 'image',width:uploaded.width,height:uploaded.height});
+  const previewUrl=uploaded.provider==='bunny_storage'
+    ? remoteDeliveryUrl({provider:uploaded.provider,provider_id:uploaded.providerId,resource_type:'image',secure_url:uploaded.secureUrl},3600)
+    : uploaded.secureUrl;
+  res.json({url:uploaded.secureUrl,preview_url:previewUrl,provider:uploaded.provider,provider_id:uploaded.providerId,resource_type:uploaded.resourceType || 'image',width:uploaded.width,height:uploaded.height});
 }));
 
 app.post('/api/admin/ads', auth, adminOnly, asyncRoute(async (req,res) => {
@@ -3735,11 +3779,14 @@ app.get('/api/admin/media-storage', auth, adminOnly, asyncRoute(async (_req, res
     SELECT
       COUNT(*)::int AS total,
       COUNT(*) FILTER (WHERE provider='cloudinary')::int AS cloudinary,
+      COUNT(*) FILTER (WHERE provider='bunny_storage')::int AS bunny_storage,
+      COUNT(*) FILTER (WHERE provider='bunny_stream')::int AS bunny_stream,
+      COUNT(*) FILTER (WHERE provider='bunny_stream' AND provider_status<>'ready')::int AS bunny_processing,
       COUNT(*) FILTER (WHERE data IS NOT NULL)::int AS legacy_in_postgresql,
       COALESCE(SUM(octet_length(data)) FILTER (WHERE data IS NOT NULL),0)::bigint AS legacy_bytes
     FROM media
   `);
-  res.json({ ...rows[0], configured: cloudinaryConfigured(), active_provider: cloudinaryConfigured() ? 'cloudinary' : 'postgresql-fallback' });
+  res.json({ ...rows[0], ...mediaProviderSummary() });
 }));
 
 // V1.9.1: gestión y borrado seguro de usuarios desde Administración.
@@ -3810,7 +3857,7 @@ app.delete('/api/admin/users/:id', auth, adminOnly, asyncRoute(async (req, res) 
     const mediaResult = await client.query(`
       SELECT provider,provider_id,resource_type,delivery_type
         FROM media
-       WHERE user_id=$1 AND provider='cloudinary' AND provider_id<>''
+       WHERE user_id=$1 AND provider IN ('cloudinary','bunny_storage','bunny_stream') AND provider_id<>''
     `, [targetId]);
 
     const auditNote = [
@@ -3878,6 +3925,65 @@ app.get('/api/admin/security-events', auth, adminOnly, asyncRoute(async (_req,re
   res.json(rows);
 }));
 
+
+async function updateBunnyStreamMediaStatus(providerId, statusCode=null, details=null) {
+  if (!providerId) return;
+  const code = Number(statusCode);
+  const ready = code === 3 || code === 4 || Number(details?.encodeProgress || 0) >= 100;
+  const failed = code === 5 || code === 8;
+  const providerStatus = failed ? 'failed' : (ready ? 'ready' : 'processing');
+  const meta = details ? {
+    bunny_status: Number.isFinite(code) ? code : null,
+    encode_progress: Number(details.encodeProgress || 0) || 0,
+    available_resolutions: String(details.availableResolutions || ''),
+    thumbnail: String(details.thumbnailFileName || ''),
+    updated_at: new Date().toISOString()
+  } : { bunny_status: Number.isFinite(code) ? code : null, updated_at:new Date().toISOString() };
+  await pool.query(`
+    UPDATE media
+       SET provider_status=$2,
+           provider_meta=COALESCE(provider_meta,'{}'::jsonb) || $3::jsonb,
+           width=COALESCE(NULLIF($4,0),width),
+           height=COALESCE(NULLIF($5,0),height),
+           duration_seconds=COALESCE(NULLIF($6,0),duration_seconds),
+           size_bytes=CASE WHEN $7::bigint>0 THEN LEAST($7::bigint,2147483647)::int ELSE size_bytes END
+     WHERE provider='bunny_stream' AND provider_id=$1
+  `,[String(providerId),providerStatus,JSON.stringify(meta),Number(details?.width||0),Number(details?.height||0),Number(details?.length||0),Number(details?.storageSize||0)]);
+}
+
+async function refreshBunnyStreamStatuses() {
+  if (!bunnyStreamConfigured()) return;
+  const { rows } = await pool.query(`
+    SELECT provider_id FROM media
+     WHERE provider='bunny_stream' AND provider_id<>'' AND provider_status IN ('processing','queued')
+     ORDER BY id ASC LIMIT 20
+  `);
+  for (const row of rows) {
+    try {
+      const details = await getBunnyStreamVideo(row.provider_id);
+      if (!details) continue;
+      await updateBunnyStreamMediaStatus(row.provider_id, details.status, details);
+    } catch (err) {
+      console.warn(`Bunny Stream status ${row.provider_id}:`, err.message);
+    }
+  }
+}
+
+app.post('/api/bunny/stream/webhook', asyncRoute(async (req,res) => {
+  const configuredSecret=String(process.env.BUNNY_STREAM_WEBHOOK_SECRET || '');
+  const supplied=String(req.query.secret || '');
+  if (!configuredSecret || !supplied) return res.status(404).end();
+  const a=Buffer.from(configuredSecret), b=Buffer.from(supplied);
+  if (a.length!==b.length || !crypto.timingSafeEqual(a,b)) return res.status(404).end();
+  const libraryId=Number(req.body?.VideoLibraryId ?? req.body?.videoLibraryId);
+  const guid=String(req.body?.VideoGuid ?? req.body?.videoGuid ?? '').trim();
+  const status=Number(req.body?.Status ?? req.body?.status);
+  if (!guid || !Number.isFinite(status)) return res.status(400).json({error:'Webhook Bunny inválido'});
+  if (Number(process.env.BUNNY_STREAM_LIBRARY_ID || 0) && libraryId && libraryId!==Number(process.env.BUNNY_STREAM_LIBRARY_ID)) return res.status(404).end();
+  await updateBunnyStreamMediaStatus(guid,status,null);
+  res.json({ok:true});
+}));
+
 app.get('*', (_req, res) => res.sendFile(path.join(publicDir, 'index.html')));
 
 app.use((err, req, res, _next) => {
@@ -3891,7 +3997,7 @@ app.use((err, req, res, _next) => {
 
 async function hardenLegacyCloudinaryMedia() {
   if (!cloudinaryConfigured()) return;
-  if (String(process.env.HARDEN_LEGACY_MEDIA_ON_START || 'true').toLowerCase() === 'false') return;
+  if (String(process.env.HARDEN_LEGACY_MEDIA_ON_START || 'false').toLowerCase() === 'false') return;
   const { rows } = await pool.query(`
     SELECT id,provider,provider_id,resource_type,delivery_type
     FROM media
@@ -3901,7 +4007,7 @@ async function hardenLegacyCloudinaryMedia() {
     ORDER BY id ASC
   `);
   if (!rows.length) return;
-  console.log(`Protección multimedia V1.12.4: reforzando ${rows.length} recurso(s) heredado(s)...`);
+  console.log(`Protección multimedia V1.12.6: reforzando ${rows.length} recurso(s) heredado(s)...`);
   let ok = 0;
   let failed = 0;
   for (const item of rows) {
@@ -3924,7 +4030,7 @@ async function hardenLegacyCloudinaryMedia() {
       console.error(`Protección multimedia: no se pudo reforzar media #${item.id}:`, err.message);
     }
   }
-  console.log(`Protección multimedia V1.12.4: ${ok} reforzado(s), ${failed} pendiente(s).`);
+  console.log(`Protección multimedia V1.12.6: ${ok} reforzado(s), ${failed} pendiente(s).`);
 }
 
 async function start() {
@@ -3932,8 +4038,11 @@ async function start() {
   await syncSystemAccounts();
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Instant Admirers V1.12.4 en http://localhost:${PORT}`);
+    console.log(`Instant Admirers V1.12.6 en http://localhost:${PORT}`);
     void hardenLegacyCloudinaryMedia().catch(err => console.error('Protección multimedia heredada:', err.message));
+    void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message));
+    const bunnyStatusTimer=setInterval(() => void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message)),30000);
+    bunnyStatusTimer.unref?.();
   });
 }
 

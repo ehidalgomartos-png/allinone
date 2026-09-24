@@ -20,8 +20,32 @@ services:
         value: https://instantadmirers.com
       - key: REQUIRE_EMAIL_VERIFICATION
         value: "true"
+      - key: BUNNY_STORAGE_ZONE
+        value: instant-admirers-media
+      - key: BUNNY_STORAGE_ENDPOINT
+        value: https://storage.bunnycdn.com/instant-admirers-media
+      - key: BUNNY_STORAGE_KEY
+        sync: false
+      - key: BUNNY_CDN_HOST
+        value: instant-admirers-media.b-cdn.net
+      - key: BUNNY_CDN_TOKEN_KEY
+        sync: false
+      - key: BUNNY_STREAM_LIBRARY_ID
+        value: "761236"
+      - key: BUNNY_STREAM_API_KEY
+        sync: false
+      - key: BUNNY_STREAM_CDN_HOST
+        value: vz-db3f5e78-953.b-cdn.net
+      - key: BUNNY_STREAM_TOKEN_KEY
+        sync: false
+      - key: BUNNY_STREAM_WEBHOOK_SECRET
+        sync: false
       - key: CLOUDINARY_URL
         sync: false
+      - key: ALLOW_CLOUDINARY_UPLOAD_FALLBACK
+        value: "false"
+      - key: HARDEN_LEGACY_MEDIA_ON_START
+        value: "false"
 
 databases:
   - name: omnisocial-db

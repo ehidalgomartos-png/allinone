@@ -656,3 +656,10 @@ ALTER TABLE growth_campaign_attributions ADD COLUMN IF NOT EXISTS utm_source VAR
 ALTER TABLE growth_campaign_attributions ADD COLUMN IF NOT EXISTS utm_medium VARCHAR(120) NOT NULL DEFAULT '';
 ALTER TABLE growth_campaign_attributions ADD COLUMN IF NOT EXISTS utm_content VARCHAR(160) NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_growth_attributions_source ON growth_campaign_attributions(campaign_id, source, registered_at DESC);
+
+-- V1.12.6: Bunny Media. Nuevas subidas usan Bunny Storage (imágenes) y Bunny Stream (vídeos)
+-- cuando sus credenciales están configuradas. Cloudinary queda como compatibilidad heredada.
+ALTER TABLE media ADD COLUMN IF NOT EXISTS provider_status VARCHAR(30) NOT NULL DEFAULT 'ready';
+ALTER TABLE media ADD COLUMN IF NOT EXISTS provider_meta JSONB NOT NULL DEFAULT '{}'::jsonb;
+CREATE INDEX IF NOT EXISTS idx_media_provider_status ON media(provider,provider_status);
+UPDATE media SET provider_status='ready' WHERE provider_status IS NULL OR provider_status='';
