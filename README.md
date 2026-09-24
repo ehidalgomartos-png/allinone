@@ -1,20 +1,7 @@
-## Instant Admirers V1.12.8 — Growth Engine Profile Preview
+# Instant Admirers V1.12.9 — Video Quality Startup
 
-Versión actual de este paquete.
+Base: V1.12.8 Growth Engine Profile Preview.
 
-Principales novedades:
-- vista previa del perfil invitante al llegar desde una campaña Growth Engine válida;
-- foto de cabecera + foto de perfil;
-- nombre, @usuario, frase de perfil y biografía;
-- mensaje de acceso de campaña/perfil integrado;
-- la vista previa permanece tanto en Entrar como en Crear cuenta;
-- retorno al perfil destino conservado;
-- endpoint público endurecido: la información ampliada solo se entrega si la campaña activa coincide con ese perfil;
-- se conserva V1.12.6 completa: Bunny Storage, Bunny Stream, protección multimedia y compatibilidad Cloudinary legacy;
-- se conserva V1.12.5 completa: SEO 40 landings, sitemap y robots.
+Esta versión mejora el arranque de los vídeos Bunny Stream/HLS para reducir el efecto borroso de los primeros segundos en conexiones normales o rápidas, manteniendo calidad adaptativa y ahorro de datos cuando el navegador lo solicita.
 
-Antes de desplegar, consulta:
-- `ACTUALIZAR-A-V1.12.8.md`
-- `CHANGELOG-V1.12.8.md`
-- `DEPLOY-RENDER.md`
-- `BUNNY-CONFIGURACION-V1.12.6.md`
+Consulta `README-V1.12.9.md` y `ACTUALIZAR-A-V1.12.9.md`.
