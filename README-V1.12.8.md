@@ -35,3 +35,11 @@ https://instantadmirers.com/api/health
 Debe devolver `version: 1.12.8` y conservar `images: bunny_storage` / `videos: bunny_stream`.
 
 Prueba después un enlace creado desde Growth Engine en una ventana privada para verificar la experiencia de visitante nuevo.
+
+
+## Ajuste visual de autenticación
+El selector ES / EN aparece en la fila superior junto al logotipo para aprovechar mejor el espacio en móvil y escritorio.
+
+### Aviso legal de autenticación
+Entrar y Crear cuenta muestran un aviso compacto con enlaces a Términos de Uso y Política de Privacidad y la confirmación 18+. En registro se mantiene además la aceptación explícita mediante checkbox.
+

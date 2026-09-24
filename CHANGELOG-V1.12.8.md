@@ -7,6 +7,7 @@
 - Mensaje de acceso de campaña/perfil integrado dentro de la vista previa cuando existe acceso exclusivo.
 - La vista previa se conserva al alternar entre Entrar y Crear cuenta.
 - Diseño responsive compacto para móvil.
+- Selector ES / EN movido a la cabecera superior, junto al logotipo, para eliminar espacio vertical innecesario antes del perfil/formulario.
 - Nuevas capacidades declaradas en `/api/health`: `growth-profile-preview` y `growth-auth-profile-preview`.
 
 ## Seguridad
@@ -18,3 +19,10 @@
 - No requiere cambios de esquema PostgreSQL.
 - No requiere nuevas variables de entorno.
 - Se conserva completa la infraestructura Bunny Media de V1.12.6 y el SEO de V1.12.5.
+
+## Ajuste legal en autenticación
+- Se añade un aviso legal compacto y permanente en las pantallas **Entrar** y **Crear cuenta**.
+- Informa de que iniciar sesión, crear una cuenta o usar Instant Admirers implica aceptar los **Términos de Uso** y la **Política de Privacidad**, y confirmar una edad mínima de 18 años.
+- Los enlaces legales son clicables y respetan ES/EN.
+- El registro conserva además su casilla de aceptación explícita de 18+, términos, privacidad y normas de la comunidad.
+
