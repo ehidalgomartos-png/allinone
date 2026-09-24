@@ -1,4 +1,4 @@
-// V1.12.6 · Bunny Media + SEO 40 Landings + Growth Engine Attribution + Protección de contenido
+// V1.12.8 · Bunny Media + SEO 40 Landings + Growth Engine Attribution + Protección de contenido
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en','ciudades','guias',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','sitemap-core.xml','sitemap-landings.xml','login','register','logout','admin',
@@ -122,6 +122,49 @@ async function loadPendingProfileAccessCard() {
     const data = await api('/api/public/profile/' + encodeURIComponent(username) + (campaign ? '?campaign=' + encodeURIComponent(campaign) : ''), { timeout:12000 });
     const canonical = String(data?.username || username).trim();
     if (canonical) rememberPendingProfile(canonical);
+
+    // V1.12.8 · Los enlaces válidos de Growth Engine presentan primero a la persona
+    // que invita, tanto en Entrar como en Crear cuenta. El bloque vive fuera de
+    // #authbox, así que no desaparece al cambiar de pestaña.
+    if (data?.growth_campaign_preview && data?.profile_preview) {
+      const preview=data.profile_preview || {};
+      const displayName=String(preview.name || data.name || canonical).trim();
+      const headline=String(preview.headline || '').trim();
+      const bio=String(preview.bio || '').trim();
+      const avatarUrl=String(preview.avatar || '').trim();
+      const coverUrl=String(preview.cover || '').trim();
+      const inviteDetected=Boolean(localStorage.getItem('pendingReferralCode'));
+      const gateEnabled=Boolean(data?.friend_gate_enabled);
+      const message=gateEnabled
+        ? (String(data.access_message || data.friend_gate_message || '').trim() || defaultProfileAccessMessage())
+        : '';
+
+      card.className='profile-auth-preview-card';
+      card.innerHTML=`
+        <div class="profile-auth-preview-cover ${coverUrl ? 'has-cover' : ''}">
+          ${coverUrl ? `<img src="${escapeAttr(coverUrl)}" alt="" decoding="async">` : ''}
+          <div class="profile-auth-preview-shade"></div>
+          <span class="profile-auth-preview-kicker">✦ Te han invitado a descubrir este perfil</span>
+        </div>
+        <div class="profile-auth-preview-body">
+          <div class="profile-auth-preview-avatar">
+            ${avatarUrl ? `<img src="${escapeAttr(avatarUrl)}" alt="${escapeAttr(displayName)}" decoding="async">` : `<span>${escapeHtml(initials({name:displayName,username:canonical}))}</span>`}
+          </div>
+          <div class="profile-auth-preview-identity">
+            <b>${escapeHtml(displayName)}</b>
+            <small>@${escapeHtml(canonical)}</small>
+          </div>
+          ${headline ? `<p class="profile-auth-preview-headline user-content">${escapeHtml(headline)}</p>` : ''}
+          ${bio ? `<p class="profile-auth-preview-bio user-content">${escapeHtml(bio)}</p>` : ''}
+          ${gateEnabled ? `<div class="profile-auth-preview-access">
+            <div class="profile-auth-preview-access-title"><span>🔒</span><b>Perfil exclusivo</b></div>
+            <p class="profile-auth-message user-content">“${escapeHtml(message)}”</p>
+          </div>` : ''}
+          ${inviteDetected ? '<div class="profile-auth-invite">✓ Invitación detectada</div>' : ''}
+        </div>`;
+      return;
+    }
+
     if (data?.friend_gate_enabled) {
       const message = String(data.access_message || data.friend_gate_message || '').trim() || defaultProfileAccessMessage();
       const inviteDetected = Boolean(localStorage.getItem('pendingReferralCode'));
@@ -3047,7 +3090,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.6</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.8</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>

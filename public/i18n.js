@@ -1,4 +1,4 @@
-// Instant Admirers V1.12.6 · Español / English
+// Instant Admirers V1.12.8 · Español / English
 (() => {
   const STORAGE_KEY = 'iaLanguage';
   const SUPPORTED = new Set(['es','en']);
@@ -15,6 +15,7 @@
     'Contenido protegido':'Protected content',
     'Perfil exclusivo':'Exclusive profile',
     'Invitación detectada':'Invitation detected',
+    'Te han invitado a descubrir este perfil':'You have been invited to discover this profile',
     'Este perfil tiene acceso especial. Completa el reto para descubrir su contenido.':'This profile has special access. Complete the challenge to discover its content.',
     'Mensaje de acceso al perfil':'Profile access message',
     'Explica brevemente por qué has protegido tu perfil o qué encontrará quien consiga entrar.':'Briefly explain why you protected your profile or what someone will find after gaining access.',

@@ -833,8 +833,211 @@ body{
 @media(max-width:900px){.growth-create-grid-v124{grid-template-columns:1fr 1fr}.growth-create-grid-v124 label,.growth-message-create,.growth-create-button{grid-column:auto;grid-row:auto}.growth-message-create{grid-column:1/-1}.growth-create-button{grid-column:1/-1}.growth-campaign-edit-grid{grid-template-columns:1fr 1fr}.growth-campaign-edit-grid .btn{grid-column:1/-1}.growth-recent-visit{grid-template-columns:1fr auto}.growth-recent-visit span:nth-child(2){grid-column:1}}
 @media(max-width:520px){.growth-create-grid-v124{grid-template-columns:1fr}.growth-create-grid-v124 label,.growth-message-create,.growth-create-button{grid-column:1}.growth-source-row{grid-template-columns:1fr .7fr .7fr}.growth-source-row span:last-child{display:none}.growth-source-row.head span:last-child{display:none}.growth-campaign-edit-grid{grid-template-columns:1fr}.growth-campaign-edit-grid .btn{grid-column:auto}.growth-recent-visit{grid-template-columns:1fr}.growth-recent-visit span:nth-child(2){grid-column:auto}}
 
-/* V1.12.6 · Bunny Stream mientras transcodifica */
+/* V1.12.8 · Bunny Stream mientras transcodifica */
 .media-processing{min-height:190px;border:1px solid var(--line,#2a2d3b);border-radius:16px;background:linear-gradient(135deg,rgba(255,42,161,.08),rgba(124,60,255,.08));display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;padding:28px;text-align:center;color:var(--text,#f7f7fb)}
 .media-processing span{font-size:28px;animation:ia-media-spin 1.2s linear infinite}
 .media-processing b{font-size:15px}.media-processing small{color:var(--muted,#999db0);font-size:12px}
 @keyframes ia-media-spin{to{transform:rotate(360deg)}}
+
+
+/* V1.12.8 · Growth Engine Profile Preview en Entrar / Crear cuenta */
+.profile-auth-preview-card{
+  position:relative;
+  z-index:1;
+  overflow:hidden;
+  margin:-4px -4px 15px;
+  border:1px solid rgba(193,113,255,.24);
+  border-radius:17px;
+  background:linear-gradient(180deg,rgba(18,20,30,.98),rgba(11,12,19,.98));
+  box-shadow:0 15px 34px rgba(0,0,0,.20);
+}
+.profile-auth-preview-cover{
+  position:relative;
+  height:118px;
+  overflow:hidden;
+  background:
+    radial-gradient(120% 130% at 12% 12%,rgba(255,42,161,.31),transparent 52%),
+    radial-gradient(100% 120% at 88% 20%,rgba(124,60,255,.38),transparent 58%),
+    linear-gradient(135deg,#1b1124,#111523 56%,#161025);
+}
+.profile-auth-preview-cover img{
+  width:100%;
+  height:100%;
+  display:block;
+  object-fit:cover;
+  object-position:center;
+}
+.profile-auth-preview-shade{
+  position:absolute;
+  inset:0;
+  background:linear-gradient(180deg,rgba(5,6,10,.06) 20%,rgba(5,6,10,.72) 100%);
+  pointer-events:none;
+}
+.profile-auth-preview-kicker{
+  position:absolute;
+  left:12px;
+  top:11px;
+  z-index:2;
+  max-width:calc(100% - 24px);
+  padding:6px 9px;
+  border:1px solid rgba(255,255,255,.14);
+  border-radius:999px;
+  background:rgba(7,8,13,.65);
+  backdrop-filter:blur(9px);
+  color:#f2eaff;
+  font-size:8.5px;
+  line-height:1;
+  font-weight:900;
+  letter-spacing:.055em;
+  text-transform:uppercase;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.profile-auth-preview-body{
+  position:relative;
+  display:grid;
+  gap:7px;
+  padding:38px 14px 13px;
+}
+.profile-auth-preview-avatar{
+  position:absolute;
+  left:14px;
+  top:-35px;
+  width:66px;
+  height:66px;
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+  border:4px solid #11131c;
+  border-radius:50%;
+  background:linear-gradient(135deg,#ff2aa1,#7c3cff);
+  color:#fff;
+  box-shadow:0 8px 24px rgba(0,0,0,.34);
+  font-size:24px;
+  font-weight:900;
+}
+.profile-auth-preview-avatar img{
+  width:100%;
+  height:100%;
+  display:block;
+  object-fit:cover;
+}
+.profile-auth-preview-identity{
+  min-width:0;
+  display:flex;
+  align-items:baseline;
+  gap:7px;
+}
+.profile-auth-preview-identity b{
+  min-width:0;
+  color:#fff;
+  font-size:16px;
+  line-height:1.2;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.profile-auth-preview-identity small{
+  min-width:0;
+  color:#aeb4c4;
+  font-size:10.5px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.profile-auth-preview-headline{
+  margin:0;
+  color:#e7d9f8;
+  font-size:11.5px;
+  line-height:1.4;
+  font-weight:760;
+}
+.profile-auth-preview-bio{
+  display:-webkit-box;
+  overflow:hidden;
+  -webkit-box-orient:vertical;
+  -webkit-line-clamp:3;
+  margin:0;
+  color:#b8bdcb;
+  font-size:10.7px;
+  line-height:1.45;
+}
+.profile-auth-preview-access{
+  display:grid;
+  gap:6px;
+  margin-top:2px;
+  padding-top:9px;
+  border-top:1px solid rgba(255,255,255,.065);
+}
+.profile-auth-preview-access-title{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  color:#dac3fa;
+  font-size:9.5px;
+}
+.profile-auth-preview-access-title span{font-size:10px}
+.profile-auth-preview-access .profile-auth-message{
+  padding:8px 9px;
+  font-size:10.7px;
+}
+.profile-auth-preview-card .profile-auth-invite{
+  margin-top:1px;
+  font-size:9.7px;
+}
+
+@media(max-width:520px){
+  .profile-auth-preview-card{
+    margin:-2px -2px 12px;
+    border-radius:15px;
+    box-shadow:0 12px 28px rgba(0,0,0,.20);
+  }
+  .profile-auth-preview-cover{height:94px}
+  .profile-auth-preview-kicker{
+    left:9px;
+    top:8px;
+    max-width:calc(100% - 18px);
+    padding:5px 7px;
+    font-size:7.2px;
+  }
+  .profile-auth-preview-body{
+    gap:5px;
+    padding:31px 11px 10px;
+  }
+  .profile-auth-preview-avatar{
+    left:11px;
+    top:-29px;
+    width:56px;
+    height:56px;
+    border-width:3px;
+    font-size:20px;
+  }
+  .profile-auth-preview-identity{gap:6px}
+  .profile-auth-preview-identity b{font-size:14px}
+  .profile-auth-preview-identity small{font-size:9.5px}
+  .profile-auth-preview-headline{font-size:10.5px}
+  .profile-auth-preview-bio{
+    -webkit-line-clamp:2;
+    font-size:9.8px;
+    line-height:1.4;
+  }
+  .profile-auth-preview-access{
+    gap:5px;
+    padding-top:7px;
+  }
+  .profile-auth-preview-access-title{font-size:8.8px}
+  .profile-auth-preview-access .profile-auth-message{
+    padding:7px 8px;
+    font-size:9.7px;
+    line-height:1.4;
+  }
+  .profile-auth-preview-card .profile-auth-invite{font-size:8.8px}
+}
+
+@media(max-width:360px){
+  .profile-auth-preview-cover{height:86px}
+  .profile-auth-preview-kicker{font-size:6.8px}
+  .profile-auth-preview-body{padding-top:29px}
+  .profile-auth-preview-avatar{width:52px;height:52px;top:-27px}
+}
