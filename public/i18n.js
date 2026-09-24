@@ -145,8 +145,17 @@
   function ensureLanguageSwitcher(){
     const top=document.querySelector('.topbar .top-actions');
     if(top && !top.querySelector('[data-language-switcher]')) top.insertAdjacentHTML('afterbegin',switcherHtml(true));
-    const auth=document.querySelector('.auth-card-wrap');
-    if(auth && !auth.querySelector(':scope > [data-language-switcher]')) auth.insertAdjacentHTML('afterbegin',switcherHtml(false));
+
+    // En autenticación colocamos ES / EN en la cabecera, junto al logotipo.
+    // Así no ocupa una fila propia entre la presentación y el formulario.
+    const authPage=document.querySelector('.auth-page');
+    const authHeader=document.querySelector('.auth-hero .brand-logo-wrap');
+    const authCard=document.querySelector('.auth-card-wrap');
+    if(authPage && !authPage.querySelector('[data-language-switcher]')){
+      if(authHeader) authHeader.insertAdjacentHTML('beforeend',switcherHtml(true));
+      else if(authCard) authCard.insertAdjacentHTML('afterbegin',switcherHtml(false));
+    }
+
     const legalTop=document.querySelector('.wrap > .top');
     if(legalTop && !legalTop.querySelector('[data-language-switcher]')) legalTop.insertAdjacentHTML('beforeend',switcherHtml(true));
   }

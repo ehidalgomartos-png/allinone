@@ -722,6 +722,14 @@ function legalLinks() {
   </div>`;
 }
 
+function authUsageNotice() {
+  const lang=window.IAI18N?.getLanguage?.() || 'es';
+  if (lang === 'en') {
+    return `<div class="auth-consent-note" data-no-i18n>By logging in, creating an account, or using Instant Admirers, you agree to our <a href="/en/terms/" target="_blank" rel="noopener">Terms of Use</a> and <a href="/en/privacy/" target="_blank" rel="noopener">Privacy Policy</a>, and confirm that you are at least 18 years old.</div>`;
+  }
+  return `<div class="auth-consent-note" data-no-i18n>Al iniciar sesión, crear una cuenta o usar Instant Admirers, aceptas nuestros <a href="/terms/" target="_blank" rel="noopener">Términos de Uso</a> y <a href="/privacy/" target="_blank" rel="noopener">Política de Privacidad</a>, y confirmas que tienes al menos 18 años.</div>`;
+}
+
 async function loadLaunchStatus() {
   try {
     const status=await api('/api/launch/status',{timeout:10000});
@@ -752,6 +760,7 @@ function authScreen() {
             <button id="registerTab" class="tab" onclick="showAuth('register')">Crear cuenta</button>
           </div>
           <div id="authbox"></div>
+          ${authUsageNotice()}
         </section>
         ${legalLinks()}
         <button class="btn ghost compact pwa-install-entry" type="button" onclick="installInstantAdmirers()"><span>⬇</span><span data-pwa-install-label>Instalar app</span></button>

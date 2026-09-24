@@ -784,7 +784,14 @@ body{
 .ia-language-switcher button.active{color:#fff;background:linear-gradient(135deg,rgba(255,45,154,.26),rgba(124,60,255,.28))}
 .ia-language-switcher span{color:var(--muted,#a7adbb);font-size:10px;opacity:.55}.ia-language-switcher.compact{padding:3px 5px;gap:3px}.ia-language-switcher.compact button{font-size:10px;padding:2px 3px}
 .auth-card-wrap>.ia-language-switcher{margin:0 0 10px auto}.top-actions>.ia-language-switcher{margin-right:3px}
-@media(max-width:520px){.top-actions>.ia-language-switcher{padding:2px 4px}.top-actions>.ia-language-switcher button{font-size:9px}.top-actions>.ia-language-switcher span{font-size:8px}}
+.auth-hero .brand-logo-wrap{align-items:center;justify-content:space-between;width:100%;gap:12px}
+.auth-hero .brand-logo-wrap>.ia-language-switcher{margin-left:auto;flex:0 0 auto}
+@media(max-width:520px){
+  .top-actions>.ia-language-switcher{padding:2px 4px}.top-actions>.ia-language-switcher button{font-size:9px}.top-actions>.ia-language-switcher span{font-size:8px}
+  .auth-hero .brand-logo-wrap>.ia-language-switcher{padding:3px 5px;gap:3px;margin-top:0}
+  .auth-hero .brand-logo-wrap>.ia-language-switcher button{font-size:10px;padding:2px 3px}
+  .auth-hero .brand-logo-wrap>.ia-language-switcher span{font-size:9px}
+}
 .ad-language-copy-group{border:1px solid var(--border,#2b2d3a);border-radius:14px;padding:12px;margin-top:10px;background:rgba(255,255,255,.015)}.ad-language-copy-group>strong{display:block;margin-bottom:9px;font-size:12px;letter-spacing:.03em}.ad-language-copy-group label{display:flex;flex-direction:column;gap:6px}
 
 /* V1.12.2 · Protección de contenido + bloqueo reforzado */
@@ -1040,4 +1047,27 @@ body{
   .profile-auth-preview-kicker{font-size:6.8px}
   .profile-auth-preview-body{padding-top:29px}
   .profile-auth-preview-avatar{width:52px;height:52px;top:-27px}
+}
+
+
+/* V1.12.8 · aviso legal compacto visible en Entrar y Crear cuenta */
+.auth-consent-note{
+  position:relative;
+  z-index:1;
+  margin:12px 2px 0;
+  padding-top:10px;
+  border-top:1px solid rgba(255,255,255,.07);
+  color:#9298a9;
+  font-size:10px;
+  line-height:1.45;
+  text-align:center;
+}
+.auth-consent-note a{
+  color:#c9b4ff;
+  font-weight:750;
+  text-decoration:none;
+}
+.auth-consent-note a:hover{text-decoration:underline;color:#fff}
+@media(max-width:520px){
+  .auth-consent-note{margin-top:10px;padding-top:9px;font-size:9.5px;line-height:1.4}
 }
