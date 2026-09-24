@@ -725,9 +725,9 @@ function legalLinks() {
 function authUsageNotice() {
   const lang=window.IAI18N?.getLanguage?.() || 'es';
   if (lang === 'en') {
-    return `<div class="auth-consent-note" data-no-i18n>By logging in, creating an account, or using Instant Admirers, you agree to our <a href="/en/terms/" target="_blank" rel="noopener">Terms of Use</a> and <a href="/en/privacy/" target="_blank" rel="noopener">Privacy Policy</a>, and confirm that you are at least 18 years old.</div>`;
+    return `<div class="auth-consent-note" data-no-i18n>By logging in and using Instant Admirers, you agree to our <a href="/en/terms/" target="_blank" rel="noopener">Terms of Use</a> and <a href="/en/privacy/" target="_blank" rel="noopener">Privacy Policy</a>, and confirm that you are at least 18 years old.</div>`;
   }
-  return `<div class="auth-consent-note" data-no-i18n>Al iniciar sesión, crear una cuenta o usar Instant Admirers, aceptas nuestros <a href="/terms/" target="_blank" rel="noopener">Términos de Uso</a> y <a href="/privacy/" target="_blank" rel="noopener">Política de Privacidad</a>, y confirmas que tienes al menos 18 años.</div>`;
+  return `<div class="auth-consent-note" data-no-i18n>Al iniciar sesión y usar Instant Admirers, aceptas nuestros <a href="/terms/" target="_blank" rel="noopener">Términos de Uso</a> y <a href="/privacy/" target="_blank" rel="noopener">Política de Privacidad</a>, y confirmas que tienes al menos 18 años.</div>`;
 }
 
 async function loadLaunchStatus() {
@@ -760,7 +760,6 @@ function authScreen() {
             <button id="registerTab" class="tab" onclick="showAuth('register')">Crear cuenta</button>
           </div>
           <div id="authbox"></div>
-          ${authUsageNotice()}
         </section>
         ${legalLinks()}
         <button class="btn ghost compact pwa-install-entry" type="button" onclick="installInstantAdmirers()"><span>⬇</span><span data-pwa-install-label>Instalar app</span></button>
@@ -800,6 +799,7 @@ window.showAuth = (mode) => {
       <label>Contraseña</label><input id="loginpass" type="password" autocomplete="current-password" placeholder="••••••••" onkeydown="if(event.key==='Enter')login()">
       <button id="loginSubmit" class="btn primary large" onclick="login()">Entrar</button>
       <button class="auth-text-link" onclick="openForgotPassword()">¿Has olvidado tu contraseña?</button>
+      ${authUsageNotice()}
     </div>` : `
     <div class="auth-form">
       ${launchInviteNote}
