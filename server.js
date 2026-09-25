@@ -698,24 +698,78 @@ async function assertNotBlocked(a, b, client = pool) {
   }
 }
 
-async function canMessageUser(senderId, recipientId, client = pool) {
+async function messageAccessState(senderId, recipientId, client = pool) {
   const blocked = await blockState(senderId, recipientId, client);
-  if (blocked.iBlocked || blocked.blockedMe) return false;
-  const { rows } = await client.query('SELECT message_policy FROM users WHERE id=$1',[recipientId]);
-  if (!rows[0]) return false;
-  const policy = rows[0].message_policy || 'everyone';
-  if (policy === 'everyone') return true;
-  if (policy === 'nobody') return false;
-  if (policy === 'followers') {
-    const q = await client.query('SELECT 1 FROM follows WHERE follower_id=$1 AND followed_id=$2',[senderId,recipientId]);
-    return q.rowCount > 0;
-  }
-  if (policy === 'friends') {
+  if (blocked.iBlocked || blocked.blockedMe) return { allowed:false, code:'INTERACTION_BLOCKED', reason:'blocked' };
+
+  const { rows } = await client.query(`
+    SELECT message_policy, friend_gate_enabled
+      FROM users
+     WHERE id=$1 AND account_status='active'
+     LIMIT 1
+  `,[recipientId]);
+  const recipient = rows[0];
+  if (!recipient) return { allowed:false, code:'USER_UNAVAILABLE', reason:'unavailable' };
+
+  // El reto de acceso también protege el chat: un fan no puede escribir al
+  // perfil protegido hasta completar el reto (o ser ya amigo).
+  if (recipient.friend_gate_enabled) {
     const [a,b] = friendshipPair(senderId,recipientId);
-    const q = await client.query('SELECT 1 FROM friendships WHERE user1_id=$1 AND user2_id=$2',[a,b]);
-    return q.rowCount > 0;
+    const friendship = await client.query(
+      'SELECT 1 FROM friendships WHERE user1_id=$1 AND user2_id=$2 LIMIT 1',
+      [a,b]
+    );
+    if (!friendship.rowCount) {
+      const gate = await friendGateProgress(senderId,recipientId,client);
+      if (gate?.enabled && !gate.unlocked) {
+        return {
+          allowed:false,
+          code:'FRIEND_GATE_CHAT_LOCKED',
+          reason:'challenge',
+          friend_gate:gate
+        };
+      }
+    }
   }
-  return false;
+
+  const policy = recipient.message_policy || 'everyone';
+  if (policy === 'everyone') return { allowed:true, reason:'policy' };
+  if (policy === 'followers') {
+    const q = await client.query(
+      'SELECT 1 FROM follows WHERE follower_id=$1 AND followed_id=$2 LIMIT 1',
+      [senderId,recipientId]
+    );
+    if (q.rowCount) return { allowed:true, reason:'policy' };
+  } else if (policy === 'friends') {
+    const [a,b] = friendshipPair(senderId,recipientId);
+    const q = await client.query(
+      'SELECT 1 FROM friendships WHERE user1_id=$1 AND user2_id=$2 LIMIT 1',
+      [a,b]
+    );
+    if (q.rowCount) return { allowed:true, reason:'policy' };
+  } else if (policy !== 'nobody') {
+    return { allowed:false, code:'MESSAGE_POLICY_BLOCKED', reason:'policy' };
+  }
+
+  // Si el destinatario ya escribió antes en esta conversación, se considera
+  // que abrió el canal y permitimos responderle. Esto evita conversaciones
+  // unidireccionales en las que alguien puede escribir pero no recibir respuesta.
+  // El reto de acceso se evalúa arriba y siempre tiene prioridad.
+  const reply = await client.query(`
+    SELECT 1
+      FROM conversations c
+      JOIN messages m ON m.conversation_id=c.id
+     WHERE ((c.user1_id=$1 AND c.user2_id=$2) OR (c.user1_id=$2 AND c.user2_id=$1))
+       AND m.sender_id=$2
+     LIMIT 1
+  `,[senderId,recipientId]);
+  if (reply.rowCount) return { allowed:true, reason:'reply' };
+
+  return { allowed:false, code:'MESSAGE_POLICY_BLOCKED', reason:'policy' };
+}
+
+async function canMessageUser(senderId, recipientId, client = pool) {
+  return Boolean((await messageAccessState(senderId, recipientId, client)).allowed);
 }
 
 
@@ -1130,7 +1184,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.12.12', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default','growth-public-teaser-profile','growth-teaser-media-lock','growth-teaser-signup-attribution','public-teaser-desktop-layout-fix','feed-full-image-fit','full-image-viewer','protected-image-lightbox'] });
+  res.json({ ok: true, version: '1.12.13', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default','growth-public-teaser-profile','growth-teaser-media-lock','growth-teaser-signup-attribution','public-teaser-desktop-layout-fix','feed-full-image-fit','full-image-viewer','protected-image-lightbox','friend-gate-chat-lock','conversation-reply-continuity','chat-video-processing-refresh'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -2241,7 +2295,7 @@ app.get('/api/public/profile/:username', asyncRoute(async (req, res) => {
 }));
 
 
-// V1.12.12: perfil teaser público disponible sólo para campañas Growth Engine
+// V1.12.13: perfil teaser público disponible sólo para campañas Growth Engine
 // activadas expresamente. Las publicaciones nunca entregan URLs de fotos/vídeos:
 // sólo texto y la existencia/tipo de multimedia para mostrar el bloqueo de alta.
 app.get('/api/public/profile/:username/teaser', publicTeaserLimiter, asyncRoute(async (req,res)=>{
@@ -3077,7 +3131,17 @@ app.post('/api/conversations/direct/:userId', auth, socialAccountOnly, asyncRout
   const exists = await pool.query('SELECT id,email,role,social_hidden,account_status FROM users WHERE id = $1', [otherId]);
   if (!exists.rowCount || exists.rows[0].account_status!=='active' || isSociallyHiddenRecord(exists.rows[0])) return res.status(404).json({ error: 'Usuario no encontrado' });
   await assertNotBlocked(myId,otherId);
-  if (!(await canMessageUser(myId,otherId))) return res.status(403).json({error:'Esta persona no acepta mensajes tuyos'});
+  const access = await messageAccessState(myId,otherId);
+  if (!access.allowed) {
+    if (access.code === 'FRIEND_GATE_CHAT_LOCKED') {
+      return res.status(403).json({
+        error:'Completa el reto de acceso antes de poder usar el chat con este perfil.',
+        code:access.code,
+        friend_gate:access.friend_gate || null
+      });
+    }
+    return res.status(403).json({error:'Esta persona no acepta mensajes tuyos',code:access.code || 'MESSAGE_POLICY_BLOCKED'});
+  }
   const a = Math.min(myId, otherId), b = Math.max(myId, otherId);
   const { rows } = await pool.query(`
     INSERT INTO conversations (user1_id, user2_id) VALUES ($1,$2)
@@ -3086,6 +3150,18 @@ app.post('/api/conversations/direct/:userId', auth, socialAccountOnly, asyncRout
   `, [a,b]);
   await pool.query(`INSERT INTO conversation_reads (conversation_id,user_id,last_read_at) VALUES ($1,$2,NOW()) ON CONFLICT DO NOTHING`, [rows[0].id, myId]);
   res.json({ id: rows[0].id });
+}));
+
+app.get('/api/conversations/:id/access', auth, asyncRoute(async (req,res)=>{
+  const conversation = await requireConversationMember(req.params.id, req.user.id);
+  const otherId = conversationOtherId(conversation, req.user.id);
+  const access = await messageAccessState(req.user.id,otherId);
+  res.json({
+    allowed:Boolean(access.allowed),
+    code:access.code || '',
+    reason:access.reason || '',
+    friend_gate:access.friend_gate || null
+  });
 }));
 
 app.get('/api/conversations', auth, asyncRoute(async (req, res) => {
@@ -3218,7 +3294,17 @@ app.post('/api/conversations/:id/messages', auth, socialAccountOnly, asyncRoute(
   const conversation = await requireConversationMember(req.params.id, req.user.id);
   const otherId = conversationOtherId(conversation, req.user.id);
   await assertNotBlocked(req.user.id,otherId);
-  if (!(await canMessageUser(req.user.id,otherId))) return res.status(403).json({error:'Esta persona no acepta mensajes tuyos'});
+  const access = await messageAccessState(req.user.id,otherId);
+  if (!access.allowed) {
+    if (access.code === 'FRIEND_GATE_CHAT_LOCKED') {
+      return res.status(403).json({
+        error:'Completa el reto de acceso antes de poder usar el chat con este perfil.',
+        code:access.code,
+        friend_gate:access.friend_gate || null
+      });
+    }
+    return res.status(403).json({error:'Esta persona no acepta mensajes tuyos',code:access.code || 'MESSAGE_POLICY_BLOCKED'});
+  }
   const text = String(req.body.text || '').trim().slice(0, 4000);
   const mediaId = req.body.media_id ? String(req.body.media_id) : null;
   const replyToId = req.body.reply_to_id ? Number(req.body.reply_to_id) : null;
@@ -4143,7 +4229,7 @@ async function start() {
   await syncSystemAccounts();
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Instant Admirers V1.12.12 en http://localhost:${PORT}`);
+    console.log(`Instant Admirers V1.12.13 en http://localhost:${PORT}`);
     void hardenLegacyCloudinaryMedia().catch(err => console.error('Protección multimedia heredada:', err.message));
     void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message));
     const bunnyStatusTimer=setInterval(() => void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message)),30000);
