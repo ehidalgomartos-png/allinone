@@ -1,7 +1,7 @@
 {
   "name": "instant-admirers-community",
-  "version": "1.12.11",
-  "description": "Instant Admirers V1.12.11 - Growth Engine public teaser profiles with locked media",
+  "version": "1.12.12",
+  "description": "Instant Admirers V1.12.12 - Full image viewer, complete-fit feed photos and Growth Engine public teaser profiles",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

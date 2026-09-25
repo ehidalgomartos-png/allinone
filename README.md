@@ -1,5 +1,5 @@
-# Instant Admirers V1.12.10 — Public Teaser Profile
+# Instant Admirers V1.12.12 — Full Image Viewer
 
-Base directa: V1.12.9. Añade vista pública opcional desde Growth Engine con texto visible y multimedia bloqueada hasta crear cuenta.
+Base directa: V1.12.11. Corrige fotografías grandes recortadas y añade un visor de imagen completa manteniendo la protección de contenido.
 
-Consulta `README-V1.12.10.md` y `ACTUALIZAR-A-V1.12.10.md`.
+Consulta `README-V1.12.12.md` y `ACTUALIZAR-A-V1.12.12.md`.
