@@ -1,4 +1,4 @@
-// V1.12.12 · Full Image Viewer + Public Teaser Profile + Bunny Media + SEO + Growth Engine + Protección de contenido
+// V1.12.13 · Full Image Viewer + Public Teaser Profile + Bunny Media + SEO + Growth Engine + Protección de contenido
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en','ciudades','guias',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','sitemap-core.xml','sitemap-landings.xml','login','register','logout','admin',
@@ -268,6 +268,7 @@ const state = {
   replyTo: null,
   typingTimer: null,
   messageSending: false,
+  chatAccess: null,
   requestCount: 0,
   sessionExpiring: false,
   pagination: {},
@@ -1490,7 +1491,7 @@ function mediaWatermarkHtml(item) {
 }
 
 
-// V1.12.12 · Visor de imagen completa para publicaciones y contenido compartido.
+// V1.12.13 · Visor de imagen completa para publicaciones y contenido compartido.
 function imageViewerAttrs(item) {
   const protectedFlag=item?.media_protected ? '1' : '0';
   const watermarkedFlag=item?.watermarked ? '1' : '0';
@@ -2697,14 +2698,23 @@ async function renderMessages() {
   if (!state.activeConversation && !isMobile && conversations[0]) state.activeConversation = Number(conversations[0].id);
   const active = conversations.find(c => Number(c.id) === Number(state.activeConversation));
   let messages = [];
-  if (active) messages = await api(`/api/conversations/${active.id}/messages`);
+  let chatAccess = { allowed:true, code:'', reason:'' };
+  if (active) {
+    [messages,chatAccess] = await Promise.all([
+      api(`/api/conversations/${active.id}/messages`),
+      api(`/api/conversations/${active.id}/access`)
+    ]);
+    state.chatAccess = chatAccess;
+  } else {
+    state.chatAccess = null;
+  }
   $('#main').innerHTML = `${pageHeader('Mensajes','Conversaciones privadas en tiempo real')}
     <section class="card chat-shell ${active ? 'has-active' : ''}">
       <div class="conversation-pane">
         <div class="chat-pane-head"><b>Conversaciones</b><button class="btn primary compact" onclick="newMessage()">Nuevo</button></div>
         <div class="conversation-list">${conversations.length ? conversations.map(conversationRow).join('') : `<div class="empty compact-empty"><p>Aún no tienes conversaciones.</p><button class="btn primary compact" onclick="newMessage()">Enviar primer mensaje</button></div>`}</div>
       </div>
-      <div class="message-pane">${active ? chatPanelHtml(active,messages,isMobile) : `<div class="chat-placeholder"><div>✉</div><h3>Selecciona una conversación</h3><p>Habla en privado con otras personas de la comunidad.</p></div>`}</div>
+      <div class="message-pane">${active ? chatPanelHtml(active,messages,isMobile,chatAccess) : `<div class="chat-placeholder"><div>✉</div><h3>Selecciona una conversación</h3><p>Habla en privado con otras personas de la comunidad.</p></div>`}</div>
     </section>`;
   setupLazyMedia($('#main'));
   if (active) {
@@ -2712,7 +2722,8 @@ async function renderMessages() {
     state.me.unread_messages = Math.max(0, Number(state.me.unread_messages || 0) - Number(active.unread_count || 0));
     updateNavBadges();
     if (state.messagePoll) clearInterval(state.messagePoll);
-    state.messagePoll = setInterval(refreshActiveConversation, 15000);
+    const hasProcessingVideo = messages.some(m => Boolean(m?.media_processing || m?.shared_post?.media_processing));
+    state.messagePoll = setInterval(refreshActiveConversation, hasProcessingVideo ? 5000 : 15000);
   }
 }
 
@@ -2721,14 +2732,18 @@ function conversationRow(c) {
   return `<button class="conversation-row ${Number(c.id)===Number(state.activeConversation)?'active':''}" onclick="openConversation(${c.id})">${avatar(c,'small')}<span class="conversation-copy"><b>${escapeHtml(c.name)}${c.online?'<i class="online-dot" title="En línea"></i>':''}</b><small>${escapeHtml(preview).slice(0,65)}</small></span><span class="conversation-meta"><small>${c.last_message_at?timeAgo(c.last_message_at):''}</small>${Number(c.unread_count)>0?`<i>${Math.min(99,c.unread_count)}</i>`:''}</span></button>`;
 }
 
-function chatPanelHtml(c, messages, isMobile) {
-  const reply = state.replyTo && Number(state.replyTo.conversationId)===Number(c.id) ? `<div class="reply-compose" id="replyCompose"><span><b>Respondiendo a ${escapeHtml(state.replyTo.name)}</b><small>${escapeHtml(state.replyTo.text || 'Multimedia').slice(0,90)}</small></span><button onclick="clearReply()">×</button></div>` : '';
+function chatPanelHtml(c, messages, isMobile, chatAccess={allowed:true}) {
+  const reply = state.replyTo && Number(state.replyTo.conversationId)===Number(c.id) && chatAccess.allowed ? `<div class="reply-compose" id="replyCompose"><span><b>Respondiendo a ${escapeHtml(state.replyTo.name)}</b><small>${escapeHtml(state.replyTo.text || 'Multimedia').slice(0,90)}</small></span><button onclick="clearReply()">×</button></div>` : '';
+  const challengeLocked = !chatAccess.allowed && chatAccess.code === 'FRIEND_GATE_CHAT_LOCKED';
+  const composer = chatAccess.allowed
+    ? `<div id="messageMediaPreview"></div>
+      <div class="message-compose"><label class="attach-btn" title="Galería" onclick="prepareGalleryInput('messageFile',true)">＋<input id="messageFile" type="file" accept="image/*,video/*" onchange="previewMessageFile(this)" hidden></label><button type="button" class="attach-btn capture-icon mobile-capture-only" title="Hacer foto" onclick="captureFromDevice('messageFile','photo','environment')">📷</button><button type="button" class="attach-btn capture-icon mobile-capture-only" title="Grabar vídeo" onclick="captureFromDevice('messageFile','video','environment')">🎥</button><textarea id="messageText" rows="1" maxlength="4000" placeholder="Escribe un mensaje…" oninput="handleTyping(${c.id})" onblur="stopTyping(${c.id})" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage(${c.id})}"></textarea><button id="messageSendBtn" class="btn primary compact" onclick="sendMessage(${c.id})">Enviar</button></div>`
+    : `<div class="chat-access-lock"><span>🔒</span><div><b>${escapeHtml(challengeLocked ? teaserCopy('Completa el reto para usar el chat','Complete the challenge to use chat') : teaserCopy('Chat no disponible','Chat unavailable'))}</b><p>${escapeHtml(challengeLocked ? teaserCopy('Este perfil protege sus mensajes con un reto de acceso. Complétalo antes de enviar mensajes, fotos o vídeos.','This profile protects messages with an access challenge. Complete it before sending messages, photos or videos.') : teaserCopy('No puedes enviar mensajes a esta persona en este momento.','You cannot send messages to this person right now.'))}</p></div>${challengeLocked?`<button class="btn primary compact" onclick="openProfile('${escapeAttr(c.username)}')">${teaserCopy('Ver reto','View challenge')}</button>`:''}</div>`;
   return `<div class="chat-header">${isMobile?`<button class="icon-btn chat-back" onclick="closeConversation()">‹</button>`:''}<button class="person-link" onclick="openProfile('${escapeAttr(c.username)}')">${avatar(c,'small')}<span><b>${escapeHtml(c.name)}</b><small>@${escapeHtml(c.username)} · ${presenceHtml({id:c.other_id,online:c.online,last_seen_at:c.last_seen_at})}</small></span></button><button class="icon-btn" onclick="renderMessages()" title="Actualizar">↻</button></div>
     <div class="message-stream" id="messageStream">${messages.length ? messages.map(messageHtml).join('') : `<div class="chat-first"><b>Empieza la conversación con ${escapeHtml(c.name)}</b><span>Los mensajes son privados entre vosotros.</span></div>`}</div>
     <div class="typing-indicator" id="typingIndicator"></div>
     ${reply}
-    <div id="messageMediaPreview"></div>
-    <div class="message-compose"><label class="attach-btn" title="Galería" onclick="prepareGalleryInput('messageFile',true)">＋<input id="messageFile" type="file" accept="image/*,video/*" onchange="previewMessageFile(this)" hidden></label><button type="button" class="attach-btn capture-icon mobile-capture-only" title="Hacer foto" onclick="captureFromDevice('messageFile','photo','environment')">📷</button><button type="button" class="attach-btn capture-icon mobile-capture-only" title="Grabar vídeo" onclick="captureFromDevice('messageFile','video','environment')">🎥</button><textarea id="messageText" rows="1" maxlength="4000" placeholder="Escribe un mensaje…" oninput="handleTyping(${c.id})" onblur="stopTyping(${c.id})" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage(${c.id})}"></textarea><button id="messageSendBtn" class="btn primary compact" onclick="sendMessage(${c.id})">Enviar</button></div>`;
+    ${composer}`;
 }
 
 function messageHtml(m) {
@@ -2745,7 +2760,8 @@ function messageHtml(m) {
   }
   const excerpt = safeEncode((m.text || (m.media_type==='image'?'Foto':m.media_type==='video'?'Vídeo':m.shared_post?'Publicación':'Mensaje')).slice(0,100));
   const sender = safeEncode(m.name || m.username || 'Mensaje');
-  return `<div class="message ${m.own?'mine':'theirs'}"><button class="message-reply-btn" onclick="replyToMessage(${m.id},'${sender}','${excerpt}')" title="Responder">↩</button><div class="message-bubble">${reply}${m.text?`<p>${formatText(m.text)}</p>`:''}${media}${shared}<small>${timeAgo(m.created_at)}</small></div></div>`;
+  const replyButton = state.chatAccess?.allowed === false ? '' : `<button class="message-reply-btn" onclick="replyToMessage(${m.id},'${sender}','${excerpt}')" title="Responder">↩</button>`;
+  return `<div class="message ${m.own?'mine':'theirs'}">${replyButton}<div class="message-bubble">${reply}${m.text?`<p>${formatText(m.text)}</p>`:''}${media}${shared}<small>${timeAgo(m.created_at)}</small></div></div>`;
 }
 
 window.replyToMessage = (id, encodedName, encodedText) => {
@@ -2754,8 +2770,8 @@ window.replyToMessage = (id, encodedName, encodedText) => {
 };
 window.clearReply = () => { state.replyTo=null; $('#replyCompose')?.remove(); };
 
-window.openConversation = async (id) => { state.activeConversation = Number(id); state.replyTo=null; await renderMessages(); };
-window.closeConversation = async () => { stopTyping(state.activeConversation); state.activeConversation = null; state.replyTo=null; if(state.messagePoll){clearInterval(state.messagePoll);state.messagePoll=null;} await renderMessages(); };
+window.openConversation = async (id) => { state.activeConversation = Number(id); state.replyTo=null; state.chatAccess=null; await renderMessages(); };
+window.closeConversation = async () => { stopTyping(state.activeConversation); state.activeConversation = null; state.replyTo=null; state.chatAccess=null; if(state.messagePoll){clearInterval(state.messagePoll);state.messagePoll=null;} await renderMessages(); };
 
 window.startMessage = async (userId) => {
   try { const d = await api(`/api/conversations/direct/${userId}`, { method:'POST' }); state.view='messages'; state.activeConversation=Number(d.id); state.replyTo=null; layout(); await renderMessages(); }
@@ -2798,19 +2814,33 @@ window.sendMessage = async (conversationId) => {
     if(file){ const up=await uploadMediaFile(file); media_id=up.media_id; }
     await api(`/api/conversations/${conversationId}/messages`,{method:'POST',body:JSON.stringify({text,media_id,reply_to_id:state.replyTo?.id||null})});
     stopTyping(conversationId); state.replyTo=null; if(input) input.value=''; clearMessageFile(); await renderMessages();
-  } catch(e){ toast(e.message,'error'); }
+  } catch(e){
+    toast(e.message,'error');
+    if(e.code==='FRIEND_GATE_CHAT_LOCKED'){ state.replyTo=null; state.chatAccess={allowed:false,code:e.code,reason:'challenge'}; await renderMessages().catch(()=>{}); }
+  }
   finally { state.messageSending=false; if(btn?.isConnected){btn.disabled=false;btn.textContent='Enviar';} if(input?.isConnected) input.disabled=false; }
 };
 
 async function refreshActiveConversation(){
   if(state.view!=='messages'||!state.activeConversation) return;
   try{
-    const messages=await api(`/api/conversations/${state.activeConversation}/messages`);
+    const [messages,chatAccess]=await Promise.all([
+      api(`/api/conversations/${state.activeConversation}/messages`),
+      api(`/api/conversations/${state.activeConversation}/access`)
+    ]);
+    const accessChanged = Boolean(state.chatAccess?.allowed) !== Boolean(chatAccess?.allowed) || String(state.chatAccess?.code||'') !== String(chatAccess?.code||'');
+    state.chatAccess=chatAccess;
+    if(accessChanged){ await renderMessages(); return; }
     const stream=$('#messageStream');
     if(!stream) return;
     const nearBottom=stream.scrollHeight-stream.scrollTop-stream.clientHeight<100;
     stream.innerHTML=messages.length?messages.map(messageHtml).join(''):'<div class="chat-first"><span>Aún no hay mensajes.</span></div>';
     if(nearBottom) stream.scrollTop=stream.scrollHeight;
+    const hasProcessingVideo = messages.some(m => Boolean(m?.media_processing || m?.shared_post?.media_processing));
+    if(state.messagePoll){
+      clearInterval(state.messagePoll);
+      state.messagePoll=setInterval(refreshActiveConversation,hasProcessingVideo?5000:15000);
+    }
   }catch{}
 }
 
@@ -3311,7 +3341,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.12</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.13</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>

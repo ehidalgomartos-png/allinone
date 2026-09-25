@@ -1,4 +1,4 @@
-// Instant Admirers V1.12.12 · Español / English
+// Instant Admirers V1.12.13 · Español / English
 (() => {
   const STORAGE_KEY = 'iaLanguage';
   const SUPPORTED = new Set(['es','en']);
@@ -47,7 +47,13 @@
     'histórico sin origen':'historical without source',
     'Campaña actualizada':'Campaign updated',
     'Procesando vídeo…':'Processing video…',
-    'Estará disponible en unos momentos.':'It will be available in a few moments.'
+    'Estará disponible en unos momentos.':'It will be available in a few moments.',
+    'Completa el reto de acceso antes de poder usar el chat con este perfil.':'Complete the access challenge before you can use chat with this profile.',
+    'Completa el reto para usar el chat':'Complete the challenge to use chat',
+    'Este perfil protege sus mensajes con un reto de acceso. Complétalo antes de enviar mensajes, fotos o vídeos.':'This profile protects messages with an access challenge. Complete it before sending messages, photos or videos.',
+    'Ver reto':'View challenge',
+    'Chat no disponible':'Chat unavailable',
+    'No puedes enviar mensajes a esta persona en este momento.':'You cannot send messages to this person right now.'
   });
   const EN_ES = Object.fromEntries(Object.entries(ES_EN).map(([es,en]) => [en,es]));
   const normalized = obj => {
