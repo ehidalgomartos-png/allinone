@@ -1,4 +1,4 @@
-// V1.12.9 · Bunny Media + SEO 40 Landings + Growth Engine Attribution + Protección de contenido
+// V1.12.10 · Public Teaser Profile + Bunny Media + SEO + Growth Engine + Protección de contenido
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en','ciudades','guias',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','sitemap-core.xml','sitemap-landings.xml','login','register','logout','admin',
@@ -16,6 +16,25 @@ const landingGrowthCampaign = (() => {
 let growthLandingTracked = false;
 
 function currentGrowthCampaign() { return landingGrowthCampaign; }
+
+function publicTeaserRequested() {
+  try { return new URLSearchParams(location.search).get('preview') === '1'; }
+  catch (_) { return false; }
+}
+
+function teaserCopy(es,en){ return window.IAI18N?.t?.(es,en) || es; }
+
+function trackPublicTeaserEvent(eventName) {
+  const campaign=currentGrowthCampaign();
+  if(!campaign || !navigator.onLine) return;
+  if(eventName==='view'){
+    const key=`iaPublicTeaserView:${campaign}`;
+    try { if(sessionStorage.getItem(key)) return; sessionStorage.setItem(key,'1'); } catch (_) {}
+  }
+  try {
+    fetch('/api/growth/campaign/teaser-event',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({campaign,event:eventName}),keepalive:true}).catch(()=>{});
+  } catch (_) {}
+}
 
 function growthVisitContext() {
   try {
@@ -135,19 +154,21 @@ async function loadPendingProfileAccessCard() {
       const coverUrl=String(preview.cover || '').trim();
       const inviteDetected=Boolean(localStorage.getItem('pendingReferralCode'));
       const gateEnabled=Boolean(data?.friend_gate_enabled);
+      const publicTeaserEnabled=Boolean(data?.public_teaser_enabled);
       const message=gateEnabled
         ? (String(data.access_message || data.friend_gate_message || '').trim() || defaultProfileAccessMessage())
         : '';
 
       card.className='profile-auth-preview-card';
       card.innerHTML=`
-        <div class="profile-auth-preview-cover ${coverUrl ? 'has-cover' : ''}">
+        <div class="profile-auth-preview-cover ${coverUrl ? 'has-cover' : ''} ${publicTeaserEnabled ? 'is-clickable' : ''}" ${publicTeaserEnabled ? `role="button" tabindex="0" aria-label="Ver perfil de ${escapeAttr(displayName)}" onclick="openPublicTeaserProfile('${escapeAttr(canonical)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openPublicTeaserProfile('${escapeAttr(canonical)}')}"` : ''}>
           ${coverUrl ? `<img src="${escapeAttr(coverUrl)}" alt="" decoding="async">` : ''}
           <div class="profile-auth-preview-shade"></div>
           <span class="profile-auth-preview-kicker">✦ Te han invitado a descubrir este perfil</span>
+          ${publicTeaserEnabled ? '<span class="profile-auth-preview-open">Ver perfil →</span>' : ''}
         </div>
         <div class="profile-auth-preview-body">
-          <div class="profile-auth-preview-avatar">
+          <div class="profile-auth-preview-avatar ${publicTeaserEnabled ? 'is-clickable' : ''}" ${publicTeaserEnabled ? `role="button" tabindex="0" aria-label="Ver perfil de ${escapeAttr(displayName)}" onclick="openPublicTeaserProfile('${escapeAttr(canonical)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openPublicTeaserProfile('${escapeAttr(canonical)}')}"` : ''}>
             ${avatarUrl ? `<img src="${escapeAttr(avatarUrl)}" alt="${escapeAttr(displayName)}" decoding="async">` : `<span>${escapeHtml(initials({name:displayName,username:canonical}))}</span>`}
           </div>
           <div class="profile-auth-preview-identity">
@@ -729,6 +750,119 @@ function authUsageNotice() {
   }
   return `<div class="auth-consent-note" data-no-i18n>Al iniciar sesión y usar Instant Admirers, aceptas nuestros <a href="/terms/" target="_blank" rel="noopener">Términos de Uso</a> y <a href="/privacy/" target="_blank" rel="noopener">Política de Privacidad</a>, y confirmas que tienes al menos 18 años.</div>`;
 }
+
+
+function publicTeaserSignupUrl(username='') {
+  const params=new URLSearchParams(location.search);
+  params.delete('preview');
+  params.set('auth','register');
+  const clean=String(username||'').trim().replace(/^@/,'');
+  return `/${encodeURIComponent(clean)}?${params.toString()}`;
+}
+
+function publicTeaserPostHtml(post,username) {
+  const text=String(post?.text || '').trim();
+  const repost=String(post?.repost_text || '').trim();
+  const hasMedia=Boolean(post?.has_media);
+  const mediaType=String(post?.media_type || 'none');
+  const mediaLabel=mediaType==='video'
+    ? teaserCopy('Vídeo bloqueado','Video locked')
+    : teaserCopy('Foto bloqueada','Photo locked');
+  const mediaIcon=mediaType==='video' ? '🎬' : '📷';
+  return `<article class="card public-teaser-post">
+    <div class="public-teaser-post-meta"><span>@${escapeHtml(username)}</span><small>${escapeHtml(timeAgo(post.created_at))}</small></div>
+    ${post?.is_repost ? `<div class="public-teaser-repost-label">↗ ${teaserCopy('Publicación compartida','Shared post')}</div>` : ''}
+    ${text ? `<p class="public-teaser-post-text user-content">${escapeHtml(text)}</p>` : ''}
+    ${repost ? `<div class="public-teaser-repost-text user-content">${escapeHtml(repost)}</div>` : ''}
+    ${hasMedia ? `<button class="public-teaser-media-lock" type="button" onclick="openTeaserSignup('${escapeAttr(username)}')">
+      <span class="public-teaser-media-icon">${mediaIcon}</span>
+      <span><b>${escapeHtml(mediaLabel)}</b><small>${teaserCopy('Crea una cuenta para ver el contenido','Create an account to view this content')}</small></span>
+      <strong>${teaserCopy('Crear cuenta','Create account')} →</strong>
+    </button>` : ''}
+  </article>`;
+}
+
+async function renderPublicTeaserProfile(username,{append=false,before=null}={}) {
+  const clean=String(username||'').trim().replace(/^@/,'');
+  const campaign=currentGrowthCampaign();
+  if(!clean || !campaign){ authScreen(); return; }
+  if(!append){
+    rememberPendingProfile(clean);
+    $('#app').innerHTML=`<div class="auth-page public-teaser-page"><section class="public-teaser-header"><div class="brand-logo-wrap">${brandLockup('big')}</div></section><main class="public-teaser-shell"><div class="card loading-card">${teaserCopy('Cargando perfil…','Loading profile…')}</div></main></div>`;
+  }
+  try{
+    const qs=new URLSearchParams({campaign,limit:'15'});
+    if(before) qs.set('before',String(before));
+    const data=await api(`/api/public/profile/${encodeURIComponent(clean)}/teaser?${qs.toString()}`,{timeout:15000});
+    const profile=data.profile || {};
+    const canonical=String(profile.username || clean).trim();
+    rememberPendingProfile(canonical);
+    if(append){
+      const list=$('#publicTeaserPostList');
+      if(list && Array.isArray(data.posts)) list.insertAdjacentHTML('beforeend',data.posts.map(p=>publicTeaserPostHtml(p,canonical)).join(''));
+      const more=$('#publicTeaserMore');
+      if(more){ more.outerHTML=data.has_more ? `<button id="publicTeaserMore" class="btn ghost public-teaser-more" onclick="loadMorePublicTeaserPosts('${escapeAttr(canonical)}',${Number(data.next_before||0)})">${teaserCopy('Ver más publicaciones','View more posts')}</button>` : ''; }
+      return;
+    }
+    document.title=`${profile.name || canonical} (@${canonical}) · Instant Admirers`;
+    const cover=String(profile.cover || '').trim(), avatarUrl=String(profile.avatar || '').trim();
+    const posts=Array.isArray(data.posts)?data.posts:[];
+    $('#app').innerHTML=`<div class="auth-page public-teaser-page">
+      <section class="public-teaser-header"><div class="brand-logo-wrap">${brandLockup('big')}</div><button class="btn ghost compact" onclick="returnFromPublicTeaser('${escapeAttr(canonical)}')">← ${teaserCopy('Volver','Back')}</button></section>
+      <main class="public-teaser-shell">
+        <section class="card profile-card profile-card-v7 public-teaser-profile-card">
+          <div class="profile-cover ${cover?'has-cover':''}">${cover?`<img src="${escapeAttr(cover)}" alt="" decoding="async">`:''}</div>
+          <div class="profile-main-v7">
+            <div class="profile-top"><div class="avatar xl">${avatarUrl?`<img src="${escapeAttr(avatarUrl)}" alt="${escapeAttr(profile.name||canonical)}" decoding="async">`:`<span>${escapeHtml(initials({name:profile.name,username:canonical}))}</span>`}</div><div class="profile-cta"><button class="btn primary compact" onclick="openTeaserSignup('${escapeAttr(canonical)}')">${teaserCopy('Crear cuenta','Create account')}</button></div></div>
+            <h2>${escapeHtml(profile.name || canonical)}</h2><div class="handle">@${escapeHtml(canonical)}</div>
+            ${profile.headline?`<div class="profile-headline user-content">${escapeHtml(profile.headline)}</div>`:''}
+            ${profile.bio?`<p class="user-content">${escapeHtml(profile.bio)}</p>`:''}
+          </div>
+        </section>
+        <section class="public-teaser-explainer"><span>🔒</span><div><b>${teaserCopy('Vista previa del perfil','Profile preview')}</b><p>${teaserCopy('Puedes leer sus publicaciones. Las fotos y vídeos se desbloquean al crear tu cuenta.','You can read their posts. Photos and videos unlock when you create your account.')}</p></div></section>
+        <div class="profile-section-title">${teaserCopy('Publicaciones','Posts')}</div>
+        <div class="post-list" id="publicTeaserPostList">${posts.length?posts.map(p=>publicTeaserPostHtml(p,canonical)).join(''):`<div class="card empty"><h3>${teaserCopy('Sin publicaciones todavía','No posts yet')}</h3></div>`}</div>
+        ${data.has_more?`<button id="publicTeaserMore" class="btn ghost public-teaser-more" onclick="loadMorePublicTeaserPosts('${escapeAttr(canonical)}',${Number(data.next_before||0)})">${teaserCopy('Ver más publicaciones','View more posts')}</button>`:''}
+        <section class="card public-teaser-final-cta"><b>${teaserCopy('¿Quieres ver las fotos y vídeos?','Want to see the photos and videos?')}</b><p>${teaserCopy('Crea tu cuenta desde esta invitación y entra directamente en este perfil.','Create your account from this invitation and go directly to this profile.')}</p><button class="btn primary large" onclick="openTeaserSignup('${escapeAttr(canonical)}')">${teaserCopy('Crear cuenta y ver contenido','Create account and view content')}</button></section>
+      </main>
+      <div class="public-teaser-sticky"><button class="btn primary" onclick="openTeaserSignup('${escapeAttr(canonical)}')">${teaserCopy('Crear cuenta para ver el contenido','Create account to view content')}</button></div>
+    </div>`;
+    window.IAI18N?.apply?.();
+    trackPublicTeaserEvent('view');
+  }catch(e){
+    if(!append){
+      try{ const params=new URLSearchParams(location.search); params.delete('preview'); history.replaceState({},'',`${location.pathname}${params.toString()?'?'+params.toString():''}`); }catch(_){}
+      authScreen();
+      setTimeout(()=>toast(e.message || teaserCopy('Vista previa no disponible','Preview unavailable'),'error'),80);
+    }
+  }
+}
+
+window.openPublicTeaserProfile=async(username)=>{
+  const clean=rememberPendingProfile(username);
+  if(!clean) return;
+  const params=new URLSearchParams(location.search); params.set('preview','1'); params.delete('auth');
+  history.pushState({publicTeaser:true,profile:clean},'',`/${encodeURIComponent(clean)}?${params.toString()}`);
+  await renderPublicTeaserProfile(clean);
+};
+window.returnFromPublicTeaser=(username)=>{
+  const clean=rememberPendingProfile(username);
+  const params=new URLSearchParams(location.search); params.delete('preview'); params.delete('auth');
+  history.replaceState({profile:clean},'',`/${encodeURIComponent(clean)}${params.toString()?'?'+params.toString():''}`);
+  authScreen();
+};
+window.openTeaserSignup=(username)=>{
+  const clean=rememberPendingProfile(username);
+  trackPublicTeaserEvent('signup_click');
+  history.pushState({profile:clean,auth:'register'},'',publicTeaserSignupUrl(clean));
+  authScreen();
+  showAuth('register');
+  window.scrollTo({top:0,behavior:'smooth'});
+};
+window.loadMorePublicTeaserPosts=async(username,before)=>{
+  const btn=$('#publicTeaserMore'); if(btn){btn.disabled=true;btn.textContent=teaserCopy('Cargando…','Loading…');}
+  await renderPublicTeaserProfile(username,{append:true,before});
+};
 
 async function loadLaunchStatus() {
   try {
@@ -3132,18 +3266,19 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.9</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.10</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>
         <label>Perfil destino<input id="growthCampaignTarget" maxlength="30" value="${escapeAttr(state.me?.username || '')}" placeholder="usuario"></label>
         <label>Pieza / origen <small>(opcional)</small><input id="growthCampaignSourceTag" maxlength="120" placeholder="story-01, post-16k, bio..."></label>
         <label class="growth-message-create">Mensaje de acceso <small>(opcional · 220 caracteres)</small><textarea id="growthCampaignAccessMessage" maxlength="220" rows="3" placeholder="Este texto aparecerá en Entrar y Crear cuenta cuando la visita llegue desde esta campaña."></textarea></label>
+        <label class="growth-public-preview-toggle"><input id="growthCampaignPublicTeaser" type="checkbox"><span><b>Vista pública del perfil</b><small>Al tocar la cabecera o foto, muestra el perfil y texto de posts. Fotos/vídeos quedan bloqueados hasta crear cuenta.</small></span></label>
         <button class="btn primary compact growth-create-button" onclick="createGrowthCampaign()">Crear campaña</button>
       </div>
       <p class="growth-attribution-note">El enlace generado añade UTM automáticamente. Instant Admirers registra la fuente, el referrer disponible y el dispositivo sin guardar la IP del visitante.</p>
       ${growth.profiles?.length?`<div class="growth-profile-funnels"><small>EMBUDO DE PERFILES EXCLUSIVOS</small>${growth.profiles.map(p=>`<div class="growth-profile-row"><div><b>@${escapeHtml(p.username)}</b><span>Reto: ${Number(p.required||0)} invitaciones${p.require_post?' + 1 post':''}</span></div><div><span><b>${Number(p.challenge_starts||0)}</b> iniciados</span><span><b>${Number(p.share_actions||0)}</b> compartidos</span><span><b>${Number(p.referred_signups||0)}</b> altas</span><span><b>${Number(p.completed||0)}</b> desbloqueos</span></div></div>`).join('')}</div>`:`<div class="growth-empty"><b>Aún no hay perfiles con acceso especial activo</b><span>Activa “Acceso a mi perfil” para usar el embudo viral.</span></div>`}
-      <div class="growth-campaign-list">${growth.campaigns?.length?growth.campaigns.map(c=>`<article class="growth-campaign-card ${c.active?'':'inactive'}"><div class="growth-campaign-head"><div><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.channel)} · @${escapeHtml(c.target_username)}${c.source_tag?` · ${escapeHtml(c.source_tag)}`:''}</span></div><em>${c.active?'ACTIVA':'PAUSADA'}</em></div>${!c.target_gate_enabled?`<div class="growth-warning">⚠ El perfil destino no tiene activo el acceso especial.</div>`:''}<div class="growth-funnel"><span><b>${Number(c.metrics?.visits||0)}</b> visitas</span><span><b>${Number(c.metrics?.registrations||0)}</b> registros</span><span><b>${Number(c.metrics?.challenge_starts||0)}</b> retos</span><span><b>${Number(c.metrics?.share_actions||0)}</b> comparticiones</span><span><b>${Number(c.metrics?.referred_signups||0)}</b> referidos</span><span><b>${Number(c.metrics?.completed||0)}</b> desbloqueos</span></div><div class="growth-campaign-message-preview"><small>MENSAJE DE ACCESO</small><p>${c.access_message?`“${escapeHtml(c.access_message)}”`:'Usará el mensaje general del perfil.'}</p></div><div class="growth-link-row"><input readonly value="${escapeAttr(c.link||'')}"><button class="btn ghost compact" onclick="copyGrowthLink('${escapeAttr(c.link||'')}')">Copiar</button><button class="btn ${c.active?'danger':'primary'} compact" onclick="toggleGrowthCampaign(${c.id},${c.active?'false':'true'})">${c.active?'Pausar':'Activar'}</button></div>${growthAttributionDetailsHtml(c)}<details class="growth-campaign-edit"><summary>Editar mensaje y origen</summary><div class="growth-campaign-edit-grid"><label>Mensaje de acceso<textarea id="growthAccessMessage-${c.id}" maxlength="220" rows="3" placeholder="Vacío = usar mensaje general del perfil">${escapeHtml(c.access_message||'')}</textarea></label><label>Pieza / origen<input id="growthSourceTag-${c.id}" maxlength="120" value="${escapeAttr(c.source_tag||'')}" placeholder="story-01, bio, reel-03..."></label><button class="btn primary compact" onclick="saveGrowthCampaignDetails(${c.id})">Guardar cambios</button></div></details></article>`).join(''):`<div class="growth-empty"><b>Crea tu primera campaña</b><span>Por ejemplo: “Página 16K” con canal Facebook y @rubi como perfil destino.</span></div>`}</div>
+      <div class="growth-campaign-list">${growth.campaigns?.length?growth.campaigns.map(c=>`<article class="growth-campaign-card ${c.active?'':'inactive'}"><div class="growth-campaign-head"><div><b>${escapeHtml(c.name)}</b><span>${escapeHtml(c.channel)} · @${escapeHtml(c.target_username)}${c.source_tag?` · ${escapeHtml(c.source_tag)}`:''}</span></div><em>${c.active?'ACTIVA':'PAUSADA'}</em></div>${!c.target_gate_enabled?`<div class="growth-warning">⚠ El perfil destino no tiene activo el acceso especial.</div>`:''}<div class="growth-funnel"><span><b>${Number(c.metrics?.visits||0)}</b> visitas</span><span><b>${Number(c.metrics?.registrations||0)}</b> registros</span>${c.public_teaser_enabled?`<span><b>${Number(c.metrics?.teaser_views||0)}</b> vistas perfil</span><span><b>${Number(c.metrics?.teaser_signup_clicks||0)}</b> clics alta</span>`:''}<span><b>${Number(c.metrics?.challenge_starts||0)}</b> retos</span><span><b>${Number(c.metrics?.share_actions||0)}</b> comparticiones</span><span><b>${Number(c.metrics?.referred_signups||0)}</b> referidos</span><span><b>${Number(c.metrics?.completed||0)}</b> desbloqueos</span></div>${c.public_teaser_enabled?'<div class="growth-public-preview-chip">👁 Vista pública activa · multimedia bloqueada</div>':''}<div class="growth-campaign-message-preview"><small>MENSAJE DE ACCESO</small><p>${c.access_message?`“${escapeHtml(c.access_message)}”`:'Usará el mensaje general del perfil.'}</p></div><div class="growth-link-row"><input readonly value="${escapeAttr(c.link||'')}"><button class="btn ghost compact" onclick="copyGrowthLink('${escapeAttr(c.link||'')}')">Copiar</button><button class="btn ${c.active?'danger':'primary'} compact" onclick="toggleGrowthCampaign(${c.id},${c.active?'false':'true'})">${c.active?'Pausar':'Activar'}</button></div>${growthAttributionDetailsHtml(c)}<details class="growth-campaign-edit"><summary>Editar mensaje y origen</summary><div class="growth-campaign-edit-grid"><label>Mensaje de acceso<textarea id="growthAccessMessage-${c.id}" maxlength="220" rows="3" placeholder="Vacío = usar mensaje general del perfil">${escapeHtml(c.access_message||'')}</textarea></label><label>Pieza / origen<input id="growthSourceTag-${c.id}" maxlength="120" value="${escapeAttr(c.source_tag||'')}" placeholder="story-01, bio, reel-03..."></label><label class="growth-public-preview-toggle compact"><input id="growthPublicTeaser-${c.id}" type="checkbox" ${c.public_teaser_enabled?'checked':''}><span><b>Vista pública del perfil</b><small>Permite tocar foto/cabecera antes del registro.</small></span></label><button class="btn primary compact" onclick="saveGrowthCampaignDetails(${c.id})">Guardar cambios</button></div></details></article>`).join(''):`<div class="growth-empty"><b>Crea tu primera campaña</b><span>Por ejemplo: “Página 16K” con canal Facebook y @rubi como perfil destino.</span></div>`}</div>
     </section>
     <section class="card admin-section demo-lab">
       <div class="section-row"><div><h3>Laboratorio de pruebas</h3><p>Datos sintéticos, claramente marcados y eliminables. No son usuarios reales.</p></div><span class="demo-lab-badge ${demo.active?'active':''}">${demo.active?'ACTIVO':'VACÍO'}</span></div>
@@ -3178,12 +3313,13 @@ window.createGrowthCampaign=async()=>{
     channel:String($('#growthCampaignChannel')?.value||'facebook'),
     target_username:String($('#growthCampaignTarget')?.value||'').trim().replace(/^@/,''),
     source_tag:String($('#growthCampaignSourceTag')?.value||'').trim().slice(0,120),
-    access_message:String($('#growthCampaignAccessMessage')?.value||'').trim().slice(0,220)
+    access_message:String($('#growthCampaignAccessMessage')?.value||'').trim().slice(0,220),
+    public_teaser_enabled:Boolean($('#growthCampaignPublicTeaser')?.checked)
   };
   try{const created=await api('/api/admin/growth-campaigns',{method:'POST',body:JSON.stringify(payload)});toast('Campaña creada');if(created.link) await window.copyGrowthLink(created.link);await renderAdmin();}catch(e){toast(e.message,'error');}
 };
 window.saveGrowthCampaignDetails=async(id)=>{
-  const payload={access_message:String($(`#growthAccessMessage-${id}`)?.value||'').trim().slice(0,220),source_tag:String($(`#growthSourceTag-${id}`)?.value||'').trim().slice(0,120)};
+  const payload={access_message:String($(`#growthAccessMessage-${id}`)?.value||'').trim().slice(0,220),source_tag:String($(`#growthSourceTag-${id}`)?.value||'').trim().slice(0,120),public_teaser_enabled:Boolean($(`#growthPublicTeaser-${id}`)?.checked)};
   try{await api(`/api/admin/growth-campaigns/${id}`,{method:'PATCH',body:JSON.stringify(payload)});toast('Campaña actualizada');await renderAdmin();}catch(e){toast(e.message,'error');}
 };
 window.toggleGrowthCampaign=async(id,active)=>{try{await api(`/api/admin/growth-campaigns/${id}`,{method:'PATCH',body:JSON.stringify({active:Boolean(active)})});toast(active?'Campaña activada':'Campaña pausada');await renderAdmin();}catch(e){toast(e.message,'error');}};
@@ -3354,7 +3490,13 @@ window.adminToggleUser = async (userId,status,reportId) => {
 async function init(options = {}) {
   trackGrowthCampaignLanding();
   if (await handleAuthLink()) return;
-  if (!state.token) { authScreen(); updatePwaInstallUi(); return; }
+  if (!state.token) {
+    const publicProfile=profileUsernameFromPath(location.pathname);
+    if(publicProfile && publicTeaserRequested() && currentGrowthCampaign()) await renderPublicTeaserProfile(publicProfile);
+    else authScreen();
+    updatePwaInstallUi();
+    return;
+  }
   if (!navigator.onLine) { renderOfflineLaunch(); updatePwaInstallUi(); return; }
   try {
     state.me = await api('/api/me');
@@ -3412,7 +3554,8 @@ window.addEventListener('popstate', async () => {
   if (!state.token) {
     const username = profileUsernameFromPath(location.pathname);
     if (username) rememberPendingProfile(username);
-    authScreen();
+    if(username && publicTeaserRequested() && currentGrowthCampaign()) await renderPublicTeaserProfile(username);
+    else authScreen();
     return;
   }
   const username = profileUsernameFromPath(location.pathname);

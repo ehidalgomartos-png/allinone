@@ -1,4 +1,4 @@
-// Instant Admirers V1.12.9 · Español / English
+// Instant Admirers V1.12.10 · Español / English
 (() => {
   const STORAGE_KEY = 'iaLanguage';
   const SUPPORTED = new Set(['es','en']);
@@ -149,7 +149,7 @@
     // En autenticación colocamos ES / EN en la cabecera, junto al logotipo.
     // Así no ocupa una fila propia entre la presentación y el formulario.
     const authPage=document.querySelector('.auth-page');
-    const authHeader=document.querySelector('.auth-hero .brand-logo-wrap');
+    const authHeader=document.querySelector('.auth-hero .brand-logo-wrap, .public-teaser-header .brand-logo-wrap');
     const authCard=document.querySelector('.auth-card-wrap');
     if(authPage && !authPage.querySelector('[data-language-switcher]')){
       if(authHeader) authHeader.insertAdjacentHTML('beforeend',switcherHtml(true));
