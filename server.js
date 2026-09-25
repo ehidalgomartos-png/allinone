@@ -95,6 +95,7 @@ const recoveryLimiter = limiter({ windowMs: 15*60*1000, max: 6, message: 'Demasi
 const writeLimiter = rateLimit({ windowMs: 60*1000, max: 140, standardHeaders: 'draft-7', legacyHeaders: false, skip: req => ['GET','HEAD','OPTIONS'].includes(req.method), message: { error:'Estás realizando acciones demasiado rápido. Espera un momento.' } });
 const reportLimiter = limiter({ windowMs: 60*60*1000, max: 12, message: 'Has enviado demasiadas denuncias en poco tiempo.' });
 const telemetryLimiter = limiter({ windowMs: 5*60*1000, max: 30, message: 'Demasiados eventos técnicos en poco tiempo.' });
+const publicTeaserLimiter = limiter({ windowMs:10*60*1000, max:80, message:'Demasiadas solicitudes de vista previa. Espera unos minutos.' });
 app.use('/api', writeLimiter);
 app.use('/api/auth/login', loginLimiter);
 app.use('/api/auth/register', registerLimiter);
@@ -225,7 +226,7 @@ function growthDeviceType(req, supplied='') {
 }
 
 async function incrementGrowthDaily(campaignId, field, client=pool) {
-  const allowed=new Set(['visits','challenge_views','share_actions']);
+  const allowed=new Set(['visits','challenge_views','share_actions','teaser_views','teaser_signup_clicks']);
   if(!campaignId || !allowed.has(field)) return;
   await client.query(`
     INSERT INTO growth_campaign_daily(campaign_id,day,${field}) VALUES($1,CURRENT_DATE,1)
@@ -1129,7 +1130,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.12.9', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default'] });
+  res.json({ ok: true, version: '1.12.10', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default','growth-public-teaser-profile','growth-teaser-media-lock','growth-teaser-signup-attribution'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -2207,12 +2208,13 @@ app.get('/api/public/profile/:username', asyncRoute(async (req, res) => {
 
   let campaignMessage='';
   let growthPreview=false;
+  let growthCampaign=null;
   const campaignSlug=normalizeCampaignSlug(req.query?.campaign || '');
   if(campaignSlug){
-    const campaign=await growthCampaignBySlug(campaignSlug);
-    if(campaign && Number(campaign.target_user_id)===Number(target.id)){
+    growthCampaign=await growthCampaignBySlug(campaignSlug);
+    if(growthCampaign && Number(growthCampaign.target_user_id)===Number(target.id)){
       growthPreview=true;
-      campaignMessage=String(campaign.access_message || '').trim().slice(0,220);
+      campaignMessage=String(growthCampaign.access_message || '').trim().slice(0,220);
     }
   }
 
@@ -2226,6 +2228,7 @@ app.get('/api/public/profile/:username', asyncRoute(async (req, res) => {
     access_message:target.friend_gate_enabled ? (campaignMessage || profileMessage) : '',
     access_message_source:campaignMessage ? 'campaign' : (profileMessage ? 'profile' : 'default'),
     growth_campaign_preview:growthPreview,
+    public_teaser_enabled:Boolean(growthPreview && growthCampaign?.public_teaser_enabled),
     profile_preview:growthPreview ? {
       username:target.username,
       name:String(target.name || '').slice(0,100),
@@ -2235,6 +2238,89 @@ app.get('/api/public/profile/:username', asyncRoute(async (req, res) => {
       cover:String(target.cover || '').slice(0,2000)
     } : null
   });
+}));
+
+
+// V1.12.10: perfil teaser público disponible sólo para campañas Growth Engine
+// activadas expresamente. Las publicaciones nunca entregan URLs de fotos/vídeos:
+// sólo texto y la existencia/tipo de multimedia para mostrar el bloqueo de alta.
+app.get('/api/public/profile/:username/teaser', publicTeaserLimiter, asyncRoute(async (req,res)=>{
+  const username=String(req.params.username || '').trim().replace(/^@/,'');
+  if(!/^[a-zA-Z0-9_.]{3,30}$/.test(username)) return res.status(404).json({error:'Perfil no encontrado'});
+  const campaignSlug=normalizeCampaignSlug(req.query?.campaign || '');
+  const campaign=await growthCampaignBySlug(campaignSlug);
+  if(!campaign || !campaign.public_teaser_enabled) return res.status(404).json({error:'Vista previa no disponible'});
+
+  const {rows:users}=await pool.query(`
+    SELECT id,username,name,bio,avatar,headline,cover
+      FROM users
+     WHERE LOWER(username)=LOWER($1) AND id=$2 AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE
+     LIMIT 1
+  `,[username,campaign.target_user_id]);
+  const target=users[0];
+  if(!target) return res.status(404).json({error:'Perfil no encontrado'});
+
+  const limit=Math.min(30,Math.max(5,Number(req.query?.limit || 15)));
+  const before=Number(req.query?.before || 0);
+  const params=[target.id];
+  let cursorSql='';
+  if(Number.isInteger(before) && before>0){ params.push(before); cursorSql=`AND p.id < $${params.length}`; }
+  params.push(limit+1);
+  const limitParam=params.length;
+  const {rows:rawPosts}=await pool.query(`
+    SELECT p.id,p.text,p.media_type,p.media_id,p.external_url,p.created_at,p.repost_of_id,
+           rp.text AS repost_text,rp.media_type AS repost_media_type,rp.media_id AS repost_media_id,rp.external_url AS repost_external_url
+      FROM posts p
+      LEFT JOIN posts rp ON rp.id=p.repost_of_id AND rp.visibility='public'
+     WHERE p.user_id=$1 AND p.visibility='public' ${cursorSql}
+     ORDER BY p.id DESC
+     LIMIT $${limitParam}
+  `,params);
+  const hasMore=rawPosts.length>limit;
+  const page=rawPosts.slice(0,limit);
+
+  const posts=page.map(post=>{
+    const ownType=String(post.media_type || 'none').toLowerCase();
+    const repostType=String(post.repost_media_type || 'none').toLowerCase();
+    const ownMedia=Boolean(post.media_id || String(post.external_url||'').trim() || (ownType && ownType!=='none'));
+    const repostMedia=Boolean(post.repost_media_id || String(post.repost_external_url||'').trim() || (repostType && repostType!=='none'));
+    const mediaType=(ownType==='video' || repostType==='video') ? 'video' : ((ownMedia || repostMedia) ? 'image' : 'none');
+    return {
+      id:Number(post.id),
+      text:String(post.text || ''),
+      repost_text:String(post.repost_text || ''),
+      is_repost:Boolean(post.repost_of_id),
+      has_media:Boolean(ownMedia || repostMedia),
+      media_type:mediaType,
+      created_at:post.created_at
+    };
+  });
+
+  res.json({
+    ok:true,
+    campaign:String(campaign.slug),
+    profile:{
+      username:target.username,
+      name:String(target.name || '').slice(0,100),
+      headline:String(target.headline || '').slice(0,140),
+      bio:String(target.bio || '').slice(0,500),
+      avatar:String(target.avatar || '').slice(0,2000),
+      cover:String(target.cover || '').slice(0,2000)
+    },
+    posts,
+    has_more:hasMore,
+    next_before:hasMore && posts.length ? posts[posts.length-1].id : null
+  });
+}));
+
+app.post('/api/growth/campaign/teaser-event', asyncRoute(async (req,res)=>{
+  const campaign=await growthCampaignBySlug(req.body?.campaign || '');
+  if(!campaign || !campaign.public_teaser_enabled) return res.status(404).json({error:'Campaña no encontrada'});
+  const event=String(req.body?.event || '').trim().toLowerCase();
+  const field=event==='view' ? 'teaser_views' : (event==='signup_click' ? 'teaser_signup_clicks' : '');
+  if(!field) return res.status(400).json({error:'Evento no válido'});
+  await incrementGrowthDaily(campaign.id,field);
+  res.json({ok:true});
 }));
 
 app.get('/api/users/:username', auth, asyncRoute(async (req, res) => {
@@ -3538,6 +3624,8 @@ app.get('/api/admin/growth-engine', auth, adminOnly, asyncRoute(async (_req,res)
         (SELECT COUNT(*)::int FROM growth_campaign_attributions WHERE campaign_id=$1) AS registrations,
         (SELECT COUNT(*)::int FROM friend_gate_sessions WHERE campaign_id=$1) AS challenge_starts,
         COALESCE((SELECT SUM(share_actions)::int FROM friend_gate_sessions WHERE campaign_id=$1),0) AS share_actions,
+        COALESCE((SELECT SUM(teaser_views)::int FROM growth_campaign_daily WHERE campaign_id=$1),0) AS teaser_views,
+        COALESCE((SELECT SUM(teaser_signup_clicks)::int FROM growth_campaign_daily WHERE campaign_id=$1),0) AS teaser_signup_clicks,
         (SELECT COUNT(*)::int FROM growth_campaign_attributions gca JOIN referral_attributions ra ON ra.invited_user_id=gca.user_id WHERE gca.campaign_id=$1 AND ra.gate_user_id IS NOT NULL) AS referred_signups,
         (SELECT COUNT(*)::int FROM friend_gate_sessions WHERE campaign_id=$1 AND completed_at IS NOT NULL) AS completed
     `,[row.id]);
@@ -3591,6 +3679,7 @@ app.post('/api/admin/growth-campaigns', auth, adminOnly, asyncRoute(async (req,r
   const username=String(req.body?.target_username || req.user.username || '').trim().replace(/^@/,'');
   const accessMessage=String(req.body?.access_message || '').trim().slice(0,220);
   const sourceTag=String(req.body?.source_tag || '').trim().slice(0,120);
+  const publicTeaserEnabled=Boolean(req.body?.public_teaser_enabled);
   if(name.length<2) return res.status(400).json({error:'Escribe un nombre para la campaña'});
   if(!['facebook','instagram','tiktok','whatsapp','google','email','other'].includes(channel)) return res.status(400).json({error:'Canal no válido'});
   const targetResult=await pool.query(`SELECT id,username,name,invite_code,friend_gate_enabled,friend_gate_required_referrals FROM users WHERE LOWER(username)=LOWER($1) AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE LIMIT 1`,[username]);
@@ -3602,9 +3691,9 @@ app.post('/api/admin/growth-campaigns', auth, adminOnly, asyncRoute(async (req,r
     if(!exists.rowCount) break;
     slug=`${slugifyCampaign(`${name}-${channel}`).slice(0,43)}-${crypto.randomBytes(2).toString('hex')}`;
   }
-  const {rows}=await pool.query(`INSERT INTO growth_campaigns(created_by,target_user_id,name,slug,channel,access_message,source_tag) VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,[req.user.id,target.id,name,slug,channel,accessMessage,sourceTag]);
+  const {rows}=await pool.query(`INSERT INTO growth_campaigns(created_by,target_user_id,name,slug,channel,access_message,source_tag,public_teaser_enabled) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[req.user.id,target.id,name,slug,channel,accessMessage,sourceTag,publicTeaserEnabled]);
   const row={...rows[0],target_username:target.username,target_name:target.name,target_invite_code:target.invite_code,target_gate_enabled:target.friend_gate_enabled,target_gate_required:target.friend_gate_required_referrals};
-  await pool.query(`INSERT INTO moderation_actions(admin_id,action,target_user_id,note) VALUES($1,'growth_campaign_create',$2,$3)`,[req.user.id,target.id,JSON.stringify({name,slug,channel,source_tag:sourceTag,has_access_message:Boolean(accessMessage)}).slice(0,1000)]);
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,target_user_id,note) VALUES($1,'growth_campaign_create',$2,$3)`,[req.user.id,target.id,JSON.stringify({name,slug,channel,source_tag:sourceTag,has_access_message:Boolean(accessMessage),public_teaser_enabled:publicTeaserEnabled}).slice(0,1000)]);
   res.json({...row,link:growthCampaignLink(row)});
 }));
 
@@ -3617,11 +3706,12 @@ app.patch('/api/admin/growth-campaigns/:id', auth, adminOnly, asyncRoute(async (
   const active=typeof req.body?.active==='boolean' ? Boolean(req.body.active) : Boolean(current.active);
   const accessMessage=req.body?.access_message===undefined ? String(current.access_message || '') : String(req.body.access_message || '').trim().slice(0,220);
   const sourceTag=req.body?.source_tag===undefined ? String(current.source_tag || '') : String(req.body.source_tag || '').trim().slice(0,120);
-  const {rows}=await pool.query(`UPDATE growth_campaigns SET active=$2,access_message=$3,source_tag=$4,updated_at=NOW() WHERE id=$1 RETURNING *`,[id,active,accessMessage,sourceTag]);
+  const publicTeaserEnabled=typeof req.body?.public_teaser_enabled==='boolean' ? Boolean(req.body.public_teaser_enabled) : Boolean(current.public_teaser_enabled);
+  const {rows}=await pool.query(`UPDATE growth_campaigns SET active=$2,access_message=$3,source_tag=$4,public_teaser_enabled=$5,updated_at=NOW() WHERE id=$1 RETURNING *`,[id,active,accessMessage,sourceTag,publicTeaserEnabled]);
   const targetResult=await pool.query(`SELECT username,name,invite_code,friend_gate_enabled,friend_gate_required_referrals FROM users WHERE id=$1 LIMIT 1`,[rows[0].target_user_id]);
   const target=targetResult.rows[0] || {};
   const row={...rows[0],target_username:target.username,target_name:target.name,target_invite_code:target.invite_code,target_gate_enabled:target.friend_gate_enabled,target_gate_required:target.friend_gate_required_referrals};
-  await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'growth_campaign_update',$2)`,[req.user.id,JSON.stringify({id,active,source_tag:sourceTag,has_access_message:Boolean(accessMessage)}).slice(0,1000)]);
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'growth_campaign_update',$2)`,[req.user.id,JSON.stringify({id,active,source_tag:sourceTag,has_access_message:Boolean(accessMessage),public_teaser_enabled:publicTeaserEnabled}).slice(0,1000)]);
   res.json({...row,link:growthCampaignLink(row)});
 }));
 
@@ -4053,7 +4143,7 @@ async function start() {
   await syncSystemAccounts();
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Instant Admirers V1.12.9 en http://localhost:${PORT}`);
+    console.log(`Instant Admirers V1.12.10 en http://localhost:${PORT}`);
     void hardenLegacyCloudinaryMedia().catch(err => console.error('Protección multimedia heredada:', err.message));
     void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message));
     const bunnyStatusTimer=setInterval(() => void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message)),30000);

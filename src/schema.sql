@@ -631,6 +631,10 @@ ALTER TABLE users ADD CONSTRAINT users_content_watermark_mode_check
 -- V1.12.4: atribución detallada del Growth Engine y mensaje por campaña.
 ALTER TABLE growth_campaigns ADD COLUMN IF NOT EXISTS access_message VARCHAR(220) NOT NULL DEFAULT '';
 ALTER TABLE growth_campaigns ADD COLUMN IF NOT EXISTS source_tag VARCHAR(120) NOT NULL DEFAULT '';
+-- V1.12.10: vista pública teaser activable por campaña Growth Engine.
+ALTER TABLE growth_campaigns ADD COLUMN IF NOT EXISTS public_teaser_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE growth_campaign_daily ADD COLUMN IF NOT EXISTS teaser_views INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE growth_campaign_daily ADD COLUMN IF NOT EXISTS teaser_signup_clicks INTEGER NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS growth_campaign_visits (
   id BIGSERIAL PRIMARY KEY,

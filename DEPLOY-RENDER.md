@@ -1,27 +1,13 @@
-# Deploy Instant Admirers V1.12.9 — Video Quality Startup
+# Deploy Instant Admirers V1.12.10 — Public Teaser Profile
 
-Usa el mismo servicio Render y la misma PostgreSQL existentes.
+## Render
+No requiere nuevas variables de entorno. Mantén las variables actuales de V1.12.9 (Bunny, Resend, PostgreSQL, etc.).
 
-- Build Command: `npm install`
-- Start Command: `npm start`
-- Health Check: `/api/health`
-- Dominio: `https://instantadmirers.com`
+Despliega el repositorio de forma habitual. La migración de esquema es automática e idempotente.
 
-## Configuración
-V1.12.9 no añade variables de entorno ni migraciones.
+## Comprobación
+Abre `/api/health` y confirma `version: 1.12.10`, `images: bunny_storage` y `videos: bunny_stream`.
 
-Conserva exactamente la configuración Bunny de V1.12.6:
-- Bunny Storage para imágenes;
-- Bunny Stream para vídeos;
-- Cloudinary solo como compatibilidad legacy.
+Después activa **Vista pública del perfil** en una campaña de Growth Engine y prueba el enlace en incógnito.
 
-## Después del deploy
-Abre:
-
-```text
-https://instantadmirers.com/api/health
-```
-
-Debe indicar `version: 1.12.9`, `images: bunny_storage` y `videos: bunny_stream`.
-
-Después prueba un enlace real de Growth Engine en incógnito. La vista previa visual del perfil debe mostrarse tanto en Entrar como en Crear cuenta.
+Esta versión no necesita ni utiliza `DEEPL_API_KEY`.
