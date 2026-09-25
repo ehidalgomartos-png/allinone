@@ -1073,6 +1073,32 @@ body{
 }
 
 /* V1.12.10 · Growth Engine Public Teaser Profile */
+/* V1.12.11 · Desktop fix para Growth Engine Public Teaser Profile */
+@media (min-width:861px){
+  body:has(.public-teaser-page){padding-bottom:0}
+  .public-teaser-page.auth-page{
+    display:block;
+    width:100%;
+    max-width:none;
+    min-height:100vh;
+    margin:0;
+    padding:0 0 40px;
+    gap:0;
+    align-items:initial;
+  }
+  .public-teaser-header{
+    width:min(820px,calc(100% - 48px));
+    margin:0 auto;
+    padding:24px 0 14px;
+  }
+  .public-teaser-shell{
+    width:min(760px,calc(100% - 48px));
+    margin:0 auto;
+    padding:10px 0 42px;
+  }
+  .public-teaser-profile-card,.public-teaser-explainer,.public-teaser-page .post-list,.public-teaser-final-cta{width:100%;box-sizing:border-box}
+}
+
 .profile-auth-preview-cover.is-clickable,.profile-auth-preview-avatar.is-clickable{cursor:pointer}
 .profile-auth-preview-cover.is-clickable:focus-visible,.profile-auth-preview-avatar.is-clickable:focus-visible{outline:2px solid #ff2aa1;outline-offset:2px}
 .profile-auth-preview-open{position:absolute;right:10px;bottom:9px;z-index:4;padding:5px 8px;border:1px solid rgba(255,255,255,.16);border-radius:999px;background:rgba(7,7,12,.74);color:#fff;font-size:8px;font-weight:900;letter-spacing:.02em;backdrop-filter:blur(9px)}
