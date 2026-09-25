@@ -1,4 +1,4 @@
-// V1.12.11 · Public Teaser Profile + Bunny Media + SEO + Growth Engine + Protección de contenido
+// V1.12.12 · Full Image Viewer + Public Teaser Profile + Bunny Media + SEO + Growth Engine + Protección de contenido
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en','ciudades','guias',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','sitemap-core.xml','sitemap-landings.xml','login','register','logout','admin',
@@ -1489,11 +1489,56 @@ function mediaWatermarkHtml(item) {
   return `<span class="media-watermark watermark-a" aria-hidden="true">${escapeHtml(label)}</span><span class="media-watermark watermark-b" aria-hidden="true">${escapeHtml(label)}</span>`;
 }
 
+
+// V1.12.12 · Visor de imagen completa para publicaciones y contenido compartido.
+function imageViewerAttrs(item) {
+  const protectedFlag=item?.media_protected ? '1' : '0';
+  const watermarkedFlag=item?.watermarked ? '1' : '0';
+  return ` data-image-viewer="1" data-viewer-protected="${protectedFlag}" data-viewer-watermarked="${watermarkedFlag}" role="button" tabindex="0" aria-label="Ver imagen completa" title="Ver imagen completa" onclick="openImageViewerFromElement(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openImageViewerFromElement(this)}"`;
+}
+
+function imageViewerFrameAttrs(item) {
+  if (!item?.media_url || item?.media_type === 'video') return '';
+  const protectedFlag=item?.media_protected ? '1' : '0';
+  const watermarkedFlag=item?.watermarked ? '1' : '0';
+  return ` data-image-viewer-frame="1" data-viewer-protected="${protectedFlag}" data-viewer-watermarked="${watermarkedFlag}" role="button" tabindex="0" aria-label="Ver imagen completa" title="Ver imagen completa" onclick="openImageViewerFromFrame(this)" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openImageViewerFromFrame(this)}"`;
+}
+
+function showFullImageViewer(img, source={}) {
+  if (!img) return;
+  const src=String(img.currentSrc || img.src || '').trim();
+  if (!src) return;
+  const protectedMedia=String(source.protected ?? img.dataset.viewerProtected ?? '') === '1' || Boolean(img.closest?.('[data-protected-media-frame="1"]'));
+  const watermarked=String(source.watermarked ?? img.dataset.viewerWatermarked ?? '') === '1' || Boolean(img.closest?.('.protected-media-frame')?.querySelector?.('.media-watermark'));
+  const alt=String(img.alt || 'Imagen de publicación');
+  const protectionAttrs=protectedMedia ? ' data-protected-media-frame="1" oncontextmenu="return false" ondragstart="return false"' : '';
+  const imageProtectionAttrs=protectedMedia ? ' data-protected-media="1" draggable="false" oncontextmenu="return false"' : '';
+  const watermarks=watermarked ? mediaWatermarkHtml({watermarked:true}) : '';
+  $('#modal-root').innerHTML = `<div class="image-viewer-backdrop" onclick="if(event.target===this)closeModal()">
+    <div class="image-viewer-dialog" role="dialog" aria-modal="true" aria-label="Imagen completa">
+      <div class="image-viewer-head"><b>Imagen completa</b><button class="image-viewer-close" type="button" aria-label="Cerrar" onclick="closeModal()">×</button></div>
+      <div class="image-viewer-stage ${protectedMedia || watermarked ? 'protected-media-frame' : ''}"${protectionAttrs}>
+        <img class="image-viewer-image" src="${escapeAttr(src)}" alt="${escapeAttr(alt)}"${imageProtectionAttrs}>
+        ${watermarks}
+      </div>
+      <div class="image-viewer-hint">Pulsa fuera de la imagen o Esc para cerrar</div>
+    </div>
+  </div>`;
+}
+
+window.openImageViewerFromElement = img => showFullImageViewer(img);
+window.openImageViewerFromFrame = frame => {
+  const img=frame?.querySelector?.('img');
+  if (!img) return;
+  showFullImageViewer(img,{protected:frame.dataset.viewerProtected,watermarked:frame.dataset.viewerWatermarked});
+};
+
 function protectedMediaFrame(item, mediaHtml, className='') {
   if (!mediaHtml && item?.media_processing) return `<div class="media-processing"><span>◌</span><b>${escapeHtml(window.IAI18N?.t?.('Procesando vídeo…','Processing video…') || 'Procesando vídeo…')}</b><small>${escapeHtml(window.IAI18N?.t?.('Estará disponible en unos momentos.','It will be available in a few moments.') || 'Estará disponible en unos momentos.')}</small></div>`;
   if (!mediaHtml) return '';
   if (!item?.media_protected && !item?.watermarked) return mediaHtml;
-  return `<div class="protected-media-frame ${escapeAttr(className)}" data-protected-media-frame="1" oncontextmenu="return false" ondragstart="return false">${mediaHtml}${mediaWatermarkHtml(item)}</div>`;
+  const imageFrameAttrs=imageViewerFrameAttrs(item);
+  return `<div class="protected-media-frame ${escapeAttr(className)}" data-protected-media-frame="1" oncontextmenu="return false" ondragstart="return false"${imageFrameAttrs}>${mediaHtml}${mediaWatermarkHtml(item)}</div>`;
 }
 
 function repostEmbed(r) {
@@ -1501,7 +1546,7 @@ function repostEmbed(r) {
   if (r.unavailable) return `<div class="repost-embed unavailable">Esta publicación ya no está disponible.</div>`;
   const rawMedia = r.media_url ? (r.media_type === 'video'
     ? `<video class="repost-media"${mediaVideoSourceAttrs(r)} controls playsinline preload="none" data-lazy-video="1"${mediaProtectionAttrs(r,{video:true})}></video>`
-    : `<img class="repost-media" src="${escapeAttr(r.media_url)}" loading="lazy" decoding="async" alt=""${mediaProtectionAttrs(r)}>` ) : '';
+    : `<img class="repost-media" src="${escapeAttr(r.media_url)}" loading="lazy" decoding="async" alt=""${mediaProtectionAttrs(r)}${imageViewerAttrs(r)}>` ) : '';
   const media = protectedMediaFrame(r,rawMedia,'repost-protected-media');
   return `<div class="repost-embed">
     <button class="repost-author" onclick="openProfile('${escapeAttr(r.username)}')">${avatar(r,'small')}<span><b>${escapeHtml(r.name)}</b><small>@${escapeHtml(r.username)} · ${timeAgo(r.created_at)}</small></span></button>
@@ -1513,7 +1558,7 @@ function repostEmbed(r) {
 function postHtml(p) {
   const rawMedia = p.media_url ? (p.media_type === 'video'
     ? `<video class="post-media"${mediaVideoSourceAttrs(p)} controls playsinline preload="none" data-lazy-video="1"${mediaProtectionAttrs(p,{video:true})}></video>`
-    : `<img class="post-media" src="${escapeAttr(p.media_url)}" loading="lazy" decoding="async" alt="Publicación de ${escapeAttr(p.username)}"${mediaProtectionAttrs(p)}>` ) : '';
+    : `<img class="post-media" src="${escapeAttr(p.media_url)}" loading="lazy" decoding="async" alt="Publicación de ${escapeAttr(p.username)}"${mediaProtectionAttrs(p)}${imageViewerAttrs(p)}>` ) : '';
   const media = protectedMediaFrame(p,rawMedia,'post-protected-media');
   const privacy = p.visibility === 'followers' ? ' · 👥' : '';
   const edited = p.edited_at ? ' · editado' : '';
@@ -2694,7 +2739,7 @@ function messageHtml(m) {
   if (m.shared_post?.unavailable) shared = `<div class="shared-post unavailable">Esta publicación ya no está disponible para ti.</div>`;
   else if (m.shared_post) {
     const sp=m.shared_post;
-    const rawSharedMedia=sp.media_url ? (sp.media_type==='video'?`<video class="shared-protected-media-item"${mediaVideoSourceAttrs(sp)} controls playsinline preload="none" data-lazy-video="1"${mediaProtectionAttrs(sp,{video:true})}></video>`:`<img class="shared-protected-media-item" src="${escapeAttr(sp.media_url)}" loading="lazy" decoding="async" alt=""${mediaProtectionAttrs(sp)}>` ) : '';
+    const rawSharedMedia=sp.media_url ? (sp.media_type==='video'?`<video class="shared-protected-media-item"${mediaVideoSourceAttrs(sp)} controls playsinline preload="none" data-lazy-video="1"${mediaProtectionAttrs(sp,{video:true})}></video>`:`<img class="shared-protected-media-item" src="${escapeAttr(sp.media_url)}" loading="lazy" decoding="async" alt=""${mediaProtectionAttrs(sp)}${imageViewerAttrs(sp)}>` ) : '';
     const smedia=protectedMediaFrame(sp,rawSharedMedia,'shared-protected-media');
     shared = `<div class="shared-post"><div class="shared-author">${avatar(sp,'small')}<span><b>${escapeHtml(sp.name || sp.username)}</b><small>@${escapeHtml(sp.username || '')}</small></span></div>${sp.text?`<p>${formatText(sp.text)}</p>`:''}${smedia}</div>`;
   }
@@ -3266,7 +3311,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.11</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.12</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>
