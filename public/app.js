@@ -1,4 +1,4 @@
-// V1.12.15 · Mobile Chat Composer Fix + Full Image Viewer + Public Teaser Profile + Bunny Media + SEO + Growth Engine + Protección de contenido
+// V1.12.16 · Direct Public Profile + Mobile Chat Fix + Public Teaser Profile + Bunny Media + SEO + Growth Engine + Protección de contenido
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en','ciudades','guias',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','sitemap-core.xml','sitemap-landings.xml','login','register','logout','admin',
@@ -145,7 +145,7 @@ async function loadPendingProfileAccessCard() {
     // V1.12.9 · Los enlaces válidos de Growth Engine presentan primero a la persona
     // que invita, tanto en Entrar como en Crear cuenta. El bloque vive fuera de
     // #authbox, así que no desaparece al cambiar de pestaña.
-    if (data?.growth_campaign_preview && data?.profile_preview) {
+    if ((data?.growth_campaign_preview || data?.direct_profile_preview) && data?.profile_preview) {
       const preview=data.profile_preview || {};
       const displayName=String(preview.name || data.name || canonical).trim();
       const headline=String(preview.headline || '').trim();
@@ -786,18 +786,24 @@ function publicTeaserPostHtml(post,username) {
 async function renderPublicTeaserProfile(username,{append=false,before=null}={}) {
   const clean=String(username||'').trim().replace(/^@/,'');
   const campaign=currentGrowthCampaign();
-  if(!clean || !campaign){ authScreen(); return; }
+  if(!clean){ authScreen(); return; }
   if(!append){
     rememberPendingProfile(clean);
     $('#app').innerHTML=`<div class="auth-page public-teaser-page"><section class="public-teaser-header"><div class="brand-logo-wrap">${brandLockup('big')}</div></section><main class="public-teaser-shell"><div class="card loading-card">${teaserCopy('Cargando perfil…','Loading profile…')}</div></main></div>`;
   }
   try{
-    const qs=new URLSearchParams({campaign,limit:'15'});
+    const qs=new URLSearchParams({limit:'15'});
+    if(campaign) qs.set('campaign',campaign);
     if(before) qs.set('before',String(before));
     const data=await api(`/api/public/profile/${encodeURIComponent(clean)}/teaser?${qs.toString()}`,{timeout:15000});
     const profile=data.profile || {};
     const canonical=String(profile.username || clean).trim();
     rememberPendingProfile(canonical);
+    if(data?.source==='direct_profile' && data?.signup_referral_code){
+      localStorage.setItem('pendingReferralCode',String(data.signup_referral_code));
+      localStorage.setItem('pendingReferralSource','direct_profile');
+      localStorage.setItem('pendingDirectProfileReferrer',canonical);
+    }
     if(append){
       const list=$('#publicTeaserPostList');
       if(list && Array.isArray(data.posts)) list.insertAdjacentHTML('beforeend',data.posts.map(p=>publicTeaserPostHtml(p,canonical)).join(''));
@@ -824,7 +830,7 @@ async function renderPublicTeaserProfile(username,{append=false,before=null}={})
         <div class="profile-section-title">${teaserCopy('Publicaciones','Posts')}</div>
         <div class="post-list" id="publicTeaserPostList">${posts.length?posts.map(p=>publicTeaserPostHtml(p,canonical)).join(''):`<div class="card empty"><h3>${teaserCopy('Sin publicaciones todavía','No posts yet')}</h3></div>`}</div>
         ${data.has_more?`<button id="publicTeaserMore" class="btn ghost public-teaser-more" onclick="loadMorePublicTeaserPosts('${escapeAttr(canonical)}',${Number(data.next_before||0)})">${teaserCopy('Ver más publicaciones','View more posts')}</button>`:''}
-        <section class="card public-teaser-final-cta"><b>${teaserCopy('¿Quieres ver las fotos y vídeos?','Want to see the photos and videos?')}</b><p>${teaserCopy('Crea tu cuenta desde esta invitación y entra directamente en este perfil.','Create your account from this invitation and go directly to this profile.')}</p><button class="btn primary large" onclick="openTeaserSignup('${escapeAttr(canonical)}')">${teaserCopy('Crear cuenta y ver contenido','Create account and view content')}</button></section>
+        <section class="card public-teaser-final-cta"><b>${teaserCopy('¿Quieres ver las fotos y vídeos?','Want to see the photos and videos?')}</b><p>${data?.source==='direct_profile' ? teaserCopy('Crea tu cuenta y vuelve directamente a este perfil.','Create your account and return directly to this profile.') : teaserCopy('Crea tu cuenta desde esta invitación y entra directamente en este perfil.','Create your account from this invitation and go directly to this profile.')}</p><button class="btn primary large" onclick="openTeaserSignup('${escapeAttr(canonical)}')">${teaserCopy('Crear cuenta y ver contenido','Create account and view content')}</button></section>
       </main>
       <div class="public-teaser-sticky"><button class="btn primary" onclick="openTeaserSignup('${escapeAttr(canonical)}')">${teaserCopy('Crear cuenta para ver el contenido','Create account to view content')}</button></div>
     </div>`;
@@ -981,8 +987,8 @@ window.register = async () => {
   try {
     if (btn) { btn.disabled = true; btn.textContent = 'Creando cuenta…'; }
     if (directProfile) { try { directProfile = await resolveDirectProfileUsername(directProfile); } catch (_) {} }
-    const d = await api('/api/auth/register', { method:'POST', body: JSON.stringify({ name: $('#regname').value, username: $('#reguser').value, email: $('#regemail').value, password: $('#regpass').value, age_confirmed:true, terms_accepted:true, terms_version:'2026-09-20', referral_code:localStorage.getItem('pendingReferralCode') || '', gate_code:localStorage.getItem('pendingGateCode') || '', campaign_code:currentGrowthCampaign(), campaign_context:growthVisitContext(), language:(window.IAI18N?.getLanguage?.() || 'es') }) });
-    localStorage.removeItem('pendingReferralCode'); localStorage.removeItem('pendingGateCode');
+    const d = await api('/api/auth/register', { method:'POST', body: JSON.stringify({ name: $('#regname').value, username: $('#reguser').value, email: $('#regemail').value, password: $('#regpass').value, age_confirmed:true, terms_accepted:true, terms_version:'2026-09-20', referral_code:localStorage.getItem('pendingReferralCode') || '', referral_source:localStorage.getItem('pendingReferralSource') || '', direct_profile_referrer:localStorage.getItem('pendingDirectProfileReferrer') || '', gate_code:localStorage.getItem('pendingGateCode') || '', campaign_code:currentGrowthCampaign(), campaign_context:growthVisitContext(), language:(window.IAI18N?.getLanguage?.() || 'es') }) });
+    localStorage.removeItem('pendingReferralCode'); localStorage.removeItem('pendingReferralSource'); localStorage.removeItem('pendingDirectProfileReferrer'); localStorage.removeItem('pendingGateCode');
     if (d.verification_required) {
       modal(`<div class="modal-head"><h3>Confirma tu email</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="account-form"><div class="security-callout"><b>Cuenta creada</b><p>Te hemos enviado un enlace de verificación. Ábrelo antes de iniciar sesión.</p></div><button class="btn primary" onclick="closeModal();showAuth('login')">Volver a entrar</button></div>`);
       return;
@@ -2026,6 +2032,7 @@ window.openPrivacySettings = async () => {
     modal(`<div class="modal-head"><h3>Privacidad y control</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
       <div class="privacy-settings">
         <section class="privacy-section"><div><b>Cuenta privada</b><small>Solo los seguidores que apruebes podrán ver tus publicaciones y Stories.</small></div><label class="switch"><input id="privacyPrivate" type="checkbox" ${settings.account_private?'checked':''}><span></span></label></section>
+        <section class="privacy-section"><div><b>Vista previa pública de mi perfil</b><small>Permite que /${escapeHtml(state.me?.username || 'usuario')} muestre cabecera, bio y texto de tus posts antes del registro. Las fotos y vídeos seguirán bloqueados. Si tu cuenta es privada, esta vista no se mostrará.</small></div><label class="switch"><input id="privacyPublicPreview" type="checkbox" ${settings.public_profile_preview_enabled?'checked':''}><span></span></label></section>
         <label class="privacy-field"><span><b>Quién puede enviarte mensajes</b><small>Controla quién puede iniciar o continuar una conversación contigo.</small></span><select id="privacyMessages"><option value="everyone" ${settings.message_policy==='everyone'?'selected':''}>Todo el mundo</option><option value="followers" ${settings.message_policy==='followers'?'selected':''}>Personas que me siguen</option><option value="friends" ${settings.message_policy==='friends'?'selected':''}>Solo amigos</option><option value="nobody" ${settings.message_policy==='nobody'?'selected':''}>Nadie</option></select></label>
         <label class="privacy-field"><span><b>Marca de agua en mi contenido</b><small>La entrega protegida siempre está activa. Elige cuándo añadir además la identificación del espectador sobre fotos y vídeos.</small></span><select id="privacyWatermark"><option value="exclusive" ${settings.content_watermark_mode==='exclusive'?'selected':''}>Solo en perfil exclusivo</option><option value="all" ${settings.content_watermark_mode==='all'?'selected':''}>En todo mi contenido</option><option value="off" ${settings.content_watermark_mode==='off'?'selected':''}>Sin marca visible</option></select></label>
         <div class="security-callout"><b>Protección de contenido activa</b><p>Las publicaciones, Stories, Reels y archivos enviados por mensaje se sirven mediante enlaces temporales vinculados a la sesión. Las fotos no se pueden arrastrar y los reproductores ocultan la descarga directa.</p></div>
@@ -2045,7 +2052,7 @@ function privacyPersonRow(u,type){
   return `<div class="privacy-person">${avatar(u,'small')}<button class="privacy-person-name" onclick="closeModal();openProfile('${escapeAttr(u.username)}')"><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small></button><button class="btn ghost compact" onclick="${action}">${type==='block'?'Desbloquear':'Mostrar'}</button></div>`;
 }
 window.savePrivacySettings = async () => {
-  try { await api('/api/privacy',{method:'PATCH',body:JSON.stringify({account_private:$('#privacyPrivate').checked,message_policy:$('#privacyMessages').value,content_watermark_mode:$('#privacyWatermark')?.value || 'exclusive'})}); await refreshMe(false); toast('Privacidad actualizada'); await openPrivacySettings(); }
+  try { await api('/api/privacy',{method:'PATCH',body:JSON.stringify({account_private:$('#privacyPrivate').checked,public_profile_preview_enabled:Boolean($('#privacyPublicPreview')?.checked),message_policy:$('#privacyMessages').value,content_watermark_mode:$('#privacyWatermark')?.value || 'exclusive'})}); await refreshMe(false); toast('Privacidad actualizada'); await openPrivacySettings(); }
   catch(e){toast(e.message,'error');}
 };
 window.acceptFollowRequest = async id => { try{await api(`/api/follow-requests/${id}/accept`,{method:'POST'});await refreshMe(false);toast('Solicitud aceptada');await openPrivacySettings();}catch(e){toast(e.message,'error');} };
@@ -3352,7 +3359,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.15</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.16</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>
@@ -3578,7 +3585,10 @@ async function init(options = {}) {
   if (await handleAuthLink()) return;
   if (!state.token) {
     const publicProfile=profileUsernameFromPath(location.pathname);
+    let authRequested=false;
+    try{ authRequested=Boolean(new URLSearchParams(location.search).get('auth')); }catch(_){}
     if(publicProfile && publicTeaserRequested() && currentGrowthCampaign()) await renderPublicTeaserProfile(publicProfile);
+    else if(publicProfile && !currentGrowthCampaign() && !authRequested) await renderPublicTeaserProfile(publicProfile);
     else authScreen();
     updatePwaInstallUi();
     return;
@@ -3640,7 +3650,10 @@ window.addEventListener('popstate', async () => {
   if (!state.token) {
     const username = profileUsernameFromPath(location.pathname);
     if (username) rememberPendingProfile(username);
+    let authRequested=false;
+    try{ authRequested=Boolean(new URLSearchParams(location.search).get('auth')); }catch(_){}
     if(username && publicTeaserRequested() && currentGrowthCampaign()) await renderPublicTeaserProfile(username);
+    else if(username && !currentGrowthCampaign() && !authRequested) await renderPublicTeaserProfile(username);
     else authScreen();
     return;
   }
