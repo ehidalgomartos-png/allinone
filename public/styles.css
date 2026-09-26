@@ -1234,3 +1234,22 @@ img.post-media,img.repost-media{
 .chat-access-lock p{margin:0;color:var(--muted);font-size:10px;line-height:1.4}
 .chat-access-lock .btn{flex:0 0 auto}
 @media(max-width:520px){.chat-access-lock{align-items:flex-start;flex-wrap:wrap}.chat-access-lock .btn{width:100%}}
+
+
+/* V1.12.14 · Chat responsive: scroll real en escritorio + compositor móvil sin desbordes */
+.chat-shell{min-height:0;height:min(720px,calc(100dvh - 125px))}
+.message-pane{min-width:0;min-height:0;height:100%;overflow:hidden;grid-template-rows:auto minmax(0,1fr) auto auto auto}
+.message-stream{min-width:0;min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scrollbar-gutter:stable;padding-bottom:18px}
+.message-compose{min-width:0}
+.message-compose textarea{min-width:0;width:100%}
+.message-compose #messageSendBtn{flex:0 0 auto;white-space:nowrap}
+@media(max-width:860px){
+  .chat-shell{height:calc(100dvh - 140px);min-height:0}
+  .message-pane{grid-template-rows:auto minmax(0,1fr) auto auto auto}
+}
+@media(max-width:560px){
+  .message-compose{display:grid;grid-template-columns:38px 38px 38px minmax(0,1fr);gap:7px;align-items:center;padding:8px 10px calc(8px + env(safe-area-inset-bottom));overflow:hidden}
+  .message-compose textarea{grid-column:1/-1;grid-row:1;min-width:0;min-height:42px;max-height:96px;margin:0}
+  .message-compose .attach-btn{grid-row:2;margin:0}
+  .message-compose #messageSendBtn{grid-column:4;grid-row:2;width:100%;min-width:0;height:38px;padding:7px 10px;margin:0}
+}

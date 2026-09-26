@@ -1,4 +1,4 @@
-// V1.12.13 · Full Image Viewer + Public Teaser Profile + Bunny Media + SEO + Growth Engine + Protección de contenido
+// V1.12.14 · Full Image Viewer + Public Teaser Profile + Bunny Media + SEO + Growth Engine + Protección de contenido
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en','ciudades','guias',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','sitemap-core.xml','sitemap-landings.xml','login','register','logout','admin',
@@ -1491,7 +1491,7 @@ function mediaWatermarkHtml(item) {
 }
 
 
-// V1.12.13 · Visor de imagen completa para publicaciones y contenido compartido.
+// V1.12.14 · Visor de imagen completa para publicaciones y contenido compartido.
 function imageViewerAttrs(item) {
   const protectedFlag=item?.media_protected ? '1' : '0';
   const watermarkedFlag=item?.watermarked ? '1' : '0';
@@ -2691,6 +2691,15 @@ window.sharePostTo = async (postId, userId) => {
   } catch(e) { toast(e.message,'error'); }
 };
 
+function settleChatScrollToBottom(stream) {
+  if (!stream) return;
+  const scroll = () => { stream.scrollTop = stream.scrollHeight; };
+  scroll();
+  requestAnimationFrame(scroll);
+  setTimeout(scroll, 80);
+  setTimeout(scroll, 260);
+}
+
 async function renderMessages() {
   resetLazyMediaObserver();
   const conversations = await api('/api/conversations');
@@ -2718,7 +2727,7 @@ async function renderMessages() {
     </section>`;
   setupLazyMedia($('#main'));
   if (active) {
-    requestAnimationFrame(() => { const stream=$('#messageStream'); if(stream) stream.scrollTop=stream.scrollHeight; });
+    requestAnimationFrame(() => settleChatScrollToBottom($('#messageStream')));
     state.me.unread_messages = Math.max(0, Number(state.me.unread_messages || 0) - Number(active.unread_count || 0));
     updateNavBadges();
     if (state.messagePoll) clearInterval(state.messagePoll);
@@ -2835,7 +2844,8 @@ async function refreshActiveConversation(){
     if(!stream) return;
     const nearBottom=stream.scrollHeight-stream.scrollTop-stream.clientHeight<100;
     stream.innerHTML=messages.length?messages.map(messageHtml).join(''):'<div class="chat-first"><span>Aún no hay mensajes.</span></div>';
-    if(nearBottom) stream.scrollTop=stream.scrollHeight;
+    setupLazyMedia(stream);
+    if(nearBottom) settleChatScrollToBottom(stream);
     const hasProcessingVideo = messages.some(m => Boolean(m?.media_processing || m?.shared_post?.media_processing));
     if(state.messagePoll){
       clearInterval(state.messagePoll);
@@ -3341,7 +3351,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.13</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.14</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>
