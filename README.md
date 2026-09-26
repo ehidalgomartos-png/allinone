@@ -1,5 +1,7 @@
-# Instant Admirers V1.12.13 — Chat Gate Fix
+# Instant Admirers V1.12.14
 
-Versión basada en V1.12.12 que corrige el acceso al chat para perfiles con reto y mejora la continuidad de respuestas y el refresco de vídeos en procesamiento.
+Build: **Chat Responsive Fix**.
 
-Consulta `README-V1.12.13.md` y `ACTUALIZAR-A-V1.12.13.md`.
+Base: V1.12.13. Corrige scroll del chat en escritorio y el compositor de envío en móvil.
+
+Consulta `README-V1.12.14.md`, `CHANGELOG-V1.12.14.md` y `ACTUALIZAR-A-V1.12.14.md`.
