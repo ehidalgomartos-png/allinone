@@ -1,12 +1,12 @@
-const CACHE_NAME = 'instant-admirers-v1.12.16';
+const CACHE_NAME = 'instant-admirers-v1.12.17';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/offline.html',
-  '/styles.css?v=1.12.16',
-  '/app.js?v=1.12.16',
-  '/i18n.js?v=1.12.16',
-  '/vendor/hls/hls.min.js?v=1.12.16',
+  '/styles.css?v=1.12.17',
+  '/app.js?v=1.12.17',
+  '/i18n.js?v=1.12.17',
+  '/vendor/hls/hls.min.js?v=1.12.17',
   '/manifest.webmanifest',
   '/assets/brand/instant-admirers-mark.svg',
   '/assets/brand/icon-192.png',
@@ -38,7 +38,9 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response.ok) {
+          // Sólo la portada actualiza el shell offline. No guardamos perfiles/landings
+          // dinámicos como /index.html porque contaminarían el arranque de la PWA.
+          if (response.ok && (url.pathname === '/' || url.pathname === '/index.html')) {
             const copy = response.clone();
             caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy));
           }

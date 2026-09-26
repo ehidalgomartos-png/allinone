@@ -1,4 +1,4 @@
-// V1.12.16 · Direct Public Profile + Mobile Chat Fix + Public Teaser Profile + Bunny Media + SEO + Growth Engine + Protección de contenido
+// V1.12.17 · Direct Public Profile + Mobile Chat Fix + Public Teaser Profile + Bunny Media + SEO + Growth Engine + Protección de contenido
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en','ciudades','guias',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','sitemap-core.xml','sitemap-landings.xml','login','register','logout','admin',
@@ -234,11 +234,17 @@ window.retryPendingProfile = async (username) => {
   try {
     const params = new URLSearchParams(location.search);
     const ref = String(params.get('ref') || '').trim();
+    const refSource = String(params.get('ref_source') || '').trim().toLowerCase();
+    const directProfileReferrer = String(params.get('direct_profile_referrer') || '').trim().replace(/^@/, '');
     const gate = String(params.get('gate') || '').trim();
     const pathProfile = profileUsernameFromPath(location.pathname);
     const legacyProfile = String(params.get('profile') || '').trim().replace(/^@/, '');
     const profile = pathProfile || legacyProfile;
     if (ref) localStorage.setItem('pendingReferralCode', ref);
+    if (ref && refSource === 'direct_profile' && /^[a-zA-Z0-9_.]{3,30}$/.test(directProfileReferrer)) {
+      localStorage.setItem('pendingReferralSource','direct_profile');
+      localStorage.setItem('pendingDirectProfileReferrer',directProfileReferrer);
+    }
     if (ref && gate) localStorage.setItem('pendingGateCode', gate);
     if (/^[a-zA-Z0-9_.]{3,30}$/.test(profile) && !RESERVED_PROFILE_SLUGS.has(profile.toLowerCase())) {
       rememberPendingProfile(profile);
@@ -3359,7 +3365,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.16</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.17</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>
