@@ -1,12 +1,7 @@
-# Deploy Instant Admirers V1.12.16 — Direct Public Profile
+# Deploy Instant Admirers V1.12.17 — SEO Public Profiles
 
-No requiere nuevas variables de entorno. Mantén PostgreSQL, Bunny Storage/Stream, Resend y el resto de configuración actual.
-
-La migración de esquema es automática e idempotente al arrancar.
-
-Tras desplegar:
-
-- `/api/health` debe indicar `version: 1.12.16`.
-- Activa la vista directa desde **Perfil → Privacidad → Vista previa pública de mi perfil**.
-- Prueba `/usuario` en una ventana de incógnito.
-- Haz Ctrl+F5 o reinicia la PWA si el navegador conserva recursos de V1.12.15.
+- Sustituye V1.12.16 en el mismo repositorio.
+- No requiere variables nuevas ni migración manual.
+- Mantén intactas las variables actuales de PostgreSQL, Bunny y Resend.
+- Tras desplegar: `/api/health` debe indicar `version: 1.12.17`.
+- Revisa `/sitemap.xml`, `/sitemap-profiles.xml`, `/perfiles/` y un perfil público real.
