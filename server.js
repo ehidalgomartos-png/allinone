@@ -609,6 +609,7 @@ function safeUser(row, includePrivate = false) {
     user.friend_gate_require_post = row.friend_gate_require_post !== false;
     user.friend_gate_auto_accept = row.friend_gate_auto_accept !== false;
     user.friend_gate_message = String(row.friend_gate_message || '').slice(0,220);
+    user.public_profile_preview_enabled = Boolean(row.public_profile_preview_enabled);
     user.content_watermark_mode = ['off','exclusive','all'].includes(String(row.content_watermark_mode || '')) ? String(row.content_watermark_mode) : 'exclusive';
   }
   return user;
@@ -1184,7 +1185,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.12.15', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default','growth-public-teaser-profile','growth-teaser-media-lock','growth-teaser-signup-attribution','public-teaser-desktop-layout-fix','feed-full-image-fit','full-image-viewer','protected-image-lightbox','friend-gate-chat-lock','conversation-reply-continuity','chat-video-processing-refresh','chat-scroll-containment','chat-bottom-autoscroll','mobile-chat-composer-layout','mobile-chat-composer-viewport-fix','mobile-chat-active-header-compaction'] });
+  res.json({ ok: true, version: '1.12.16', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default','growth-public-teaser-profile','growth-teaser-media-lock','growth-teaser-signup-attribution','public-teaser-desktop-layout-fix','feed-full-image-fit','full-image-viewer','protected-image-lightbox','friend-gate-chat-lock','conversation-reply-continuity','chat-video-processing-refresh','chat-scroll-containment','chat-bottom-autoscroll','mobile-chat-composer-layout','mobile-chat-composer-viewport-fix','mobile-chat-active-header-compaction','direct-public-profile','direct-profile-media-lock','direct-profile-referral-attribution','public-profile-preview-control'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -1275,7 +1276,7 @@ const RESERVED_PROFILE_SLUGS = new Set([
 ]);
 
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
-  const { username, name, email, password, age_confirmed, terms_accepted, terms_version, referral_code, gate_code, campaign_code, campaign_visit_id, campaign_context, language } = req.body;
+  const { username, name, email, password, age_confirmed, terms_accepted, terms_version, referral_code, referral_source, direct_profile_referrer, gate_code, campaign_code, campaign_visit_id, campaign_context, language } = req.body;
   if (!username || !name || !email || !password) return res.status(400).json({ error: 'Faltan datos' });
   if (age_confirmed !== true) return res.status(400).json({ error: 'Debes confirmar que tienes 18 años o más' });
   if (terms_accepted !== true) return res.status(400).json({ error: 'Debes aceptar los Términos de Uso' });
@@ -1293,6 +1294,13 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
 
   const launchSettings = await getLaunchSettings();
   const normalizedReferral = String(referral_code || '').trim().toLowerCase().slice(0,24);
+  let normalizedReferralSource = String(referral_source || '').trim().toLowerCase()==='direct_profile' ? 'direct_profile' : 'invite';
+  const directReferrerUsername=String(direct_profile_referrer || '').trim().replace(/^@/,'').toLowerCase().slice(0,30);
+  if(normalizedReferralSource==='direct_profile') {
+    const directRef=await pool.query(`SELECT invite_code FROM users WHERE LOWER(username)=LOWER($1) AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE AND COALESCE(account_private,FALSE)=FALSE AND COALESCE(public_profile_preview_enabled,FALSE)=TRUE LIMIT 1`,[directReferrerUsername]);
+    const validDirectCode=String(directRef.rows[0]?.invite_code || '').trim().toLowerCase();
+    if(!validDirectCode || validDirectCode!==normalizedReferral) normalizedReferralSource='invite';
+  }
   const normalizedCampaign = normalizeCampaignSlug(campaign_code || '');
   if (launchSettings.registration_mode === 'paused') {
     return res.status(503).json({ error:'Las nuevas altas están pausadas temporalmente durante el lanzamiento controlado.', code:'REGISTRATION_PAUSED' });
@@ -1335,7 +1343,7 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
           `,[created.id,campaign.id,visit?.id || null,attributedSource,visit?.utm_source || ctxUtmSource,visit?.utm_medium || ctxUtmMedium,visit?.utm_content || ctxUtmContent || campaign.source_tag || '']);
         }
       }
-      const ref = String(referral_code || '').trim().toLowerCase().slice(0,24);
+      const ref = normalizedReferral;
       const gate = String(gate_code || '').trim().toLowerCase().slice(0,24);
       if (ref) {
         const inviterResult = await client.query('SELECT id FROM users WHERE LOWER(invite_code)=LOWER($1) AND id<>$2 LIMIT 1',[ref,created.id]);
@@ -1346,14 +1354,14 @@ app.post('/api/auth/register', asyncRoute(async (req, res) => {
             const gateResult = await client.query('SELECT id FROM users WHERE LOWER(invite_code)=LOWER($1) AND id<>$2 LIMIT 1',[gate,created.id]);
             if (gateResult.rows[0] && Number(gateResult.rows[0].id) !== Number(inviter.id)) gateUserId = gateResult.rows[0].id;
           }
-          await client.query(`INSERT INTO referral_attributions(inviter_id,invited_user_id,gate_user_id) VALUES($1,$2,$3) ON CONFLICT (invited_user_id) DO NOTHING`,[inviter.id,created.id,gateUserId]);
+          await client.query(`INSERT INTO referral_attributions(inviter_id,invited_user_id,gate_user_id,source) VALUES($1,$2,$3,$4) ON CONFLICT (invited_user_id) DO NOTHING`,[inviter.id,created.id,gateUserId,normalizedReferralSource]);
           if (gateUserId) await autoCompleteFriendGate(client,inviter.id,gateUserId);
         }
       }
       return created;
     });
     const emailSent = await sendVerificationEmail(user).catch(err => { console.error('verification email:', err.message); return false; });
-    await securityEvent(req, 'account_registered', user.id, { email_sent:emailSent, referral:Boolean(referral_code), gate:Boolean(gate_code), campaign:Boolean(normalizedCampaign) });
+    await securityEvent(req, 'account_registered', user.id, { email_sent:emailSent, referral:Boolean(normalizedReferral), referral_source:normalizedReferralSource, gate:Boolean(gate_code), campaign:Boolean(normalizedCampaign) });
     if (REQUIRE_EMAIL_VERIFICATION) return res.json({ verification_required:true, email_sent:emailSent });
     setMediaSessionCookie(res,user);
     res.json({ token: tokenFor(user), user: safeUser(user, true), email_sent:emailSent });
@@ -2251,7 +2259,7 @@ app.get('/api/public/profile/:username', asyncRoute(async (req, res) => {
   const username = String(req.params.username || '').trim().replace(/^@/, '');
   if (!/^[a-zA-Z0-9_.]{3,30}$/.test(username)) return res.status(404).json({ error:'Perfil no encontrado' });
   const { rows } = await pool.query(
-    `SELECT id,username,name,bio,avatar,headline,cover,friend_gate_enabled,friend_gate_message
+    `SELECT id,username,name,bio,avatar,headline,cover,friend_gate_enabled,friend_gate_message,account_private,public_profile_preview_enabled
        FROM users
       WHERE LOWER(username)=LOWER($1) AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE
       LIMIT 1`,
@@ -2282,8 +2290,9 @@ app.get('/api/public/profile/:username', asyncRoute(async (req, res) => {
     access_message:target.friend_gate_enabled ? (campaignMessage || profileMessage) : '',
     access_message_source:campaignMessage ? 'campaign' : (profileMessage ? 'profile' : 'default'),
     growth_campaign_preview:growthPreview,
-    public_teaser_enabled:Boolean(growthPreview && growthCampaign?.public_teaser_enabled),
-    profile_preview:growthPreview ? {
+    direct_profile_preview:Boolean(!growthPreview && target.public_profile_preview_enabled && !target.account_private),
+    public_teaser_enabled:Boolean((growthPreview && growthCampaign?.public_teaser_enabled) || (!growthPreview && target.public_profile_preview_enabled && !target.account_private)),
+    profile_preview:(growthPreview || (target.public_profile_preview_enabled && !target.account_private)) ? {
       username:target.username,
       name:String(target.name || '').slice(0,100),
       headline:String(target.headline || '').slice(0,140),
@@ -2295,24 +2304,30 @@ app.get('/api/public/profile/:username', asyncRoute(async (req, res) => {
 }));
 
 
-// V1.12.14: perfil teaser público disponible sólo para campañas Growth Engine
-// activadas expresamente. Las publicaciones nunca entregan URLs de fotos/vídeos:
-// sólo texto y la existencia/tipo de multimedia para mostrar el bloqueo de alta.
+// V1.12.16: teaser público desde Growth Engine o directamente desde /usuario.
+// La URL directa sólo funciona si el propietario la activa y la cuenta no es privada.
+// Nunca se entregan URLs de fotos/vídeos; sólo texto y el tipo de multimedia bloqueada.
 app.get('/api/public/profile/:username/teaser', publicTeaserLimiter, asyncRoute(async (req,res)=>{
   const username=String(req.params.username || '').trim().replace(/^@/,'');
   if(!/^[a-zA-Z0-9_.]{3,30}$/.test(username)) return res.status(404).json({error:'Perfil no encontrado'});
   const campaignSlug=normalizeCampaignSlug(req.query?.campaign || '');
-  const campaign=await growthCampaignBySlug(campaignSlug);
-  if(!campaign || !campaign.public_teaser_enabled) return res.status(404).json({error:'Vista previa no disponible'});
+  const campaign=campaignSlug ? await growthCampaignBySlug(campaignSlug) : null;
+  const campaignPreview=Boolean(campaign && campaign.public_teaser_enabled);
+  if(campaignSlug && !campaignPreview) return res.status(404).json({error:'Vista previa no disponible'});
+
+  const lookupParams=[username];
+  let ownershipSql='';
+  if(campaignPreview){ lookupParams.push(campaign.target_user_id); ownershipSql='AND id=$2'; }
+  else ownershipSql='AND COALESCE(public_profile_preview_enabled,FALSE)=TRUE AND COALESCE(account_private,FALSE)=FALSE';
 
   const {rows:users}=await pool.query(`
-    SELECT id,username,name,bio,avatar,headline,cover
+    SELECT id,username,name,bio,avatar,headline,cover,invite_code,account_private,public_profile_preview_enabled
       FROM users
-     WHERE LOWER(username)=LOWER($1) AND id=$2 AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE
+     WHERE LOWER(username)=LOWER($1) ${ownershipSql} AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE
      LIMIT 1
-  `,[username,campaign.target_user_id]);
+  `,lookupParams);
   const target=users[0];
-  if(!target) return res.status(404).json({error:'Perfil no encontrado'});
+  if(!target) return res.status(404).json({error:'Vista previa no disponible'});
 
   const limit=Math.min(30,Math.max(5,Number(req.query?.limit || 15)));
   const before=Number(req.query?.before || 0);
@@ -2352,7 +2367,9 @@ app.get('/api/public/profile/:username/teaser', publicTeaserLimiter, asyncRoute(
 
   res.json({
     ok:true,
-    campaign:String(campaign.slug),
+    source:campaignPreview ? 'growth' : 'direct_profile',
+    campaign:campaignPreview ? String(campaign.slug) : '',
+    signup_referral_code:campaignPreview ? '' : String(target.invite_code || ''),
     profile:{
       username:target.username,
       name:String(target.name || '').slice(0,100),
@@ -2568,7 +2585,7 @@ app.post('/api/users/:id/follow', auth, socialAccountOnly, asyncRoute(async (req
 
 // --- V0.9: privacidad, solicitudes de seguimiento y control --------------
 app.get('/api/privacy', auth, asyncRoute(async (req,res)=>{
-  const {rows}=await pool.query(`SELECT account_private,message_policy,content_watermark_mode,
+  const {rows}=await pool.query(`SELECT account_private,public_profile_preview_enabled,message_policy,content_watermark_mode,
     (SELECT COUNT(*)::int FROM follow_requests WHERE followed_id=$1) AS follow_requests_count,
     (SELECT COUNT(*)::int FROM blocks WHERE blocker_id=$1) AS blocked_count,
     (SELECT COUNT(*)::int FROM mutes WHERE muter_id=$1) AS muted_count
@@ -2578,12 +2595,13 @@ app.get('/api/privacy', auth, asyncRoute(async (req,res)=>{
 
 app.patch('/api/privacy', auth, asyncRoute(async (req,res)=>{
   const accountPrivate = req.body.account_private === undefined ? null : Boolean(req.body.account_private);
+  const publicProfilePreview = req.body.public_profile_preview_enabled === undefined ? null : Boolean(req.body.public_profile_preview_enabled);
   const messagePolicy = req.body.message_policy === undefined ? null : String(req.body.message_policy);
   const watermarkMode = req.body.content_watermark_mode === undefined ? null : String(req.body.content_watermark_mode);
   if (messagePolicy !== null && !['everyone','followers','friends','nobody'].includes(messagePolicy)) return res.status(400).json({error:'Privacidad de mensajes inválida'});
   if (watermarkMode !== null && !['off','exclusive','all'].includes(watermarkMode)) return res.status(400).json({error:'Configuración de marca de agua inválida'});
   const result=await withTransaction(async client=>{
-    const {rows}=await client.query(`UPDATE users SET account_private=COALESCE($2,account_private), message_policy=COALESCE($3,message_policy), content_watermark_mode=COALESCE($4,content_watermark_mode) WHERE id=$1 RETURNING account_private,message_policy,content_watermark_mode`,[req.user.id,accountPrivate,messagePolicy,watermarkMode]);
+    const {rows}=await client.query(`UPDATE users SET account_private=COALESCE($2,account_private), public_profile_preview_enabled=COALESCE($3,public_profile_preview_enabled), message_policy=COALESCE($4,message_policy), content_watermark_mode=COALESCE($5,content_watermark_mode) WHERE id=$1 RETURNING account_private,public_profile_preview_enabled,message_policy,content_watermark_mode`,[req.user.id,accountPrivate,publicProfilePreview,messagePolicy,watermarkMode]);
     if (accountPrivate === false) {
       await client.query(`INSERT INTO follows(follower_id,followed_id) SELECT follower_id,followed_id FROM follow_requests WHERE followed_id=$1 ON CONFLICT DO NOTHING`,[req.user.id]);
       await client.query('DELETE FROM follow_requests WHERE followed_id=$1',[req.user.id]);
@@ -4229,7 +4247,7 @@ async function start() {
   await syncSystemAccounts();
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Instant Admirers V1.12.15 en http://localhost:${PORT}`);
+    console.log(`Instant Admirers V1.12.16 en http://localhost:${PORT}`);
     void hardenLegacyCloudinaryMedia().catch(err => console.error('Protección multimedia heredada:', err.message));
     void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message));
     const bunnyStatusTimer=setInterval(() => void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message)),30000);

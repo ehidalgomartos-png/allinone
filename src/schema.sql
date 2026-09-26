@@ -256,6 +256,8 @@ CREATE INDEX IF NOT EXISTS idx_posts_visibility_created ON posts(visibility, cre
 
 -- V0.9: privacidad y control del usuario.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS account_private BOOLEAN NOT NULL DEFAULT FALSE;
+-- V1.12.16: vista previa pública directa opcional en /usuario.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS public_profile_preview_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS message_policy VARCHAR(20) NOT NULL DEFAULT 'everyone';
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_message_policy_check;
 ALTER TABLE users ADD CONSTRAINT users_message_policy_check
@@ -417,6 +419,7 @@ CREATE TABLE IF NOT EXISTS referral_attributions (
   UNIQUE (invited_user_id),
   CHECK (inviter_id <> invited_user_id)
 );
+ALTER TABLE referral_attributions ADD COLUMN IF NOT EXISTS source VARCHAR(30) NOT NULL DEFAULT 'invite';
 CREATE INDEX IF NOT EXISTS idx_referrals_inviter ON referral_attributions(inviter_id, registered_at DESC);
 CREATE INDEX IF NOT EXISTS idx_referrals_gate ON referral_attributions(inviter_id, gate_user_id, registered_at DESC);
 CREATE INDEX IF NOT EXISTS idx_referrals_qualified ON referral_attributions(inviter_id, qualified_at DESC);
