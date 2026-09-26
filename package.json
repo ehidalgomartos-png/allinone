@@ -1,12 +1,12 @@
 {
   "name": "instant-admirers-community",
-  "version": "1.12.17",
-  "description": "Instant Admirers V1.12.17 - SEO for opt-in public profiles with ProfilePage schema and dynamic sitemap",
+  "version": "1.12.18",
+  "description": "Instant Admirers V1.12.18 - Light/dark visitor theme switcher across app, public profiles, SEO and legal pages",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "check": "node --check server.js && node --check src/db.js && node --check src/mediaStorage.js && node --check public/app.js && node --check public/i18n.js && node --check public/sw.js && node --check scripts/migrate-media-to-cloudinary.js && node --check scripts/harden-cloudinary-media.js",
+    "check": "node --check server.js && node --check src/db.js && node --check src/mediaStorage.js && node --check public/app.js && node --check public/i18n.js && node --check public/theme.js && node --check public/sw.js && node --check scripts/migrate-media-to-cloudinary.js && node --check scripts/harden-cloudinary-media.js",
     "migrate:media": "node scripts/migrate-media-to-cloudinary.js",
     "harden:media": "node scripts/harden-cloudinary-media.js"
   },
