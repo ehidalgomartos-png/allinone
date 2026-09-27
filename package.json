@@ -1,12 +1,12 @@
 {
   "name": "instant-admirers-community",
-  "version": "1.12.20",
-  "description": "Instant Admirers V1.12.20 - Light sent-message contrast fix plus deletion of own sent messages with realtime sync",
+  "version": "1.12.22",
+  "description": "Instant Admirers V1.12.22 - SEO público transparente para perfiles virtuales, sitemap e indexación de anfitriones identificados",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "check": "node --check server.js && node --check src/db.js && node --check src/mediaStorage.js && node --check public/app.js && node --check public/i18n.js && node --check public/theme.js && node --check public/sw.js && node --check scripts/migrate-media-to-cloudinary.js && node --check scripts/harden-cloudinary-media.js",
+    "check": "node --check server.js && node --check src/db.js && node --check src/mediaStorage.js && node --check src/virtualCommunity.js && node --check public/app.js && node --check public/i18n.js && node --check public/theme.js && node --check public/sw.js && node --check scripts/migrate-media-to-cloudinary.js && node --check scripts/harden-cloudinary-media.js",
     "migrate:media": "node scripts/migrate-media-to-cloudinary.js",
     "harden:media": "node scripts/harden-cloudinary-media.js"
   },

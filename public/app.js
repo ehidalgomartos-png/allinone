@@ -1,4 +1,4 @@
-// V1.12.20 · Light/Dark Theme + Direct Public Profile + Mobile Chat Fix + Public Teaser Profile + Bunny Media + SEO + Growth Engine + Protección de contenido
+// V1.12.22 · Virtual Profiles SEO + Virtual Community + Light/Dark Theme + Public Profiles + Bunny Media + Growth Engine
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en','ciudades','guias',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','sitemap-core.xml','sitemap-landings.xml','login','register','logout','admin',
@@ -155,6 +155,7 @@ async function loadPendingProfileAccessCard() {
       const inviteDetected=Boolean(localStorage.getItem('pendingReferralCode'));
       const gateEnabled=Boolean(data?.friend_gate_enabled);
       const publicTeaserEnabled=Boolean(data?.public_teaser_enabled);
+      const isVirtual=Boolean(preview?.is_virtual || data?.is_virtual);
       const message=gateEnabled
         ? (String(data.access_message || data.friend_gate_message || '').trim() || defaultProfileAccessMessage())
         : '';
@@ -172,9 +173,10 @@ async function loadPendingProfileAccessCard() {
             ${avatarUrl ? `<img src="${escapeAttr(avatarUrl)}" alt="${escapeAttr(displayName)}" decoding="async">` : `<span>${escapeHtml(initials({name:displayName,username:canonical}))}</span>`}
           </div>
           <div class="profile-auth-preview-identity">
-            <b>${escapeHtml(displayName)}</b>
+            <b>${escapeHtml(displayName)}${isVirtual?' <span class="virtual-badge compact">✦ Virtual</span>':''}</b>
             <small>@${escapeHtml(canonical)}</small>
           </div>
+          ${isVirtual?'<div class="virtual-profile-notice compact-public"><b>✦ Anfitrión virtual</b><span>Personaje ficticio gestionado por Instant Admirers. No representa a una persona real.</span></div>':''}
           ${headline ? `<p class="profile-auth-preview-headline user-content">${escapeHtml(headline)}</p>` : ''}
           ${bio ? `<p class="profile-auth-preview-bio user-content">${escapeHtml(bio)}</p>` : ''}
           ${gateEnabled ? `<div class="profile-auth-preview-access">
@@ -284,6 +286,7 @@ const state = {
   rightbarCache: null,
   launchStatus: { registration_mode:'open', invite_required:false, registration_paused:false, launch_phase:'prelaunch', cohort_target:100, banner_enabled:true, banner_text:'' },
   community: null,
+  virtualCommunityData: null,
   authMode: 'login'
 };
 
@@ -819,6 +822,7 @@ async function renderPublicTeaserProfile(username,{append=false,before=null}={})
     }
     document.title=`${profile.name || canonical} (@${canonical}) · Instant Admirers`;
     const cover=String(profile.cover || '').trim(), avatarUrl=String(profile.avatar || '').trim();
+    const isVirtual=Boolean(profile.is_virtual);
     const posts=Array.isArray(data.posts)?data.posts:[];
     $('#app').innerHTML=`<div class="auth-page public-teaser-page">
       <section class="public-teaser-header"><div class="brand-logo-wrap">${brandLockup('big')}</div><button class="btn ghost compact" onclick="returnFromPublicTeaser('${escapeAttr(canonical)}')">← ${teaserCopy('Volver','Back')}</button></section>
@@ -827,7 +831,8 @@ async function renderPublicTeaserProfile(username,{append=false,before=null}={})
           <div class="profile-cover ${cover?'has-cover':''}">${cover?`<img src="${escapeAttr(cover)}" alt="" decoding="async">`:''}</div>
           <div class="profile-main-v7">
             <div class="profile-top"><div class="avatar xl">${avatarUrl?`<img src="${escapeAttr(avatarUrl)}" alt="${escapeAttr(profile.name||canonical)}" decoding="async">`:`<span>${escapeHtml(initials({name:profile.name,username:canonical}))}</span>`}</div><div class="profile-cta"><button class="btn primary compact" onclick="openTeaserSignup('${escapeAttr(canonical)}')">${teaserCopy('Crear cuenta','Create account')}</button></div></div>
-            <h2>${escapeHtml(profile.name || canonical)}</h2><div class="handle">@${escapeHtml(canonical)}</div>
+            <h2>${escapeHtml(profile.name || canonical)}${isVirtual?' <span class="virtual-badge">✦ Perfil virtual</span>':''}</h2><div class="handle">@${escapeHtml(canonical)}</div>
+            ${isVirtual?'<div class="virtual-profile-notice"><b>✦ Anfitrión virtual</b><span>Este personaje es ficticio y está gestionado por Instant Admirers. No representa a una persona real.</span></div>':''}
             ${profile.headline?`<div class="profile-headline user-content">${escapeHtml(profile.headline)}</div>`:''}
             ${profile.bio?`<p class="user-content">${escapeHtml(profile.bio)}</p>`:''}
           </div>
@@ -1095,6 +1100,7 @@ function navButton(view, icon, label) {
   let count = 0;
   if (view === 'notifications') count = Number(state.me?.unread_notifications || 0);
   if (view === 'messages') count = Number(state.me?.unread_messages || 0);
+  if (view === 'admin' && state.me?.is_admin) count = Number(state.me?.virtual_inbox_unread || 0);
   const badge = count > 0 ? `<span class="nav-badge">${Math.min(99, count)}</span>` : '';
   return `<button class="nav-item ${active}" data-nav-view="${view}" onclick="go('${view}')"><span class="nav-icon">${icon}</span><span>${label}</span>${badge}</button>`;
 }
@@ -1113,7 +1119,7 @@ function layout() {
       <button class="brand-button" onclick="go('feed')">${brandLockup('top')}</button>
       <div class="top-actions">
         <button class="top-icon" onclick="go('search')" aria-label="Buscar">⌕</button>
-        ${isSystemAccount()?`<button id="topActivityButton" class="top-icon" onclick="go('admin')" aria-label="Administración">⚙</button>`:`<button id="topActivityButton" class="top-icon badge-wrap" onclick="go('notifications')" aria-label="Actividad">♡${Number(state.me?.unread_notifications || 0) ? `<span class="nav-badge">${Math.min(99,state.me.unread_notifications)}</span>` : ''}</button>`}
+        ${isSystemAccount()?`<button id="topActivityButton" class="top-icon badge-wrap" onclick="go('admin')" aria-label="Administración">⚙${Number(state.me?.virtual_inbox_unread || 0) ? `<span class="nav-badge">${Math.min(99,state.me.virtual_inbox_unread)}</span>` : ''}</button>`:`<button id="topActivityButton" class="top-icon badge-wrap" onclick="go('notifications')" aria-label="Actividad">♡${Number(state.me?.unread_notifications || 0) ? `<span class="nav-badge">${Math.min(99,state.me.unread_notifications)}</span>` : ''}</button>`}
         <button class="top-avatar" onclick="${isSystemAccount()?"go('admin')":`openProfile('${escapeAttr(state.me.username)}')`}">${avatar(state.me, 'small')}</button>
       </div>
     </header>
@@ -1562,7 +1568,7 @@ function repostEmbed(r) {
     : `<img class="repost-media" src="${escapeAttr(r.media_url)}" loading="lazy" decoding="async" alt=""${mediaProtectionAttrs(r)}${imageViewerAttrs(r)}>` ) : '';
   const media = protectedMediaFrame(r,rawMedia,'repost-protected-media');
   return `<div class="repost-embed">
-    <button class="repost-author" onclick="openProfile('${escapeAttr(r.username)}')">${avatar(r,'small')}<span><b>${escapeHtml(r.name)}</b><small>@${escapeHtml(r.username)} · ${timeAgo(r.created_at)}</small></span></button>
+    <button class="repost-author" onclick="openProfile('${escapeAttr(r.username)}')">${avatar(r,'small')}<span><b>${escapeHtml(r.name)} ${virtualBadge(r)}</b><small>@${escapeHtml(r.username)} · ${timeAgo(r.created_at)}</small></span></button>
     ${r.text ? `<div class="repost-text">${formatText(r.text)}</div>` : ''}
     ${media}
   </div>`;
@@ -1580,7 +1586,7 @@ function postHtml(p) {
     ${p.recommendation_reason ? `<div class="recommendation-label">✦ ${escapeHtml(p.recommendation_reason)}</div>` : ''}
     ${p.repost_of_id ? `<div class="repost-label">↻ ${escapeHtml(p.name)} republicó una publicación</div>` : ''}
     <div class="post-head">
-      <button class="person-link" onclick="openProfile('${escapeAttr(p.username)}')">${avatar(p)}<span><b>${escapeHtml(p.name)}</b><small>@${escapeHtml(p.username)} · ${timeAgo(p.created_at)}${edited}${privacy}</small></span></button>
+      <button class="person-link" onclick="openProfile('${escapeAttr(p.username)}')">${avatar(p)}<span><b>${escapeHtml(p.name)} ${virtualBadge(p)}</b><small>@${escapeHtml(p.username)} · ${timeAgo(p.created_at)}${edited}${privacy}</small></span></button>
       ${p.own ? `<button class="icon-btn" title="Opciones" onclick="openPostMenu(${p.id},'${encodedText}','${escapeAttr(p.visibility || 'public')}')">•••</button>` : `<button class="icon-btn" title="Opciones" onclick="openOtherPostMenu(${p.id},${Number(p.user_id)},'${escapeAttr(p.username)}')">•••</button>`}
     </div>
     ${p.text ? `<div class="post-text">${formatText(p.text)}</div>` : ''}
@@ -1700,6 +1706,11 @@ async function renderFeed() {
 
 
 
+function virtualBadge(u, compact = true) {
+  if (!u?.is_virtual) return '';
+  return `<span class="virtual-badge ${compact ? 'compact' : ''}" title="Perfil virtual gestionado por Instant Admirers">✦ ${compact ? 'Virtual' : 'Perfil virtual'}</span>`;
+}
+
 function followButtonHtml(u, klass = 'btn primary compact') {
   if (isSystemAccount()) return '';
   if (u.following) return `<button class="btn ghost compact follow-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Siguiendo</button>`;
@@ -1710,7 +1721,7 @@ function followButtonHtml(u, klass = 'btn primary compact') {
 
 function suggestionCard(u) {
   return `<article class="suggestion-card">
-    <button class="suggestion-person" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'large')}<b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small></button>
+    <button class="suggestion-person" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'large')}<b>${escapeHtml(u.name)} ${virtualBadge(u)}</b><small>@${escapeHtml(u.username)}</small></button>
     ${u.headline ? `<p>${escapeHtml(u.headline).slice(0,90)}</p>` : ''}
     <div class="suggestion-reason">✦ ${escapeHtml(u.recommendation_reason || 'Sugerido para ti')}</div>
     ${followButtonHtml(u)}
@@ -1719,7 +1730,7 @@ function suggestionCard(u) {
 
 
 function newcomerCard(u){
-  return `<article class="suggestion-card newcomer-card"><span class="newcomer-badge">NUEVO</span><button class="suggestion-person" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'large')}<b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small></button>${u.headline?`<p>${escapeHtml(u.headline).slice(0,90)}</p>`:''}<div class="suggestion-reason">✦ Recién llegado</div>${followButtonHtml(u)}</article>`;
+  return `<article class="suggestion-card newcomer-card"><span class="newcomer-badge">NUEVO</span><button class="suggestion-person" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'large')}<b>${escapeHtml(u.name)} ${virtualBadge(u)}</b><small>@${escapeHtml(u.username)}</small></button>${u.headline?`<p>${escapeHtml(u.headline).slice(0,90)}</p>`:''}<div class="suggestion-reason">✦ Recién llegado</div>${followButtonHtml(u)}</article>`;
 }
 
 async function renderDiscover() {
@@ -1812,7 +1823,7 @@ window.openComments = async (postId) => {
 };
 
 function commentHtml(c) {
-  return `<div class="comment">${avatar(c, 'small')}<div class="comment-bubble"><div><button class="inline-person" onclick="closeModal();openProfile('${escapeAttr(c.username)}')"><b>${escapeHtml(c.name)}</b> <span>@${escapeHtml(c.username)}</span></button></div><p>${formatText(c.text)}</p><small>${timeAgo(c.created_at)}</small></div>${c.own ? `<button class="icon-btn tiny-btn" onclick="deleteComment(${c.id},${c.post_id})">×</button>` : ''}</div>`;
+  return `<div class="comment">${avatar(c, 'small')}<div class="comment-bubble"><div><button class="inline-person" onclick="closeModal();openProfile('${escapeAttr(c.username)}')"><b>${escapeHtml(c.name)} ${virtualBadge(c)}</b> <span>@${escapeHtml(c.username)}</span></button></div><p>${formatText(c.text)}</p><small>${timeAgo(c.created_at)}</small></div>${c.own ? `<button class="icon-btn tiny-btn" onclick="deleteComment(${c.id},${c.post_id})">×</button>` : ''}</div>`;
 }
 
 window.sendComment = async (postId) => {
@@ -1853,7 +1864,7 @@ window.searchTag = async (tag) => { state.search = tag; await go('search'); };
 
 function userRow(u) {
   const summary = u.headline || u.bio || '';
-  return `<div class="user-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u)}<span><b>${escapeHtml(u.name)}${u.account_private ? ' <i class="private-mini">🔒</i>' : ''}</b><small>@${escapeHtml(u.username)}</small>${summary ? `<em>${escapeHtml(summary).slice(0,90)}</em>` : ''}</span></button>${followButtonHtml(u)}</div>`;
+  return `<div class="user-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u)}<span><b>${escapeHtml(u.name)} ${virtualBadge(u)}${u.account_private ? ' <i class="private-mini">🔒</i>' : ''}</b><small>@${escapeHtml(u.username)}</small>${summary ? `<em>${escapeHtml(summary).slice(0,90)}</em>` : ''}</span></button>${followButtonHtml(u)}</div>`;
 }
 
 window.openProfile = async (username, opts = {}) => { if (isSystemAccount() && String(username||'').toLowerCase()===String(state.me?.username||'').toLowerCase()) return go('admin',opts); if (state.messagePoll) { clearInterval(state.messagePoll); state.messagePoll = null; } resetViewObservers(); state.view = 'profile'; state.profile = username; if (opts.history !== false) setProfileBrowserUrl(username, { replace:Boolean(opts.replace) }); layout(); await renderProfile(username); };
@@ -1884,9 +1895,9 @@ async function renderProfile(username) {
     <div class="profile-cover ${u.cover ? 'has-cover' : ''}">${u.cover ? `<img src="${escapeAttr(u.cover)}" decoding="async" alt="">` : ''}</div>
     <div class="profile-main-v7">
       <div class="profile-top">${avatar(u, 'xl')}<div class="profile-cta">${actions}</div></div>
-      <h2>${escapeHtml(u.name)}${u.account_private ? ' <span class="private-badge" title="Cuenta privada">🔒</span>' : ''}</h2><div class="handle">@${escapeHtml(u.username)}</div>
+      <h2>${escapeHtml(u.name)} ${virtualBadge(u,false)}${u.account_private ? ' <span class="private-badge" title="Cuenta privada">🔒</span>' : ''}</h2><div class="handle">@${escapeHtml(u.username)}</div>${u.is_virtual ? `<div class="virtual-profile-notice"><b>✦ Anfitrión virtual</b><span>Perfil ficticio gestionado por Instant Admirers para dar vida a la comunidad. No representa a una persona real.</span></div>` : ''}
       ${u.headline ? `<div class="profile-headline">${escapeHtml(u.headline)}</div>` : ''}
-      ${!u.blocked_by_me ? `<div class="profile-presence">${presenceHtml(u)}</div>` : ''}
+      ${!u.blocked_by_me && !u.is_virtual ? `<div class="profile-presence">${presenceHtml(u)}</div>` : ''}
       ${u.blocked_by_me ? `<div class="privacy-notice blocked-notice"><b>Has bloqueado a esta persona</b><span>No podéis ver vuestro contenido ni interactuar mientras esté bloqueada.</span></div>` : ''}
       ${u.bio && !u.blocked_by_me ? `<p class="profile-bio">${formatText(u.bio)}</p>` : ''}
       ${!u.blocked_by_me ? `<div class="profile-meta">${u.location ? `<span>⌖ ${escapeHtml(u.location)}</span>` : ''}${website}</div>` : ''}
@@ -1926,7 +1937,7 @@ window.openProfileMenu = (userId, username, muted = false) => {
 
 
 function friendButton(u) {
-  if (isSystemAccount() || !u || u.own) return '';
+  if (isSystemAccount() || !u || u.own || u.is_virtual) return '';
   if (u.friendship_status === 'friends') return `<button class="btn ghost compact friendship-btn" onclick="removeFriend(${u.id},'${escapeAttr(u.username)}')">✓ Amigos</button>`;
   if (u.friendship_status === 'sent') return `<button class="btn ghost compact friendship-btn" onclick="sendFriendRequest(${u.id},'${escapeAttr(u.username)}')">Solicitud enviada</button>`;
   if (u.friendship_status === 'received') return `<button class="btn primary compact friendship-btn" onclick="acceptFriendRequest(${Number(u.friend_request_id)},'${escapeAttr(u.username)}')">Aceptar amistad</button>`;
@@ -2007,7 +2018,7 @@ function followListRow(u, ownerUsername, type) {
   const isMe = Number(u.id) === Number(state.me?.id);
   const action = isMe ? '' : followButtonHtml(u, 'btn primary compact');
   return `<div class="follow-list-row" data-follow-user="${Number(u.id)}">
-    <button class="person-link" onclick="closeModal();openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small>${u.headline?`<em>${escapeHtml(u.headline).slice(0,70)}</em>`:''}</span></button>
+    <button class="person-link" onclick="closeModal();openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)} ${virtualBadge(u)}</b><small>@${escapeHtml(u.username)}</small>${u.headline?`<em>${escapeHtml(u.headline).slice(0,70)}</em>`:''}</span></button>
     ${action}
   </div>`;
 }
@@ -2055,7 +2066,7 @@ function followRequestRow(r){
 }
 function privacyPersonRow(u,type){
   const action = type==='block' ? `toggleBlock(${u.id},'${escapeAttr(u.username)}',true)` : `toggleMute(${u.id},'${escapeAttr(u.username)}',true)`;
-  return `<div class="privacy-person">${avatar(u,'small')}<button class="privacy-person-name" onclick="closeModal();openProfile('${escapeAttr(u.username)}')"><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small></button><button class="btn ghost compact" onclick="${action}">${type==='block'?'Desbloquear':'Mostrar'}</button></div>`;
+  return `<div class="privacy-person">${avatar(u,'small')}<button class="privacy-person-name" onclick="closeModal();openProfile('${escapeAttr(u.username)}')"><b>${escapeHtml(u.name)} ${virtualBadge(u)}</b><small>@${escapeHtml(u.username)}</small></button><button class="btn ghost compact" onclick="${action}">${type==='block'?'Desbloquear':'Mostrar'}</button></div>`;
 }
 window.savePrivacySettings = async () => {
   try { await api('/api/privacy',{method:'PATCH',body:JSON.stringify({account_private:$('#privacyPrivate').checked,public_profile_preview_enabled:Boolean($('#privacyPublicPreview')?.checked),message_policy:$('#privacyMessages').value,content_watermark_mode:$('#privacyWatermark')?.value || 'exclusive'})}); await refreshMe(false); toast('Privacidad actualizada'); await openPrivacySettings(); }
@@ -2123,12 +2134,12 @@ async function renderFriends() {
 }
 
 function connectionFollowingRow(u) {
-  return `<div class="friend-row connection-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small>${u.headline?`<em>${escapeHtml(u.headline).slice(0,70)}</em>`:''}</span></button><div class="friend-actions"><button class="btn ghost compact follow-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Siguiendo</button></div></div>`;
+  return `<div class="friend-row connection-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)} ${virtualBadge(u)}</b><small>@${escapeHtml(u.username)}</small>${u.headline?`<em>${escapeHtml(u.headline).slice(0,70)}</em>`:''}</span></button><div class="friend-actions"><button class="btn ghost compact follow-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Siguiendo</button></div></div>`;
 }
 
 function connectionFollowerRow(u) {
   const action = Number(u.id) === Number(state.me?.id) ? '' : followButtonHtml(u,'btn primary compact');
-  return `<div class="friend-row connection-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small>${u.headline?`<em>${escapeHtml(u.headline).slice(0,70)}</em>`:''}</span></button><div class="friend-actions">${action}</div></div>`;
+  return `<div class="friend-row connection-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)} ${virtualBadge(u)}</b><small>@${escapeHtml(u.username)}</small>${u.headline?`<em>${escapeHtml(u.headline).slice(0,70)}</em>`:''}</span></button><div class="friend-actions">${action}</div></div>`;
 }
 
 function friendRequestRow(r) {
@@ -2140,7 +2151,7 @@ function outgoingFriendRow(r) {
 }
 
 function friendRow(u) {
-  return `<div class="friend-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small>${presenceHtml(u)}</span></button><div class="friend-actions"><button class="btn ghost compact" onclick="startMessage(${u.id})">Mensaje</button><button class="icon-btn danger-hover" onclick="removeFriend(${u.id})" title="Eliminar amistad">•••</button></div></div>`;
+  return `<div class="friend-row"><button class="person-link" onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)} ${virtualBadge(u)}</b><small>@${escapeHtml(u.username)}</small>${u.is_virtual?'<em>Anfitrión virtual</em>':presenceHtml(u)}</span></button><div class="friend-actions"><button class="btn ghost compact" onclick="startMessage(${u.id})">Mensaje</button><button class="icon-btn danger-hover" onclick="removeFriend(${u.id})" title="Eliminar amistad">•••</button></div></div>`;
 }
 
 window.openOwnProfileMenu = () => {
@@ -2435,7 +2446,7 @@ async function loadRightbar() {
       ? `<div class="card side-card"><div class="side-title">Cuenta técnica</div><div class="profile-summary">${avatar(state.me)}<span><b>${escapeHtml(state.me.name)}</b><small>Administración · fuera de la red social</small></span></div><div class="system-account-actions"><button class="btn primary compact" onclick="go('admin')">Administración</button><button class="btn ghost compact" onclick="openAccountSettings()">Ajustes</button></div></div>`
       : `<div class="card side-card"><div class="side-title">Tu perfil</div><button class="profile-summary" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me)}<span><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></span></button><div class="mini-stats"><button type="button" class="mini-stat-btn" onclick="openProfile('${escapeAttr(state.me.username)}')" title="Ver tus publicaciones"><b>${state.me.posts_count || 0}</b><span>posts</span></button><button type="button" class="mini-stat-btn social" onclick="openFollowList('${escapeAttr(state.me.username)}','followers')" title="Ver seguidores" aria-label="Ver seguidores"><b>${state.me.followers_count || 0}</b><span>seguidores ↗</span></button><button type="button" class="mini-stat-btn social" onclick="openFollowList('${escapeAttr(state.me.username)}','following')" title="Ver a quién sigues" aria-label="Ver a quién sigues"><b>${state.me.following_count || 0}</b><span>siguiendo ↗</span></button></div></div>`;
     box.innerHTML = `${accountCard}
-      <div class="card side-card"><div class="side-title">Personas para ti</div>${suggestions.length ? suggestions.map(u => `<div class="side-user suggested-side-user"><button onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}</small><em>✦ ${escapeHtml(u.recommendation_reason || 'Sugerido')}</em></span></button>${isSystemAccount()?'':(u.follow_requested?`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Solicitada</button>`:`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.account_private?'Solicitar':'Seguir'}</button>`)}</div>`).join('') : '<p class="muted">No hay sugerencias disponibles.</p>'}</div>
+      <div class="card side-card"><div class="side-title">Personas para ti</div>${suggestions.length ? suggestions.map(u => `<div class="side-user suggested-side-user"><button onclick="openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)} ${virtualBadge(u)}</b><small>@${escapeHtml(u.username)}</small><em>✦ ${escapeHtml(u.recommendation_reason || 'Sugerido')}</em></span></button>${isSystemAccount()?'':(u.follow_requested?`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">Solicitada</button>`:`<button class="text-btn" onclick="toggleFollow(${u.id},'${escapeAttr(u.username)}')">${u.account_private?'Solicitar':'Seguir'}</button>`)}</div>`).join('') : '<p class="muted">No hay sugerencias disponibles.</p>'}</div>
       <div id="rightbarTrends" class="card side-card"><div class="side-title">Tendencias · 7 días</div>${tags.length ? tags.map(t => `<button class="trend" onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} ${Number(t.count)===1?'post':'posts'} · ${t.authors || 1} ${Number(t.authors || 1)===1?'persona':'personas'} · ${t.engagement || 0} ${Number(t.engagement || 0)===1?'interacción':'interacciones'}</small></button>`).join('') : '<p class="muted">Los hashtags aparecerán aquí cuando se usen.</p>'}</div>
       <button class="logout-link" onclick="logout()">Cerrar sesión</button>`;
     void mountRightbarAd();
@@ -2451,7 +2462,7 @@ function storyStrip(stories = []) {
   const byUser = new Map();
   stories.forEach(story => {
     if (!byUser.has(story.username)) {
-      const group = { username: story.username, name: story.name, avatar: story.avatar, items: [] };
+      const group = { username: story.username, name: story.name, avatar: story.avatar, is_virtual:Boolean(story.is_virtual), items: [] };
       byUser.set(story.username, group); groups.push(group);
     }
     byUser.get(story.username).items.push(story);
@@ -2460,7 +2471,7 @@ function storyStrip(stories = []) {
     <button class="story-bubble story-add" onclick="createStoryModal()"><span class="story-ring add-ring">${avatar(state.me,'story')}<i>+</i></span><small>Tu story</small></button>
     ${groups.map(g => {
       const unseen = g.items.some(x => !x.viewed && !x.own);
-      return `<button class="story-bubble ${unseen ? '' : 'viewed'}" onclick="openStories('${escapeAttr(g.username)}')"><span class="story-ring">${avatar(g,'story')}</span><small>${escapeHtml(g.username === state.me.username ? 'Tus stories' : g.name.split(' ')[0])}</small></button>`;
+      return `<button class="story-bubble ${unseen ? '' : 'viewed'}" onclick="openStories('${escapeAttr(g.username)}')"><span class="story-ring">${avatar(g,'story')}</span><small>${escapeHtml(g.username === state.me.username ? 'Tus stories' : g.name.split(' ')[0])}${g.is_virtual?' · ✦':''}</small></button>`;
     }).join('')}
   </div></section>`;
 }
@@ -2560,7 +2571,7 @@ async function showStory() {
   const media = protectedMediaFrame(s,rawMedia,'story-protected-media');
   $('#modal-root').innerHTML = `<div class="story-backdrop"><div class="story-viewer">
     <div class="story-progress">${viewer.items.map((_,i)=>`<span class="${i < viewer.index ? 'done' : i === viewer.index ? 'active' : ''}"><i></i></span>`).join('')}</div>
-    <div class="story-head"><button class="person-link" onclick="closeStoryViewer();openProfile('${escapeAttr(s.username)}')">${avatar(s,'small')}<span><b>${escapeHtml(s.name)}</b><small>@${escapeHtml(s.username)} · ${timeAgo(s.created_at)}</small></span></button><button class="story-close" onclick="closeStoryViewer()">×</button></div>
+    <div class="story-head"><button class="person-link" onclick="closeStoryViewer();openProfile('${escapeAttr(s.username)}')">${avatar(s,'small')}<span><b>${escapeHtml(s.name)} ${virtualBadge(s)}</b><small>@${escapeHtml(s.username)} · ${timeAgo(s.created_at)}</small></span></button><button class="story-close" onclick="closeStoryViewer()">×</button></div>
     <div class="story-stage">${media}${s.text ? `<div class="story-caption">${formatText(s.text)}</div>` : ''}<button class="story-prev" onclick="nextStory(-1)">‹</button><button class="story-next" onclick="nextStory(1)">›</button></div>
     ${s.own ? `<div class="story-owner-tools"><button onclick="showStoryViewers(${s.id})">👁 ${s.views_count || 0} visualizaciones</button><button class="danger-text" onclick="deleteStory(${s.id})">Eliminar</button></div>` : ''}
   </div></div>`;
@@ -2598,7 +2609,7 @@ window.showStoryViewers = async (id) => {
   try {
     clearTimeout(showStory.timer);
     const rows = await api(`/api/stories/${id}/viewers`);
-    modal(`<div class="modal-head"><h3>Visualizaciones</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="viewer-list">${rows.length ? rows.map(u=>`<button class="person-link viewer-row" onclick="closeModal();openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)} · ${timeAgo(u.viewed_at)}</small></span></button>`).join('') : '<div class="empty compact-empty">Todavía no la ha visto nadie.</div>'}</div>`);
+    modal(`<div class="modal-head"><h3>Visualizaciones</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="viewer-list">${rows.length ? rows.map(u=>`<button class="person-link viewer-row" onclick="closeModal();openProfile('${escapeAttr(u.username)}')">${avatar(u,'small')}<span><b>${escapeHtml(u.name)} ${virtualBadge(u)}</b><small>@${escapeHtml(u.username)} · ${timeAgo(u.viewed_at)}</small></span></button>`).join('') : '<div class="empty compact-empty">Todavía no la ha visto nadie.</div>'}</div>`);
   } catch (e) { toast(e.message,'error'); }
 };
 
@@ -2692,7 +2703,7 @@ window.sharePostPrivate = async (postId) => {
     const ordered = [...users].sort((a,b) => (a.friendship_status === 'friends' ? -1 : 0) - (b.friendship_status === 'friends' ? -1 : 0));
     modal(`<div class="modal-head"><h3>Compartir por mensaje</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
       <div class="share-note">Elige a quién quieres enviar esta publicación.</div>
-      <div class="new-message-list">${ordered.length ? ordered.map(u=>`<button class="person-link new-message-user" onclick="sharePostTo(${postId},${u.id})">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}${u.friendship_status==='friends'?' · amigo':''}</small></span><i>›</i></button>`).join('') : '<div class="empty compact-empty">No hay otros usuarios todavía.</div>'}</div>`);
+      <div class="new-message-list">${ordered.length ? ordered.map(u=>`<button class="person-link new-message-user" onclick="sharePostTo(${postId},${u.id})">${avatar(u,'small')}<span><b>${escapeHtml(u.name)} ${virtualBadge(u)}</b><small>@${escapeHtml(u.username)}${u.friendship_status==='friends'?' · amigo':''}</small></span><i>›</i></button>`).join('') : '<div class="empty compact-empty">No hay otros usuarios todavía.</div>'}</div>`);
   } catch(e) { toast(e.message,'error'); }
 };
 
@@ -2752,7 +2763,7 @@ async function renderMessages() {
 
 function conversationRow(c) {
   const preview = c.last_message ? c.last_message : c.last_shared_post_id ? '↗ Publicación compartida' : c.last_media_type === 'image' ? '📷 Foto' : c.last_media_type === 'video' ? '🎬 Vídeo' : 'Nueva conversación';
-  return `<button class="conversation-row ${Number(c.id)===Number(state.activeConversation)?'active':''}" onclick="openConversation(${c.id})">${avatar(c,'small')}<span class="conversation-copy"><b>${escapeHtml(c.name)}${c.online?'<i class="online-dot" title="En línea"></i>':''}</b><small>${escapeHtml(preview).slice(0,65)}</small></span><span class="conversation-meta"><small>${c.last_message_at?timeAgo(c.last_message_at):''}</small>${Number(c.unread_count)>0?`<i>${Math.min(99,c.unread_count)}</i>`:''}</span></button>`;
+  return `<button class="conversation-row ${Number(c.id)===Number(state.activeConversation)?'active':''}" onclick="openConversation(${c.id})">${avatar(c,'small')}<span class="conversation-copy"><b>${escapeHtml(c.name)} ${virtualBadge(c)}${c.online&&!c.is_virtual?'<i class="online-dot" title="En línea"></i>':''}</b><small>${escapeHtml(preview).slice(0,65)}</small></span><span class="conversation-meta"><small>${c.last_message_at?timeAgo(c.last_message_at):''}</small>${Number(c.unread_count)>0?`<i>${Math.min(99,c.unread_count)}</i>`:''}</span></button>`;
 }
 
 function chatPanelHtml(c, messages, isMobile, chatAccess={allowed:true}) {
@@ -2762,8 +2773,9 @@ function chatPanelHtml(c, messages, isMobile, chatAccess={allowed:true}) {
     ? `<div id="messageMediaPreview"></div>
       <div class="message-compose"><label class="attach-btn" title="Galería" onclick="prepareGalleryInput('messageFile',true)">＋<input id="messageFile" type="file" accept="image/*,video/*" onchange="previewMessageFile(this)" hidden></label><button type="button" class="attach-btn capture-icon mobile-capture-only" title="Hacer foto" onclick="captureFromDevice('messageFile','photo','environment')">📷</button><button type="button" class="attach-btn capture-icon mobile-capture-only" title="Grabar vídeo" onclick="captureFromDevice('messageFile','video','environment')">🎥</button><textarea id="messageText" rows="1" maxlength="4000" placeholder="Escribe un mensaje…" oninput="handleTyping(${c.id})" onblur="stopTyping(${c.id})" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendMessage(${c.id})}"></textarea><button id="messageSendBtn" class="btn primary compact" onclick="sendMessage(${c.id})">Enviar</button></div>`
     : `<div class="chat-access-lock"><span>🔒</span><div><b>${escapeHtml(challengeLocked ? teaserCopy('Completa el reto para usar el chat','Complete the challenge to use chat') : teaserCopy('Chat no disponible','Chat unavailable'))}</b><p>${escapeHtml(challengeLocked ? teaserCopy('Este perfil protege sus mensajes con un reto de acceso. Complétalo antes de enviar mensajes, fotos o vídeos.','This profile protects messages with an access challenge. Complete it before sending messages, photos or videos.') : teaserCopy('No puedes enviar mensajes a esta persona en este momento.','You cannot send messages to this person right now.'))}</p></div>${challengeLocked?`<button class="btn primary compact" onclick="openProfile('${escapeAttr(c.username)}')">${teaserCopy('Ver reto','View challenge')}</button>`:''}</div>`;
-  return `<div class="chat-header">${isMobile?`<button class="icon-btn chat-back" onclick="closeConversation()">‹</button>`:''}<button class="person-link" onclick="openProfile('${escapeAttr(c.username)}')">${avatar(c,'small')}<span><b>${escapeHtml(c.name)}</b><small>@${escapeHtml(c.username)} · ${presenceHtml({id:c.other_id,online:c.online,last_seen_at:c.last_seen_at})}</small></span></button><button class="icon-btn" onclick="renderMessages()" title="Actualizar">↻</button></div>
-    <div class="message-stream" id="messageStream">${messages.length ? messages.map(messageHtml).join('') : `<div class="chat-first"><b>Empieza la conversación con ${escapeHtml(c.name)}</b><span>Los mensajes son privados entre vosotros.</span></div>`}</div>
+  return `<div class="chat-header">${isMobile?`<button class="icon-btn chat-back" onclick="closeConversation()">‹</button>`:''}<button class="person-link" onclick="openProfile('${escapeAttr(c.username)}')">${avatar(c,'small')}<span><b>${escapeHtml(c.name)} ${virtualBadge(c)}</b><small>@${escapeHtml(c.username)} · ${c.is_virtual?'Anfitrión virtual':presenceHtml({id:c.other_id,online:c.online,last_seen_at:c.last_seen_at})}</small></span></button><button class="icon-btn" onclick="renderMessages()" title="Actualizar">↻</button></div>
+    ${c.is_virtual?`<div class="virtual-chat-disclosure"><b>✦ Perfil virtual</b><span>Este personaje está gestionado por Instant Admirers. Los mensajes pueden ser respondidos por el equipo de administración.</span></div>`:''}
+    <div class="message-stream" id="messageStream">${messages.length ? messages.map(messageHtml).join('') : `<div class="chat-first"><b>Empieza la conversación con ${escapeHtml(c.name)}</b><span>${c.is_virtual?'Estás escribiendo a un anfitrión virtual gestionado por Instant Admirers.':'Los mensajes son privados entre vosotros.'}</span></div>`}</div>
     <div class="typing-indicator" id="typingIndicator"></div>
     ${reply}
     ${composer}`;
@@ -2825,7 +2837,7 @@ window.newMessage = async () => {
   try {
     const users = await api('/api/users');
     const ordered=[...users].sort((a,b)=>(a.friendship_status==='friends'?-1:0)-(b.friendship_status==='friends'?-1:0));
-    modal(`<div class="modal-head"><h3>Nuevo mensaje</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="new-message-list">${ordered.length ? ordered.map(u=>`<button class="person-link new-message-user" onclick="closeModal();startMessage(${u.id})">${avatar(u,'small')}<span><b>${escapeHtml(u.name)}</b><small>@${escapeHtml(u.username)}${u.online?' · en línea':''}</small></span><i>›</i></button>`).join('') : '<div class="empty compact-empty">No hay más usuarios todavía.</div>'}</div>`);
+    modal(`<div class="modal-head"><h3>Nuevo mensaje</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="new-message-list">${ordered.length ? ordered.map(u=>`<button class="person-link new-message-user" onclick="closeModal();startMessage(${u.id})">${avatar(u,'small')}<span><b>${escapeHtml(u.name)} ${virtualBadge(u)}</b><small>@${escapeHtml(u.username)}${u.is_virtual?' · anfitrión virtual':(u.online?' · en línea':'')}</small></span><i>›</i></button>`).join('') : '<div class="empty compact-empty">No hay más usuarios todavía.</div>'}</div>`);
   } catch(e){ toast(e.message,'error'); }
 };
 
@@ -2890,7 +2902,7 @@ async function refreshActiveConversation(){
 
 
 function updateNavBadges() {
-  const values = { messages:Number(state.me?.unread_messages||0), notifications:Number(state.me?.unread_notifications||0) };
+  const values = { messages:Number(state.me?.unread_messages||0), notifications:Number(state.me?.unread_notifications||0), admin:state.me?.is_admin ? Number(state.me?.virtual_inbox_unread||0) : 0 };
   for (const [view,count] of Object.entries(values)) {
     document.querySelectorAll(`[data-nav-view="${view}"]`).forEach(btn => {
       let badge=btn.querySelector('.nav-badge');
@@ -2899,7 +2911,7 @@ function updateNavBadges() {
     });
   }
   const top=$('#topActivityButton');
-  if(top){ let badge=top.querySelector('.nav-badge'); const count=values.notifications; if(count>0){ if(!badge){badge=document.createElement('span');badge.className='nav-badge';top.appendChild(badge);} badge.textContent=String(Math.min(99,count)); } else badge?.remove(); }
+  if(top){ let badge=top.querySelector('.nav-badge'); const count=isSystemAccount()?values.admin:values.notifications; if(count>0){ if(!badge){badge=document.createElement('span');badge.className='nav-badge';top.appendChild(badge);} badge.textContent=String(Math.min(99,count)); } else badge?.remove(); }
 }
 
 function updatePresenceDom(userId, online, lastSeenAt = null) {
@@ -2944,6 +2956,24 @@ function connectRealtime() {
     if(state.view!=='messages') return;
     if(Number(state.activeConversation)===Number(event.conversationId)) await refreshActiveConversation();
     else await renderMessages();
+  });
+  state.socket.on('virtual-inbox:new', async (event) => {
+    if(!state.me?.is_admin) return;
+    state.me.virtual_inbox_unread=Number(state.me.virtual_inbox_unread||0)+1;
+    updateNavBadges();
+    const who=event?.virtualName ? ` para ${event.virtualName}` : '';
+    toast(`Nuevo mensaje${who}`);
+    browserNotice('Instant Admirers · Comunidad virtual', event?.text || `Nuevo mensaje${who}`);
+    if(state.view==='admin') await renderAdmin().catch(()=>{});
+  });
+  state.socket.on('virtual-inbox:resolved', async (event) => {
+    if(!state.me?.is_admin) return;
+    state.me.virtual_inbox_unread=Math.max(0,Number(event?.unread||0));
+    updateNavBadges();
+    if(state.view==='admin') await renderAdmin().catch(()=>{});
+  });
+  state.socket.on('virtual-community:update', async () => {
+    if(state.me?.is_admin && state.view==='admin') await renderAdmin().catch(()=>{});
   });
   state.socket.on('notification:new', (event) => {
     state.me.unread_notifications=Number(state.me.unread_notifications||0)+1; updateNavBadges();
@@ -3320,12 +3350,79 @@ function growthAttributionDetailsHtml(c={}) {
   return `<details class="growth-attribution-details"><summary>Ver procedencia de las visitas</summary><div class="growth-attribution-body"><div class="growth-attribution-block"><small>FUENTES Y CONVERSIÓN</small><div class="growth-source-table"><div class="growth-source-row head"><span>Fuente</span><span>Visitas</span><span>Registros</span><span>Conv.</span></div>${sourceRows}</div></div><div class="growth-attribution-block"><small>REFERRER DETECTADO</small><div class="growth-origin-chips">${refRows}</div></div>${deviceRows?`<div class="growth-attribution-block"><small>DISPOSITIVOS</small><div class="growth-origin-chips">${deviceRows}</div></div>`:''}<div class="growth-attribution-block"><small>ÚLTIMAS VISITAS</small><div class="growth-recent-list">${recentRows}</div></div></div></details>`;
 }
 
+
+function virtualCommunityAdminHtml(data={}) {
+  const st=data?.status || {};
+  const profiles=Array.isArray(data?.profiles)?data.profiles:[];
+  const inbox=Array.isArray(data?.inbox)?data.inbox:[];
+  const total=Number(st.total||0);
+  const statusLabel=x=>x==='active'?'Activo':x==='paused'?'Pausado':'Retirado';
+  const inboxHtml=inbox.length ? inbox.map(x=>`<button class="virtual-inbox-row ${Number(x.unread_alerts||0)>0?'unread':''}" onclick="openVirtualAdminConversation(${Number(x.conversation_id)})"><span class="virtual-inbox-avatars"><img src="${escapeAttr(x.virtual_avatar||'/assets/brand/instant-admirers-mark.svg')}" alt=""><i>→</i>${x.real_avatar?`<img src="${escapeAttr(x.real_avatar)}" alt="">`:'<em>◎</em>'}</span><span><b>${escapeHtml(x.virtual_name)} <small>@${escapeHtml(x.virtual_username)}</small></b><strong>${escapeHtml(x.real_name)} <small>@${escapeHtml(x.real_username)}</small></strong><small>${escapeHtml(x.last_message||'Conversación iniciada').slice(0,110)}</small></span><time>${x.last_message_at?timeAgo(x.last_message_at):''}${Number(x.unread_alerts||0)>0?`<i>${Number(x.unread_alerts)}</i>`:''}</time></button>`).join('') : '<div class="empty compact-empty">Todavía no hay conversaciones con anfitriones virtuales.</div>';
+  const profilesHtml=profiles.length ? profiles.map(u=>`<article class="virtual-admin-profile ${escapeAttr(u.status||'active')}"><div class="virtual-admin-profile-main"><img src="${escapeAttr(u.avatar||'/assets/brand/instant-admirers-mark.svg')}" alt=""><div><b>${escapeHtml(u.name)} <span class="virtual-badge compact">✦ Virtual</span></b><small>@${escapeHtml(u.username)} · ${escapeHtml(u.location||'')} · ${Number(u.age||0)} años</small><span>${escapeHtml(u.headline||'')}</span></div></div><div class="virtual-admin-profile-meta"><span class="virtual-status ${escapeAttr(u.status||'active')}">${statusLabel(u.status)}</span><span>${Number(u.posts_count||0)} posts</span><span>${Number(u.media_count||0)} fotos</span><label class="virtual-cadence"><span>Frecuencia</span><select onchange="setVirtualProfileCadence(${Number(u.id)},this.value)">${[1,2,3,4,5,6,7].map(n=>`<option value="${n}" ${Number(u.posts_per_week||0)===n?'selected':''}>${n===7?'Diaria':`${n}/semana`}</option>`).join('')}</select></label><small>${u.next_auto_post_at?`Próxima ${timeAgo(u.next_auto_post_at)}`:'Sin actividad programada'}</small></div><div class="virtual-admin-profile-actions">${u.status!=='active'?`<button class="btn primary compact" onclick="setVirtualProfileStatus(${Number(u.id)},'active')">Activar</button>`:`<button class="btn ghost compact" onclick="setVirtualProfileStatus(${Number(u.id)},'paused')">Pausar</button>`}${u.status!=='retired'?`<button class="btn ghost compact" onclick="setVirtualProfileStatus(${Number(u.id)},'retired')">Retirar</button>`:''}<label class="btn ghost compact virtual-media-upload">+ Foto<input type="file" accept="image/*" hidden onchange="uploadVirtualProfileMedia(${Number(u.id)},this.files?.[0],this,false)"></label><label class="btn ghost compact virtual-media-upload">Avatar<input type="file" accept="image/*" hidden onchange="uploadVirtualProfileMedia(${Number(u.id)},this.files?.[0],this,true)"></label><button class="btn ghost compact" onclick="openProfile('${escapeAttr(u.username)}')">Ver perfil</button></div></article>`).join('') : '';
+  return `<section class="card admin-section virtual-community-admin">
+    <div class="section-row"><div><h3>Comunidad virtual</h3><p>100 anfitriones ficticios identificados como virtuales. Dan actividad al feed, no se mezclan con las métricas de usuarios reales y ahora disponen de SEO público transparente.</p></div><span class="virtual-community-version">V1.12.22</span></div>
+    ${total===0 ? `<div class="virtual-community-empty"><div>✦</div><b>La comunidad virtual todavía no está creada</b><p>Crea 50 perfiles de mujer y 50 de hombre, con ciudades, intereses, bios, contenido inicial y actividad programada. Todos se muestran con la etiqueta “Perfil virtual”.</p><button class="btn primary" onclick="seedVirtualCommunity()">Crear 100 perfiles virtuales</button></div>` : `
+      <div class="virtual-community-metrics"><span><b>${total}</b> perfiles</span><span><b>${Number(st.women||0)}</b> mujeres</span><span><b>${Number(st.men||0)}</b> hombres</span><span><b>${Number(st.active||0)}</b> activos</span><span><b>${Number(st.paused||0)}</b> pausados</span><span><b>${Number(st.retired||0)}</b> retirados</span><span><b>${Number(st.posts_today||0)}</b> posts hoy</span><span class="${Number(st.inbox_unread||0)>0?'has-unread':''}"><b>${Number(st.inbox_unread||0)}</b> mensajes pendientes</span></div>
+      <div class="virtual-community-actions"><button class="btn primary compact" onclick="runVirtualCommunityNow()">Generar actividad ahora</button><button class="btn ghost compact" onclick="go('feed')">Ver en Inicio</button><small>La actividad automática se reparte durante la semana para que los 100 perfiles no publiquen a la vez.</small></div>
+      <div class="virtual-inbox-block"><div class="section-row"><div><h4>Buzón de anfitriones</h4><p>Cuando una persona real escribe a un perfil virtual, aparece aquí para que administración responda desde ese personaje.</p></div><span>${Number(st.inbox_unread||0)}</span></div><div class="virtual-inbox-list">${inboxHtml}</div></div>
+      <details class="virtual-profile-manager" ${profiles.length && profiles.length<=12?'open':''}><summary>Gestionar los ${total} perfiles</summary><div class="virtual-profile-toolbar"><input id="virtualProfileSearch" placeholder="Buscar nombre, usuario, ciudad…" onkeydown="if(event.key==='Enter')searchVirtualProfiles()"><button class="btn ghost compact" onclick="searchVirtualProfiles()">Buscar</button><button class="btn ghost compact" onclick="resetVirtualProfiles()">Todos</button></div><div id="virtualProfileList" class="virtual-admin-profile-list">${profilesHtml}</div></details>
+    `}
+  </section>`;
+}
+
+window.seedVirtualCommunity=async()=>{
+  if(!confirm('Se crearán 100 perfiles virtuales identificados (50 mujeres y 50 hombres), junto con contenido inicial. No cuentan como usuarios reales. ¿Continuar?')) return;
+  try{toast('Creando comunidad virtual…');const r=await api('/api/admin/virtual-community/seed',{method:'POST',body:'{}',timeout:120000});toast(`Creados ${r.profiles} perfiles y ${r.posts} publicaciones`);await refreshMe(false);await renderAdmin();}catch(e){toast(e.message,'error');}
+};
+
+window.runVirtualCommunityNow=async()=>{
+  try{const r=await api('/api/admin/virtual-community/run-activity',{method:'POST',body:JSON.stringify({force:true,limit:20}),timeout:120000});toast(`Actividad creada: ${r.posts} posts · ${r.stories} Stories`);await renderAdmin();}catch(e){toast(e.message,'error');}
+};
+
+window.setVirtualProfileStatus=async(userId,status)=>{
+  const labels={active:'activar',paused:'pausar',retired:'retirar'};
+  if(status==='retired' && !confirm('Retirar este perfil lo ocultará del circuito social. Las conversaciones históricas se conservan. ¿Continuar?')) return;
+  try{await api(`/api/admin/virtual-profiles/${Number(userId)}`,{method:'PATCH',body:JSON.stringify({status})});toast(`Perfil ${labels[status]||status}`);await renderAdmin();}catch(e){toast(e.message,'error');}
+};
+
+window.setVirtualProfileCadence=async(userId,value)=>{
+  const postsPerWeek=Math.min(7,Math.max(1,Number(value)||3));
+  try{await api(`/api/admin/virtual-profiles/${Number(userId)}`,{method:'PATCH',body:JSON.stringify({posts_per_week:postsPerWeek})});toast(postsPerWeek===7?'Frecuencia diaria activada':`Frecuencia: ${postsPerWeek} publicaciones por semana`);}catch(e){toast(e.message,'error');await renderAdmin();}
+};
+
+window.uploadVirtualProfileMedia=async(userId,file,input,useAsAvatar=false)=>{
+  if(!file) return;
+  if(!String(file.type||'').startsWith('image/')){toast('Selecciona una imagen','error');return;}
+  try{const fd=new FormData();fd.append('file',file);fd.append('label',file.name||'Foto');fd.append('use_as_avatar',useAsAvatar?'true':'false');await api(`/api/admin/virtual-profiles/${Number(userId)}/media`,{method:'POST',body:fd,timeout:MEDIA_UPLOAD_TIMEOUT_MS});toast(useAsAvatar?'Foto añadida y avatar actualizado':'Foto añadida al pool del perfil');await renderAdmin();}catch(e){toast(e.message,'error');if(input)input.value='';}
+};
+
+window.searchVirtualProfiles=async()=>{
+  const q=String($('#virtualProfileSearch')?.value||'').trim();
+  try{const d=await api(`/api/admin/virtual-community?limit=100&q=${encodeURIComponent(q)}`);state.virtualCommunityData=d;const list=$('#virtualProfileList');if(!list)return;const temp=document.createElement('div');temp.innerHTML=virtualCommunityAdminHtml(d);const fresh=temp.querySelector('#virtualProfileList');list.innerHTML=fresh?.innerHTML||'<div class="empty compact-empty">No hay coincidencias.</div>';}catch(e){toast(e.message,'error');}
+};
+
+window.resetVirtualProfiles=async()=>{if($('#virtualProfileSearch'))$('#virtualProfileSearch').value='';await searchVirtualProfiles();};
+
+function virtualAdminMessageHtml(m={}){
+  const media=m.media_url ? (m.media_type==='image'?`<img src="${escapeAttr(m.media_url)}" alt="">`:m.media_type==='video'?`<video src="${escapeAttr(m.media_url)}" controls playsinline></video>`:'') : '';
+  return `<div class="virtual-admin-message ${m.own?'from-virtual':'from-real'}"><div><b>${escapeHtml(m.name||m.username||'')}</b><small>${m.is_virtual?'✦ Virtual · ':''}${timeAgo(m.created_at)}</small></div>${m.text?`<p>${formatText(m.text)}</p>`:''}${media}</div>`;
+}
+
+window.openVirtualAdminConversation=async(conversationId)=>{
+  try{const d=await api(`/api/admin/virtual-conversations/${Number(conversationId)}/messages`);const c=d.conversation;modal(`<div class="modal-head"><div><h3>${escapeHtml(c.virtual_name)} → ${escapeHtml(c.real_name)}</h3><small class="muted">Respondes como @${escapeHtml(c.virtual_username)} · Perfil virtual</small></div><button class="icon-btn" onclick="closeModal()">×</button></div><div class="virtual-admin-chat" id="virtualAdminChat">${d.messages?.length?d.messages.map(virtualAdminMessageHtml).join(''):'<div class="empty compact-empty">Sin mensajes.</div>'}</div>${c.reply_enabled===false?'<div class="privacy-notice"><b>Respuestas desactivadas</b><span>Activa este perfil desde Comunidad virtual para responder.</span></div>':`<div class="virtual-admin-compose"><textarea id="virtualAdminReplyText" maxlength="4000" rows="2" placeholder="Responder como ${escapeAttr(c.virtual_name)}…" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendVirtualAdminReply(${Number(conversationId)})}"></textarea><button class="btn primary compact" onclick="sendVirtualAdminReply(${Number(conversationId)})">Enviar</button></div>`}`);setTimeout(()=>{const box=$('#virtualAdminChat');if(box)box.scrollTop=box.scrollHeight;$('#virtualAdminReplyText')?.focus();},30);if(state.me){const status=state.virtualCommunityData?.status;if(status)state.me.virtual_inbox_unread=Number(status.inbox_unread||state.me.virtual_inbox_unread||0);updateNavBadges();}}catch(e){toast(e.message,'error');}
+};
+
+window.sendVirtualAdminReply=async(conversationId)=>{
+  const input=$('#virtualAdminReplyText');const text=String(input?.value||'').trim();if(!text)return;
+  try{if(input)input.disabled=true;await api(`/api/admin/virtual-conversations/${Number(conversationId)}/messages`,{method:'POST',body:JSON.stringify({text})});await openVirtualAdminConversation(conversationId);const fresh=await api('/api/admin/virtual-community?limit=100');state.virtualCommunityData=fresh;if(state.me)state.me.virtual_inbox_unread=Number(fresh.status?.inbox_unread||0);updateNavBadges();}catch(e){toast(e.message,'error');if(input)input.disabled=false;}
+};
+
 async function renderAdmin() {
   if(!state.me?.is_admin){
     $('#main').innerHTML=`<div class="card empty"><h3>Acceso no disponible</h3><p>Este panel está reservado a administración.</p></div>`;
     return;
   }
-  const [stats,reports,actions,security,launch,demo,readiness,communityLaunch,growth,adminUsers,advertising]=await Promise.all([
+  const [stats,reports,actions,security,launch,demo,readiness,communityLaunch,growth,adminUsers,advertising,virtualCommunity]=await Promise.all([
     api('/api/admin/stats'),
     api('/api/admin/reports?status=all'),
     api('/api/admin/actions'),
@@ -3336,9 +3433,13 @@ async function renderAdmin() {
     api('/api/admin/community-launch'),
     api('/api/admin/growth-engine'),
     api('/api/admin/users?limit=50'),
-    api('/api/admin/ads')
+    api('/api/admin/ads'),
+    api('/api/admin/virtual-community?limit=100')
   ]);
   state.adminAdsData=advertising;
+  state.virtualCommunityData=virtualCommunity;
+  if(state.me) state.me.virtual_inbox_unread=Number(virtualCommunity?.status?.inbox_unread||0);
+  updateNavBadges();
   $('#main').innerHTML=`${pageHeader('Administración','Moderación y estado general de Instant Admirers')}
     <div class="admin-stats">
       <div class="card admin-stat"><b>${stats.users}</b><span>Usuarios</span><small>+${stats.new_users_7d} esta semana</small></div>
@@ -3346,6 +3447,7 @@ async function renderAdmin() {
       <div class="card admin-stat"><b>${stats.open_reports}</b><span>Denuncias abiertas</span><small>${stats.reviewing_reports} en revisión</small></div>
       <div class="card admin-stat"><b>${stats.suspended_users}</b><span>Suspendidos</span><small>${stats.closed_reports} denuncias cerradas</small></div>
     </div>
+    ${virtualCommunityAdminHtml(virtualCommunity)}
     <section class="card admin-section admin-users-section">
       <div class="section-row"><div><h3>Gestión de usuarios</h3><p>Busca, suspende, reactiva o elimina cuentas reales. Las cuentas de administración están protegidas.</p></div><span id="adminUsersCount">${Number(adminUsers.total||0)}</span></div>
       <div class="admin-user-search"><input id="adminUserSearch" maxlength="120" placeholder="Buscar por nick, nombre o email" onkeydown="if(event.key==='Enter') adminSearchUsers()"><button class="btn ghost compact" onclick="adminSearchUsers()">Buscar</button><button class="btn ghost compact" onclick="adminResetUserSearch()">Todos</button></div>
@@ -3382,7 +3484,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveLaunchPreparation()">Guardar preparación</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación inicial</button>`:''}${demo.active?`<button class="btn danger compact" onclick="clearDemoLab()">Eliminar datos TEST</button>`:''}</div>
     </section>
     <section class="card admin-section community-launch-admin">
-      <div class="section-row"><div><h3>Comunidad inicial</h3><p>Warm-start para que los primeros usuarios encuentren gente y motivos para publicar sin contenido ficticio.</p></div><span class="community-ready-badge">V1.8</span></div>
+      <div class="section-row"><div><h3>Comunidad inicial</h3><p>Estrategia complementaria basada solo en miembros reales: recién llegados, activación y cohorte fundadora.</p></div><span class="community-ready-badge">V1.8</span></div>
       <div class="community-admin-metrics"><span><b>${communityLaunch.metrics.members_total||0}</b> miembros reales</span><span><b>${communityLaunch.metrics.members_7d||0}</b> altas 7 d</span><span><b>${communityLaunch.metrics.activated_members||0}</b> activados</span><span><b>${communityLaunch.metrics.posts_7d||0}</b> posts 7 d</span><span><b>${communityLaunch.metrics.active_7d||0}</b> activos 7 d</span></div>
       <div class="community-admin-settings">
         <label><span><b>Recién llegados</b><small>Destaca nuevos miembros verificados en Descubrir.</small></span><input id="communityNewcomersEnabled" type="checkbox" ${communityLaunch.settings.newcomer_spotlight_enabled?'checked':''}></label>
@@ -3391,7 +3493,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.20</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.22</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>
