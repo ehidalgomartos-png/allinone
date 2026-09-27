@@ -1,4 +1,4 @@
-/* Instant Admirers V1.12.19 · selector global de tema claro/oscuro */
+/* Instant Admirers V1.12.20 · selector global de tema claro/oscuro */
 :root{
   --theme-toggle-bg:rgba(15,17,24,.86);
   --theme-toggle-border:rgba(255,255,255,.11);
@@ -179,8 +179,16 @@ html[data-theme="light"] .conversation-row.active{background:rgba(124,60,255,.06
 html[data-theme="light"] .message-pane{background:#fbfbfd!important}
 html[data-theme="light"] .message-bubble{background:#edf0f5!important;color:#222633!important}
 html[data-theme="light"] .message.theirs .message-bubble small{color:#777e8e!important}
-html[data-theme="light"] .message.mine .message-bubble{color:#fff!important}
-html[data-theme="light"] .message.mine .message-bubble small{color:rgba(255,255,255,.72)!important}
+html[data-theme="light"] .message.mine .message-bubble{
+  background:linear-gradient(135deg,#d629a9,#713fdb)!important;
+  color:#fff!important;
+  box-shadow:0 5px 16px rgba(113,63,219,.18)!important;
+}
+html[data-theme="light"] .message.mine .message-bubble p{color:#fff!important}
+html[data-theme="light"] .message.mine .message-bubble small{color:rgba(255,255,255,.78)!important}
+html[data-theme="light"] .message.mine .message-reply{background:rgba(0,0,0,.12)!important;border-left-color:rgba(255,255,255,.58)!important;color:#fff!important}
+html[data-theme="light"] .message.mine .message-reply span,
+html[data-theme="light"] .message.mine .shared-author small{color:rgba(255,255,255,.78)!important}
 html[data-theme="light"] .message-compose,
 html[data-theme="light"] .message-preview{background:#fff!important;border-color:#e0e4ec!important}
 html[data-theme="light"] .message-compose textarea{background:#f3f5f8!important;border-color:#dce1e9!important;color:#202431!important}
@@ -347,7 +355,7 @@ html[data-theme="light"] .image-viewer-hint{color:#fff}
 }
 
 
-/* V1.12.19 · Ajustes de contraste del modo claro detectados en uso real */
+/* V1.12.20 · Ajustes de contraste del modo claro detectados en uso real */
 html[data-theme="light"] .trend{
   color:#6544bd!important;
 }
@@ -401,3 +409,10 @@ html[data-theme="light"] .message.theirs .message-bubble p{
 html[data-theme="light"] .message.theirs .message-bubble small{
   color:#667084!important;
 }
+
+
+/* V1.12.20 · acciones de mensajes enviados */
+html[data-theme="light"] .message-delete-btn,
+html[data-theme="light"] .message-reply-btn{background:#eef1f6!important;color:#4b5263!important;border:1px solid #dce1e9!important}
+html[data-theme="light"] .message-delete-btn:hover{background:#fff0f3!important;color:#c92d58!important;border-color:#f0c4d0!important}
+html[data-theme="light"] .message-delete-confirm p{color:#4e5565!important}

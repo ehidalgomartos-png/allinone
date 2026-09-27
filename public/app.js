@@ -1,4 +1,4 @@
-// V1.12.19 · Light/Dark Theme + Direct Public Profile + Mobile Chat Fix + Public Teaser Profile + Bunny Media + SEO + Growth Engine + Protección de contenido
+// V1.12.20 · Light/Dark Theme + Direct Public Profile + Mobile Chat Fix + Public Teaser Profile + Bunny Media + SEO + Growth Engine + Protección de contenido
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en','ciudades','guias',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','sitemap-core.xml','sitemap-landings.xml','login','register','logout','admin',
@@ -2783,9 +2783,29 @@ function messageHtml(m) {
   }
   const excerpt = safeEncode((m.text || (m.media_type==='image'?'Foto':m.media_type==='video'?'Vídeo':m.shared_post?'Publicación':'Mensaje')).slice(0,100));
   const sender = safeEncode(m.name || m.username || 'Mensaje');
-  const replyButton = state.chatAccess?.allowed === false ? '' : `<button class="message-reply-btn" onclick="replyToMessage(${m.id},'${sender}','${excerpt}')" title="Responder">↩</button>`;
-  return `<div class="message ${m.own?'mine':'theirs'}">${replyButton}<div class="message-bubble">${reply}${m.text?`<p>${formatText(m.text)}</p>`:''}${media}${shared}<small>${timeAgo(m.created_at)}</small></div></div>`;
+  const replyButton = state.chatAccess?.allowed === false ? '' : `<button class="message-reply-btn" onclick="replyToMessage(${m.id},'${sender}','${excerpt}')" title="Responder" aria-label="Responder">↩</button>`;
+  const deleteButton = m.own ? `<button class="message-delete-btn" onclick="confirmDeleteMessage(${m.id})" title="Borrar mensaje" aria-label="Borrar mensaje">⌫</button>` : '';
+  return `<div class="message ${m.own?'mine':'theirs'}">${replyButton}${deleteButton}<div class="message-bubble">${reply}${m.text?`<p>${formatText(m.text)}</p>`:''}${media}${shared}<small>${timeAgo(m.created_at)}</small></div></div>`;
 }
+
+window.confirmDeleteMessage = (messageId) => {
+  const id=Number(messageId);
+  if(!Number.isInteger(id)||id<=0||!state.activeConversation) return;
+  modal(`<div class="modal-head"><h3>Borrar mensaje</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="message-delete-confirm"><p>Este mensaje se eliminará de la conversación para los dos.</p><div class="modal-actions"><button class="btn ghost" onclick="closeModal()">Cancelar</button><button class="btn danger" onclick="deleteOwnMessage(${id})">Borrar mensaje</button></div></div>`);
+};
+
+window.deleteOwnMessage = async (messageId) => {
+  const conversationId=Number(state.activeConversation);
+  const id=Number(messageId);
+  if(!conversationId||!Number.isInteger(id)||id<=0) return;
+  try{
+    closeModal();
+    await api(`/api/conversations/${conversationId}/messages/${id}`,{method:'DELETE'});
+    if(state.replyTo?.id===id) state.replyTo=null;
+    toast('Mensaje eliminado');
+    await renderMessages();
+  }catch(e){ toast(e.message||'No se pudo borrar el mensaje','error'); }
+};
 
 window.replyToMessage = (id, encodedName, encodedText) => {
   state.replyTo = { id:Number(id), conversationId:Number(state.activeConversation), name:decodeURIComponent(encodedName), text:decodeURIComponent(encodedText) };
@@ -2918,6 +2938,12 @@ function connectRealtime() {
       state.me.unread_messages=Number(state.me.unread_messages||0)+1; updateNavBadges();
       toast('Nuevo mensaje'); browserNotice('Instant Admirers', event.text || (event.sharedPostId ? 'Te han compartido una publicación' : 'Tienes un nuevo mensaje'));
     }
+  });
+  state.socket.on('message:deleted', async (event) => {
+    if(state.replyTo?.id && Number(state.replyTo.id)===Number(event.messageId)) state.replyTo=null;
+    if(state.view!=='messages') return;
+    if(Number(state.activeConversation)===Number(event.conversationId)) await refreshActiveConversation();
+    else await renderMessages();
   });
   state.socket.on('notification:new', (event) => {
     state.me.unread_notifications=Number(state.me.unread_notifications||0)+1; updateNavBadges();
@@ -3365,7 +3391,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.19</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.20</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>
