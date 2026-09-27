@@ -1,4 +1,4 @@
-/* Instant Admirers V1.12.18 · selector global de tema claro/oscuro */
+/* Instant Admirers V1.12.19 · selector global de tema claro/oscuro */
 :root{
   --theme-toggle-bg:rgba(15,17,24,.86);
   --theme-toggle-border:rgba(255,255,255,.11);
@@ -344,4 +344,60 @@ html[data-theme="light"] .image-viewer-hint{color:#fff}
   html[data-theme="light"] .auth-page:before{border-color:rgba(37,42,58,.05)!important;box-shadow:0 0 70px rgba(255,42,161,.05)!important}
   html[data-theme="light"] .auth-mobile-kicker{color:#675f76!important}
   html[data-theme="light"] .auth-hero .hero-accent{background:linear-gradient(92deg,#171924 0%,#171924 20%,#cf2b89 57%,#6546c7 100%)!important;-webkit-background-clip:text!important;background-clip:text!important;color:transparent!important}
+}
+
+
+/* V1.12.19 · Ajustes de contraste del modo claro detectados en uso real */
+html[data-theme="light"] .trend{
+  color:#6544bd!important;
+}
+html[data-theme="light"] .trend b{
+  color:#6544bd!important;
+}
+html[data-theme="light"] .trend:hover{
+  color:#5635ad!important;
+  background:rgba(124,60,255,.055)!important;
+  border-radius:9px;
+}
+html[data-theme="light"] .trend:hover b{
+  color:#5635ad!important;
+}
+html[data-theme="light"] .trend small{
+  color:#6d7587!important;
+}
+
+html[data-theme="light"] .feed-tabs button{
+  color:#5f687a!important;
+}
+html[data-theme="light"] .feed-tabs button:hover{
+  color:#242936!important;
+  background:#e6eaf1!important;
+}
+html[data-theme="light"] .feed-tabs button.active,
+html[data-theme="light"] .feed-tabs button.active:hover{
+  color:#171924!important;
+  background:#fff!important;
+}
+
+html[data-theme="light"] .profile-stats>span,
+html[data-theme="light"] .profile-stats>button{
+  color:#697284!important;
+}
+html[data-theme="light"] .profile-stats>button:hover{
+  color:#343a49!important;
+  background:#f0f2f6!important;
+}
+html[data-theme="light"] .profile-stats>button:hover b{
+  color:#171924!important;
+}
+
+html[data-theme="light"] .message.theirs .message-bubble{
+  background:#e8ecf3!important;
+  color:#242936!important;
+}
+html[data-theme="light"] .message.theirs .message-bubble p{
+  color:#242936!important;
+}
+html[data-theme="light"] .message.theirs .message-bubble small{
+  color:#667084!important;
 }
