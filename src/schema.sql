@@ -670,3 +670,59 @@ ALTER TABLE media ADD COLUMN IF NOT EXISTS provider_status VARCHAR(30) NOT NULL 
 ALTER TABLE media ADD COLUMN IF NOT EXISTS provider_meta JSONB NOT NULL DEFAULT '{}'::jsonb;
 CREATE INDEX IF NOT EXISTS idx_media_provider_status ON media(provider,provider_status);
 UPDATE media SET provider_status='ready' WHERE provider_status IS NULL OR provider_status='';
+
+-- V1.12.22: Comunidad virtual identificada y gestionada desde Administración.
+-- Los perfiles virtuales participan en la experiencia social pero se excluyen de las métricas de miembros reales.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS is_virtual BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- V1.12.22: los anfitriones virtuales son perfiles públicos SEO identificados.
+-- Los retirados siguen fuera del SEO mediante social_hidden=TRUE.
+UPDATE users
+   SET public_profile_preview_enabled=TRUE, account_private=FALSE
+ WHERE COALESCE(is_virtual,FALSE)=TRUE
+   AND account_status='active'
+   AND COALESCE(social_hidden,FALSE)=FALSE;
+CREATE INDEX IF NOT EXISTS idx_users_virtual ON users(is_virtual,account_status,social_hidden,id);
+
+CREATE TABLE IF NOT EXISTS virtual_profiles (
+  user_id BIGINT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  gender VARCHAR(12) NOT NULL CHECK (gender IN ('woman','man')),
+  age INTEGER NOT NULL CHECK (age BETWEEN 18 AND 99),
+  persona_key VARCHAR(80) NOT NULL DEFAULT '',
+  status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active','paused','retired')),
+  auto_post_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  reply_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  posts_per_week INTEGER NOT NULL DEFAULT 3 CHECK (posts_per_week BETWEEN 1 AND 7),
+  tone VARCHAR(40) NOT NULL DEFAULT 'cercano',
+  last_auto_post_at TIMESTAMPTZ,
+  next_auto_post_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_virtual_profiles_activity ON virtual_profiles(status,auto_post_enabled,next_auto_post_at);
+
+CREATE TABLE IF NOT EXISTS virtual_profile_media (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  media_id BIGINT NOT NULL REFERENCES media(id) ON DELETE CASCADE,
+  label VARCHAR(120) NOT NULL DEFAULT '',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  last_used_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id,media_id)
+);
+CREATE INDEX IF NOT EXISTS idx_virtual_profile_media_user ON virtual_profile_media(user_id,active,last_used_at);
+
+CREATE TABLE IF NOT EXISTS virtual_message_alerts (
+  id BIGSERIAL PRIMARY KEY,
+  conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  message_id BIGINT NOT NULL UNIQUE REFERENCES messages(id) ON DELETE CASCADE,
+  virtual_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  real_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  seen_at TIMESTAMPTZ,
+  replied_at TIMESTAMPTZ,
+  CHECK (virtual_user_id <> real_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_virtual_alerts_open ON virtual_message_alerts(replied_at,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_virtual_alerts_conversation ON virtual_message_alerts(conversation_id,created_at DESC);

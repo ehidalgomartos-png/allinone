@@ -16,6 +16,7 @@ require('dotenv').config();
 const { pool, initDb, withTransaction } = require('./src/db');
 const { configured: mediaStorageConfigured, cloudinaryConfigured, cloudinaryUploadFallbackAllowed, imageUploadConfigured, videoUploadConfigured, bunnyStorageConfigured, bunnyStreamConfigured, providerSummary: mediaProviderSummary, uploadBuffer: uploadMediaBuffer, deliveryUrl: remoteDeliveryUrl, cloudinaryDeliveryUrl, getBunnyStreamVideo, hardenAsset: hardenRemoteAsset, destroyAsset: destroyRemoteAsset } = require('./src/mediaStorage');
 const { createDemoEnvironment, clearDemoEnvironment, demoStatus } = require('./src/demoLab');
+const { createVirtualCommunity, runVirtualActivity, virtualCommunityStatus, listVirtualProfiles, virtualInbox } = require('./src/virtualCommunity');
 
 const app = express();
 const httpServer = http.createServer(app);
@@ -126,12 +127,22 @@ function seoProfileDescription(profile={}) {
   const display=seoPlainText(profile.name || profile.username || 'Perfil',80);
   const handle=seoPlainText(profile.username || '',30);
   const details=seoPlainText([profile.headline,profile.bio].filter(Boolean).join(' · '),220);
+  const location=seoPlainText(profile.location || '',80);
+  if(profile.is_virtual){
+    const prefix=`${display}${handle ? ` (@${handle})` : ''} es un perfil virtual gestionado por Instant Admirers${location ? ` en ${location}` : ''}.`;
+    return seoPlainText(details ? `${prefix} ${details}` : `${prefix} Descubre sus publicaciones e interactúa con este anfitrión virtual de la comunidad.`,158);
+  }
   const prefix=`Descubre el perfil de ${display}${handle ? ` (@${handle})` : ''} en Instant Admirers.`;
   return seoPlainText(details ? `${prefix} ${details}` : `${prefix} Lee sus publicaciones públicas y conecta en la comunidad.`,158);
 }
 function seoProfileTitle(profile={}) {
   const display=seoPlainText(profile.name || profile.username || 'Perfil',70);
   const handle=seoPlainText(profile.username || '',30);
+  if(profile.is_virtual){
+    const location=seoPlainText(profile.location || '',45);
+    const candidate=`${display} · Perfil virtual${location ? ` en ${location}` : ''} | Instant Admirers`;
+    return candidate.length<=68 ? candidate : `${display.slice(0,34)} · Perfil virtual | Instant Admirers`;
+  }
   const candidate=`${display}${handle && display.toLowerCase()!==handle.toLowerCase() ? ` (@${handle})` : ''} | Instant Admirers`;
   return candidate.length<=62 ? candidate : `${display.slice(0,40)} | Instant Admirers`;
 }
@@ -148,6 +159,7 @@ function seoProfileJsonLd(profile, counts={}) {
     '@id':`${url}#profile`, '@type':'Person', name:seoPlainText(profile.name || profile.username,100),
     alternateName:`@${seoPlainText(profile.username,30)}`, description, url
   };
+  if(profile.is_virtual) person.disambiguatingDescription='Personaje virtual y anfitrión de comunidad gestionado por Instant Admirers; no representa a una persona real.';
   if(image) person.image=image;
   if(stats.length) person.interactionStatistic=stats;
   const data={'@context':'https://schema.org','@type':'ProfilePage',url,name:seoProfileTitle(profile),description,mainEntity:person};
@@ -185,28 +197,28 @@ function seoProfileServerHtml(profile, posts=[], counts={}) {
 <meta property="og:title" content="${seoEscapeHtml(title)}"><meta property="og:description" content="${seoEscapeHtml(description)}"><meta property="og:url" content="${seoEscapeHtml(canonical)}"><meta property="og:image" content="${seoEscapeHtml(shareImage)}">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${seoEscapeHtml(title)}"><meta name="twitter:description" content="${seoEscapeHtml(description)}"><meta name="twitter:image" content="${seoEscapeHtml(shareImage)}">
 <script type="application/ld+json">${seoProfileJsonLd(profile,counts)}</script>
-<script src="/theme.js?v=1.12.20"></script>
-<link rel="stylesheet" href="/styles.css?v=1.12.20">
-<style>.seo-profile-prerender{max-width:760px;margin:0 auto;padding:26px 16px 110px;color:#f7f7fb;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.seo-profile-brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:#fff;font-size:24px;font-weight:800;margin-bottom:18px}.seo-profile-brand img{width:38px;height:38px}.seo-profile-card{overflow:hidden;border:1px solid #2b2d3c;border-radius:22px;background:#141620}.seo-profile-cover{height:190px;background:#222532}.seo-profile-cover img{width:100%;height:100%;object-fit:cover}.seo-profile-body{padding:0 22px 22px}.seo-profile-avatar{width:104px;height:104px;border-radius:50%;margin-top:-54px;border:5px solid #141620;background:#242736;overflow:hidden;display:grid;place-items:center;font-size:28px;font-weight:800}.seo-profile-avatar img{width:100%;height:100%;object-fit:cover}.seo-profile-body h1{font-size:30px;margin:12px 0 2px}.seo-handle{color:#9da3b4}.seo-headline{font-weight:700;margin:15px 0 6px}.seo-bio{color:#d4d7e3;line-height:1.55;white-space:pre-wrap}.seo-cta{display:inline-flex;margin-top:16px;padding:12px 17px;border-radius:12px;text-decoration:none;color:#fff;font-weight:800;background:linear-gradient(135deg,#ff2aa1,#7c3cff)}.seo-profile-posts{margin-top:20px}.seo-profile-posts h2{font-size:21px}.seo-profile-post{border:1px solid #292c3b;background:#12141d;border-radius:16px;padding:16px;margin:12px 0}.seo-profile-post p{line-height:1.55;white-space:pre-wrap}.seo-media-lock{margin-top:12px;border:1px dashed #555a70;border-radius:12px;padding:18px;color:#c7cad7;text-align:center}.seo-empty{color:#aeb3c3}.seo-profile-prerender-noscript{display:block}</style>
-<link rel="stylesheet" href="/theme.css?v=1.12.20">
+<script src="/theme.js?v=1.12.22"></script>
+<link rel="stylesheet" href="/styles.css?v=1.12.22">
+<style>.seo-profile-prerender{max-width:760px;margin:0 auto;padding:26px 16px 110px;color:#f7f7fb;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.seo-profile-brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:#fff;font-size:24px;font-weight:800;margin-bottom:18px}.seo-profile-brand img{width:38px;height:38px}.seo-profile-card{overflow:hidden;border:1px solid #2b2d3c;border-radius:22px;background:#141620}.seo-profile-cover{height:190px;background:#222532}.seo-profile-cover img{width:100%;height:100%;object-fit:cover}.seo-profile-body{padding:0 22px 22px}.seo-profile-avatar{width:104px;height:104px;border-radius:50%;margin-top:-54px;border:5px solid #141620;background:#242736;overflow:hidden;display:grid;place-items:center;font-size:28px;font-weight:800}.seo-profile-avatar img{width:100%;height:100%;object-fit:cover}.seo-profile-body h1{font-size:30px;margin:12px 0 2px}.seo-handle{color:#9da3b4}.seo-headline{font-weight:700;margin:15px 0 6px}.seo-bio{color:#d4d7e3;line-height:1.55;white-space:pre-wrap}.seo-virtual-notice{display:flex;gap:8px;align-items:flex-start;margin:14px 0;padding:12px 14px;border:1px solid #7147b8;border-radius:13px;background:rgba(124,60,255,.12);color:#e8dcff;line-height:1.45}.seo-virtual-notice b{white-space:nowrap;color:#ff74c7}.seo-cta{display:inline-flex;margin-top:16px;padding:12px 17px;border-radius:12px;text-decoration:none;color:#fff;font-weight:800;background:linear-gradient(135deg,#ff2aa1,#7c3cff)}.seo-profile-posts{margin-top:20px}.seo-profile-posts h2{font-size:21px}.seo-profile-post{border:1px solid #292c3b;background:#12141d;border-radius:16px;padding:16px;margin:12px 0}.seo-profile-post p{line-height:1.55;white-space:pre-wrap}.seo-media-lock{margin-top:12px;border:1px dashed #555a70;border-radius:12px;padding:18px;color:#c7cad7;text-align:center}.seo-empty{color:#aeb3c3}.seo-profile-prerender-noscript{display:block}</style>
+<link rel="stylesheet" href="/theme.css?v=1.12.22">
 </head><body>
 <div id="app"><main class="seo-profile-prerender">
 <a class="seo-profile-brand" href="/"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a>
-<section class="seo-profile-card">${cover?`<div class="seo-profile-cover"><img src="${seoEscapeHtml(cover)}" alt="Cabecera de ${seoEscapeHtml(profile.name||profile.username)}"></div>`:'<div class="seo-profile-cover"></div>'}<div class="seo-profile-body"><div class="seo-profile-avatar">${avatar?`<img src="${seoEscapeHtml(avatar)}" alt="${seoEscapeHtml(profile.name||profile.username)}">`:`${seoEscapeHtml(String(profile.name||profile.username||'?').slice(0,1).toUpperCase())}`}</div><h1>${seoEscapeHtml(profile.name||profile.username)}</h1><div class="seo-handle">@${seoEscapeHtml(profile.username)}</div>${profile.headline?`<div class="seo-headline">${seoEscapeHtml(seoPlainText(profile.headline,180))}</div>`:''}${profile.bio?`<p class="seo-bio">${seoEscapeHtml(seoPlainText(profile.bio,700))}</p>`:''}<a class="seo-cta" href="${seoEscapeHtml(registerUrl)}">Crear cuenta para ver todo el contenido</a></div></section>
+<section class="seo-profile-card">${cover?`<div class="seo-profile-cover"><img src="${seoEscapeHtml(cover)}" alt="Cabecera de ${seoEscapeHtml(profile.name||profile.username)}"></div>`:'<div class="seo-profile-cover"></div>'}<div class="seo-profile-body"><div class="seo-profile-avatar">${avatar?`<img src="${seoEscapeHtml(avatar)}" alt="${seoEscapeHtml(profile.name||profile.username)}">`:`${seoEscapeHtml(String(profile.name||profile.username||'?').slice(0,1).toUpperCase())}`}</div><h1>${seoEscapeHtml(profile.name||profile.username)}</h1><div class="seo-handle">@${seoEscapeHtml(profile.username)}</div>${profile.is_virtual?'<div class="seo-virtual-notice"><b>✦ Perfil virtual</b><span>Personaje ficticio y anfitrión gestionado por Instant Admirers. No representa a una persona real.</span></div>':''}${profile.headline?`<div class="seo-headline">${seoEscapeHtml(seoPlainText(profile.headline,180))}</div>`:''}${profile.bio?`<p class="seo-bio">${seoEscapeHtml(seoPlainText(profile.bio,700))}</p>`:''}<a class="seo-cta" href="${seoEscapeHtml(registerUrl)}">Crear cuenta para ver todo el contenido</a></div></section>
 <section class="seo-profile-posts"><h2>Publicaciones públicas de ${seoEscapeHtml(profile.name||profile.username)}</h2>${postHtml}</section>
 </main></div><div id="modal-root"></div>
-<script src="/i18n.js?v=1.12.20"></script><script src="/socket.io/socket.io.js"></script><script src="/vendor/hls/hls.min.js?v=1.12.20"></script><script src="/app.js?v=1.12.20"></script>
+<script src="/i18n.js?v=1.12.22"></script><script src="/socket.io/socket.io.js"></script><script src="/vendor/hls/hls.min.js?v=1.12.22"></script><script src="/app.js?v=1.12.22"></script>
 </body></html>`;
 }
 function seoProfilesHubHtml(profiles=[]) {
   const title='Perfiles de Instant Admirers | Conoce gente y conecta';
-  const description='Descubre perfiles y empieza a conocer gente en Instant Admirers. Explora personas y encuentra nuevas conexiones.';
+  const description='Descubre perfiles públicos y anfitriones virtuales de Instant Admirers. Explora intereses, publicaciones y nuevas conexiones.';
   const cards=profiles.map(p=>{
     const avatar=seoAbsoluteUrl(p.avatar);
     const desc=seoPlainText(p.headline || p.bio || `Perfil de @${p.username} en Instant Admirers.`,150);
-    return `<a class="hub-card" href="/${encodeURIComponent(p.username)}">${avatar?`<img src="${seoEscapeHtml(avatar)}" alt="${seoEscapeHtml(p.name||p.username)}" loading="lazy">`:''}<span>@${seoEscapeHtml(p.username)}</span><b>${seoEscapeHtml(p.name||p.username)}</b><p>${seoEscapeHtml(desc)}</p></a>`;
+    return `<a class="hub-card" href="/${encodeURIComponent(p.username)}">${avatar?`<img src="${seoEscapeHtml(avatar)}" alt="${seoEscapeHtml(p.name||p.username)}" loading="lazy">`:''}<span>@${seoEscapeHtml(p.username)}</span><b>${seoEscapeHtml(p.name||p.username)}</b>${p.is_virtual?'<em class="hub-virtual-badge">✦ Perfil virtual</em>':''}<p>${seoEscapeHtml(desc)}</p></a>`;
   }).join('');
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0b12"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1"><title>${title}</title><meta name="description" content="${description}"><link rel="canonical" href="${APP_URL}/perfiles/"><link rel="icon" href="/favicon.ico" sizes="any"><script src="/theme.js?v=1.12.20"></script><link rel="stylesheet" href="/seo.css?v=1.12.20"><link rel="stylesheet" href="/theme.css?v=1.12.20"><style>.hub-card img{width:58px;height:58px;object-fit:cover;border-radius:50%;margin-bottom:10px}</style><script type="application/ld+json">${JSON.stringify({'@context':'https://schema.org','@type':'CollectionPage',name:title,description,url:`${APP_URL}/perfiles/`,isPartOf:{'@type':'WebSite',name:'Instant Admirers',url:`${APP_URL}/`}}).replace(/</g,'\\u003c')}</script></head><body><header class="site-header"><div class="nav-wrap"><a class="brand" href="/" aria-label="Instant Admirers"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a><nav aria-label="Navegación principal"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/perfiles/">Perfiles</a><a href="/?auth=login">Entrar</a><a class="nav-cta" href="/?auth=register&utm_source=seo&utm_medium=organic&utm_campaign=public-profiles">Crear cuenta</a></nav></div></header><main><section class="hero"><div class="hero-inner"><div class="breadcrumbs"><a href="/">Inicio</a><span>›</span><span>Perfiles</span></div><p class="eyebrow">Perfiles de Instant Admirers</p><h1>Tu próxima conexión puede estar aquí</h1><p class="hero-lead hub-intro">Descubre perfiles y empieza a conocer gente en Instant Admirers.</p></div></section><section class="hub-grid">${cards || '<div class="hub-card"><b>Muy pronto</b><p>Nuevos perfiles por descubrir.</p></div>'}</section></main><footer class="site-footer"><div class="footer-wrap"><div><b>Instant Admirers</b><p>Comunidad 18+ para conectar, compartir y descubrir personas con intereses reales.</p></div><div class="footer-links"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/privacy/">Privacidad</a><a href="/terms/">Términos</a></div></div></footer></body></html>`;
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0b12"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1"><title>${title}</title><meta name="description" content="${description}"><link rel="canonical" href="${APP_URL}/perfiles/"><link rel="icon" href="/favicon.ico" sizes="any"><script src="/theme.js?v=1.12.22"></script><link rel="stylesheet" href="/seo.css?v=1.12.22"><link rel="stylesheet" href="/theme.css?v=1.12.22"><style>.hub-card img{width:58px;height:58px;object-fit:cover;border-radius:50%;margin-bottom:10px}.hub-virtual-badge{display:inline-flex;width:max-content;margin:7px 0 1px;padding:4px 8px;border-radius:999px;background:rgba(124,60,255,.12);border:1px solid rgba(124,60,255,.35);color:#9a5dff;font-size:12px;font-style:normal;font-weight:800}</style><script type="application/ld+json">${JSON.stringify({'@context':'https://schema.org','@type':'CollectionPage',name:title,description,url:`${APP_URL}/perfiles/`,isPartOf:{'@type':'WebSite',name:'Instant Admirers',url:`${APP_URL}/`}}).replace(/</g,'\\u003c')}</script></head><body><header class="site-header"><div class="nav-wrap"><a class="brand" href="/" aria-label="Instant Admirers"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a><nav aria-label="Navegación principal"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/perfiles/">Perfiles</a><a href="/?auth=login">Entrar</a><a class="nav-cta" href="/?auth=register&utm_source=seo&utm_medium=organic&utm_campaign=public-profiles">Crear cuenta</a></nav></div></header><main><section class="hero"><div class="hero-inner"><div class="breadcrumbs"><a href="/">Inicio</a><span>›</span><span>Perfiles</span></div><p class="eyebrow">Perfiles de Instant Admirers</p><h1>Tu próxima conexión puede estar aquí</h1><p class="hero-lead hub-intro">Descubre perfiles públicos y anfitriones virtuales identificados de Instant Admirers.</p></div></section><section class="hub-grid">${cards || '<div class="hub-card"><b>Muy pronto</b><p>Nuevos perfiles por descubrir.</p></div>'}</section></main><footer class="site-footer"><div class="footer-wrap"><div><b>Instant Admirers</b><p>Comunidad 18+ para conectar, compartir y descubrir perfiles e intereses.</p></div><div class="footer-links"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/privacy/">Privacidad</a><a href="/terms/">Términos</a></div></div></footer></body></html>`;
 }
 
 function tokenDigest(raw='') { return crypto.createHash('sha256').update(String(raw)).digest('hex'); }
@@ -692,6 +704,7 @@ function safeUser(row, includePrivate = false) {
     interests: row.interests || '',
     cover: row.cover || '',
     account_private: Boolean(row.account_private),
+    is_virtual: Boolean(row.is_virtual),
     created_at: row.created_at
   };
   if (includePrivate) {
@@ -957,6 +970,7 @@ io.use(async (socket, next) => {
 io.on('connection', async (socket) => {
   const userId = String(socket.user.id);
   socket.join(`user:${userId}`);
+  if (isAdminRecord(socket.user)) socket.join('admins');
   const previous = onlineUsers.get(userId) || 0;
   onlineUsers.set(userId, previous + 1);
   if (previous === 0 && !isSociallyHiddenRecord(socket.user)) await broadcastPresence(userId, true);
@@ -1061,7 +1075,7 @@ async function enrichReposts(userId, posts = []) {
   if (!ids.length) return posts;
   const { rows } = await pool.query(`
     SELECT p.id,p.user_id,p.text,p.media_id,p.media_type,p.visibility,p.created_at,p.edited_at,
-           u.username,u.name,u.avatar,u.friend_gate_enabled,u.content_watermark_mode,pm.provider AS media_provider,pm.provider_status AS media_provider_status,
+           u.username,u.name,u.avatar,u.is_virtual,u.friend_gate_enabled,u.content_watermark_mode,pm.provider AS media_provider,pm.provider_status AS media_provider_status,
            (u.account_status='active' AND COALESCE(u.social_hidden,FALSE)=FALSE AND (p.user_id=$1 OR (NOT u.account_private) OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
             AND (
               p.user_id=$1 OR NOT u.friend_gate_enabled OR
@@ -1099,7 +1113,7 @@ async function enrichReposts(userId, posts = []) {
       media_processing:String(original.media_provider || '')==='bunny_stream' && String(original.media_provider_status || '')!=='ready',
       watermarked:Boolean(original.media_id) && Number(original.user_id)!==Number(userId) && (String(original.content_watermark_mode||'exclusive')==='all' || (String(original.content_watermark_mode||'exclusive')==='exclusive' && Boolean(original.friend_gate_enabled))),
       visibility:original.visibility, created_at:original.created_at, edited_at:original.edited_at,
-      username:original.username, name:original.name, avatar:original.avatar || ''
+      username:original.username, name:original.name, avatar:original.avatar || '', is_virtual:Boolean(original.is_virtual)
     }};
   });
 }
@@ -1167,7 +1181,7 @@ async function postQuery(userId, { mode = 'following', profileId = null, search 
     WITH candidates AS (
       SELECT
         p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
-        u.username, u.name, u.avatar
+        u.username, u.name, u.avatar, u.is_virtual
       FROM posts p
       JOIN users u ON u.id = p.user_id
       ${where}
@@ -1288,7 +1302,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.12.20', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default','growth-public-teaser-profile','growth-teaser-media-lock','growth-teaser-signup-attribution','public-teaser-desktop-layout-fix','feed-full-image-fit','full-image-viewer','protected-image-lightbox','friend-gate-chat-lock','conversation-reply-continuity','chat-video-processing-refresh','chat-scroll-containment','chat-bottom-autoscroll','mobile-chat-composer-layout','mobile-chat-composer-viewport-fix','mobile-chat-active-header-compaction','direct-public-profile','direct-profile-media-lock','direct-profile-referral-attribution','public-profile-preview-control','seo-public-profiles','dynamic-profile-meta','profilepage-structured-data','profile-sitemap','public-profiles-hub','seo-profile-privacy-noindex','seo-navigation-cache-safety','visitor-theme-switcher','light-theme','dark-theme','theme-preference-persistence','light-theme-contrast-fix','light-sent-message-contrast-fix','sent-message-delete','message-delete-realtime'] });
+  res.json({ ok: true, version: '1.12.22', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default','growth-public-teaser-profile','growth-teaser-media-lock','growth-teaser-signup-attribution','public-teaser-desktop-layout-fix','feed-full-image-fit','full-image-viewer','protected-image-lightbox','friend-gate-chat-lock','conversation-reply-continuity','chat-video-processing-refresh','chat-scroll-containment','chat-bottom-autoscroll','mobile-chat-composer-layout','mobile-chat-composer-viewport-fix','mobile-chat-active-header-compaction','direct-public-profile','direct-profile-media-lock','direct-profile-referral-attribution','public-profile-preview-control','seo-public-profiles','dynamic-profile-meta','profilepage-structured-data','profile-sitemap','public-profiles-hub','seo-profile-privacy-noindex','seo-navigation-cache-safety','visitor-theme-switcher','light-theme','dark-theme','theme-preference-persistence','light-theme-contrast-fix','light-sent-message-contrast-fix','sent-message-delete','message-delete-realtime','virtual-community','virtual-host-profiles','virtual-daily-activity','virtual-admin-inbox','virtual-admin-reply','virtual-profile-media-pools','virtual-profile-disclosure','virtual-profile-seo','virtual-profile-sitemap','virtual-profile-public-hub','virtual-profile-seo-disclosure'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -1311,18 +1325,18 @@ app.get('/api/community/bootstrap', auth, asyncRoute(async (req,res) => {
   const settings = await getLaunchSettings();
   const metricsResult = await pool.query(`
     SELECT
-      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE) AS members_total,
-      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE AND created_at >= NOW()-INTERVAL '7 days') AS members_7d,
-      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND p.visibility='public' AND p.created_at >= NOW()-INTERVAL '7 days') AS posts_7d,
-      (SELECT COUNT(DISTINCT ae.user_id)::int FROM app_events ae JOIN users u ON u.id=ae.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND ae.event_type='session_active' AND ae.created_at >= NOW()-INTERVAL '7 days') AS active_7d
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE) AS members_total,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE AND created_at >= NOW()-INTERVAL '7 days') AS members_7d,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND p.visibility='public' AND p.created_at >= NOW()-INTERVAL '7 days') AS posts_7d,
+      (SELECT COUNT(DISTINCT ae.user_id)::int FROM app_events ae JOIN users u ON u.id=ae.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND ae.event_type='session_active' AND ae.created_at >= NOW()-INTERVAL '7 days') AS active_7d
   `);
   const recentResult = settings.newcomer_spotlight_enabled ? await pool.query(`
-    SELECT u.id,u.username,u.name,u.bio,u.avatar,u.location,u.headline,u.interests,u.created_at,u.last_seen_at,u.account_private,
+    SELECT u.id,u.username,u.name,u.bio,u.avatar,u.location,u.headline,u.interests,u.created_at,u.last_seen_at,u.account_private,u.is_virtual,
       EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=$1 AND f.followed_id=u.id) AS following,
       EXISTS(SELECT 1 FROM follow_requests frq WHERE frq.follower_id=$1 AND frq.followed_id=u.id) AS follow_requested,
       (SELECT COUNT(*)::int FROM follows f WHERE f.followed_id=u.id) AS followers_count
     FROM users u
-    WHERE u.id<>$1 AND u.is_demo=FALSE AND u.account_status='active' AND COALESCE(u.social_hidden,FALSE)=FALSE AND u.email_verified_at IS NOT NULL
+    WHERE u.id<>$1 AND u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND u.account_status='active' AND COALESCE(u.social_hidden,FALSE)=FALSE AND u.email_verified_at IS NOT NULL
       AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=$1 AND bl.blocked_id=u.id) OR (bl.blocker_id=u.id AND bl.blocked_id=$1))
       AND NOT EXISTS(SELECT 1 FROM mutes mu WHERE mu.muter_id=$1 AND mu.muted_id=u.id)
     ORDER BY u.created_at DESC,u.id DESC LIMIT 8
@@ -1330,7 +1344,7 @@ app.get('/api/community/bootstrap', auth, asyncRoute(async (req,res) => {
   const rankResult = await pool.query(`
     SELECT cohort_rank FROM (
       SELECT id,ROW_NUMBER() OVER(ORDER BY created_at ASC,id ASC)::int AS cohort_rank
-      FROM users WHERE is_demo=FALSE AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE
+      FROM users WHERE is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE
     ) q WHERE id=$1 LIMIT 1
   `,[req.user.id]);
   const cohortRank=Number(rankResult.rows[0]?.cohort_rank || 0);
@@ -1600,11 +1614,12 @@ app.get('/api/me', auth, asyncRoute(async (req, res) => {
           AND m.sender_id <> u.id
           AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE (bl.blocker_id=u.id AND bl.blocked_id=m.sender_id) OR (bl.blocker_id=m.sender_id AND bl.blocked_id=u.id))
           AND m.created_at > COALESCE(cr.last_read_at, 'epoch'::timestamptz)
-      ) AS unread_messages
+      ) AS unread_messages,
+      CASE WHEN u.role='admin' THEN (SELECT COUNT(*)::int FROM virtual_message_alerts WHERE replied_at IS NULL) ELSE 0 END AS virtual_inbox_unread
     FROM users u WHERE u.id = $1
   `, [req.user.id]);
   if (!rows[0]) return res.status(404).json({ error: 'Usuario no encontrado' });
-  res.json({ ...safeUser(rows[0], true), followers_count: rows[0].followers_count, following_count: rows[0].following_count, posts_count: rows[0].posts_count, friends_count: rows[0].friends_count, friend_requests_count: rows[0].friend_requests_count, follow_requests_count: rows[0].follow_requests_count, blocked_count: rows[0].blocked_count, muted_count: rows[0].muted_count, unread_notifications: rows[0].unread_notifications, unread_messages: rows[0].unread_messages, online: true, last_seen_at: rows[0].last_seen_at });
+  res.json({ ...safeUser(rows[0], true), followers_count: rows[0].followers_count, following_count: rows[0].following_count, posts_count: rows[0].posts_count, friends_count: rows[0].friends_count, friend_requests_count: rows[0].friend_requests_count, follow_requests_count: rows[0].follow_requests_count, blocked_count: rows[0].blocked_count, muted_count: rows[0].muted_count, unread_notifications: rows[0].unread_notifications, unread_messages: rows[0].unread_messages, virtual_inbox_unread: Number(rows[0].virtual_inbox_unread || 0), online: true, last_seen_at: rows[0].last_seen_at });
 }));
 
 app.patch('/api/me', auth, asyncRoute(async (req, res) => {
@@ -1678,6 +1693,8 @@ async function canUserAccessMedia(mediaId, viewerId) {
   const media = mediaResult.rows[0];
   if (!media) return false;
   if (Number(media.user_id) === Number(viewerId)) return true;
+  const viewerRole=await pool.query('SELECT role FROM users WHERE id=$1',[viewerId]);
+  if (viewerRole.rows[0]?.role === 'admin') return true;
 
   const posts = await pool.query('SELECT id FROM posts WHERE media_id=$1 LIMIT 20',[mediaId]);
   for (const post of posts.rows) if (await canUserViewPost(post.id,viewerId)) return true;
@@ -1868,6 +1885,14 @@ async function serveMedia(req, res, item, cacheControl='private, no-store') {
     res.set('Cross-Origin-Resource-Policy','same-origin');
     return res.sendFile(demoPath);
   }
+  if (item.provider === 'virtual_local' && /^\/assets\/virtual\/[a-z0-9._-]+$/i.test(String(item.secure_url || ''))) {
+    const virtualPath = path.join(publicDir, String(item.secure_url).replace(/^\//,''));
+    res.set('Cache-Control',cacheControl);
+    res.set('Content-Disposition','inline');
+    res.set('X-Content-Type-Options','nosniff');
+    res.set('Cross-Origin-Resource-Policy','same-origin');
+    return res.sendFile(virtualPath);
+  }
   if (item.data) return sendBufferWithRange(req,res,item,cacheControl);
   return res.status(404).end();
 }
@@ -2041,7 +2066,7 @@ app.get('/api/for-you', auth, asyncRoute(async (req, res) => {
     ), candidates AS (
       SELECT
         p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
-        u.username, u.name, u.avatar, u.interests AS author_interests, u.headline AS author_headline
+        u.username, u.name, u.avatar, u.is_virtual, u.interests AS author_interests, u.headline AS author_headline
       FROM posts p
       JOIN users u ON u.id = p.user_id
       WHERE u.account_status='active'
@@ -2127,7 +2152,7 @@ app.get('/api/suggestions', auth, asyncRoute(async (req, res) => {
         SELECT p.user_id, 5::numeric FROM bookmarks x JOIN posts p ON p.id=x.post_id WHERE x.user_id=$1
       ) q GROUP BY author_id
     )
-    SELECT u.id,u.username,u.name,u.bio,u.avatar,u.location,u.headline,u.interests,u.created_at,u.last_seen_at,u.account_private,
+    SELECT u.id,u.username,u.name,u.bio,u.avatar,u.location,u.headline,u.interests,u.created_at,u.last_seen_at,u.account_private,u.is_virtual,
       FALSE AS following,
       EXISTS(SELECT 1 FROM follow_requests frq WHERE frq.follower_id=$1 AND frq.followed_id=u.id) AS follow_requested,
       (SELECT COUNT(*)::int FROM follows f WHERE f.followed_id=u.id) AS followers_count,
@@ -2179,7 +2204,7 @@ app.get('/api/discover', auth, asyncRoute(async (req, res) => {
     WITH candidates AS (
       SELECT
         p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
-        u.username, u.name, u.avatar
+        u.username, u.name, u.avatar, u.is_virtual
       FROM posts p
       JOIN users u ON u.id = p.user_id
       WHERE u.account_status='active'
@@ -2227,7 +2252,7 @@ app.get('/api/bookmarks', auth, asyncRoute(async (req, res) => {
     WITH candidates AS (
       SELECT
         p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
-        u.username, u.name, u.avatar, bk.created_at AS bookmark_created_at
+        u.username, u.name, u.avatar, u.is_virtual, bk.created_at AS bookmark_created_at
       FROM bookmarks bk
       JOIN posts p ON p.id = bk.post_id
       JOIN users u ON u.id = p.user_id
@@ -2315,7 +2340,7 @@ app.post('/api/posts/:id/comments', auth, socialAccountOnly, asyncRoute(async (r
 app.get('/api/posts/:id/comments', auth, asyncRoute(async (req, res) => {
   if (!(await canUserViewPost(req.params.id,req.user.id))) return res.status(404).json({error:'Publicación no disponible'});
   const { rows } = await pool.query(`
-    SELECT c.id, c.post_id, c.user_id, c.text, c.created_at, u.username, u.name, u.avatar,
+    SELECT c.id, c.post_id, c.user_id, c.text, c.created_at, u.username, u.name, u.avatar, u.is_virtual,
            (c.user_id = $2) AS own
     FROM comments c JOIN users u ON u.id = c.user_id
     WHERE c.post_id = $1
@@ -2336,7 +2361,7 @@ app.get('/api/users', auth, asyncRoute(async (req, res) => {
   const q = String(req.query.q || '').trim().slice(0, 100);
   const pattern = `%${q}%`;
   const { rows } = await pool.query(`
-    SELECT u.id, u.username, u.name, u.bio, u.avatar, u.location, u.headline, u.interests, u.created_at, u.last_seen_at, u.account_private,
+    SELECT u.id, u.username, u.name, u.bio, u.avatar, u.location, u.headline, u.interests, u.created_at, u.last_seen_at, u.account_private, u.is_virtual,
       EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followed_id = u.id) AS following,
       (SELECT COUNT(*)::int FROM follows WHERE followed_id = u.id) AS followers_count,
       EXISTS(SELECT 1 FROM follow_requests frq WHERE frq.follower_id=$1 AND frq.followed_id=u.id) AS follow_requested,
@@ -2362,7 +2387,7 @@ app.get('/api/public/profile/:username', asyncRoute(async (req, res) => {
   const username = String(req.params.username || '').trim().replace(/^@/, '');
   if (!/^[a-zA-Z0-9_.]{3,30}$/.test(username)) return res.status(404).json({ error:'Perfil no encontrado' });
   const { rows } = await pool.query(
-    `SELECT id,username,name,bio,avatar,headline,cover,friend_gate_enabled,friend_gate_message,account_private,public_profile_preview_enabled
+    `SELECT id,username,name,bio,avatar,headline,cover,friend_gate_enabled,friend_gate_message,account_private,public_profile_preview_enabled,is_virtual
        FROM users
       WHERE LOWER(username)=LOWER($1) AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE
       LIMIT 1`,
@@ -2388,6 +2413,7 @@ app.get('/api/public/profile/:username', asyncRoute(async (req, res) => {
     exists:true,
     username:target.username,
     name:target.name,
+    is_virtual:Boolean(target.is_virtual),
     friend_gate_enabled:Boolean(target.friend_gate_enabled),
     friend_gate_message:target.friend_gate_enabled ? profileMessage : '',
     access_message:target.friend_gate_enabled ? (campaignMessage || profileMessage) : '',
@@ -2401,13 +2427,14 @@ app.get('/api/public/profile/:username', asyncRoute(async (req, res) => {
       headline:String(target.headline || '').slice(0,140),
       bio:String(target.bio || '').slice(0,500),
       avatar:String(target.avatar || '').slice(0,2000),
-      cover:String(target.cover || '').slice(0,2000)
+      cover:String(target.cover || '').slice(0,2000),
+      is_virtual:Boolean(target.is_virtual)
     } : null
   });
 }));
 
 
-// V1.12.20: teaser público desde Growth Engine o directamente desde /usuario; tema claro/oscuro disponible en la capa cliente.
+// V1.12.22: teaser público desde Growth Engine o directamente desde /usuario; tema claro/oscuro disponible en la capa cliente.
 // La URL directa sólo funciona si el propietario la activa y la cuenta no es privada.
 // Nunca se entregan URLs de fotos/vídeos; sólo texto y el tipo de multimedia bloqueada.
 app.get('/api/public/profile/:username/teaser', publicTeaserLimiter, asyncRoute(async (req,res)=>{
@@ -2424,7 +2451,7 @@ app.get('/api/public/profile/:username/teaser', publicTeaserLimiter, asyncRoute(
   else ownershipSql='AND COALESCE(public_profile_preview_enabled,FALSE)=TRUE AND COALESCE(account_private,FALSE)=FALSE';
 
   const {rows:users}=await pool.query(`
-    SELECT id,username,name,bio,avatar,headline,cover,invite_code,account_private,public_profile_preview_enabled
+    SELECT id,username,name,bio,avatar,headline,cover,invite_code,account_private,public_profile_preview_enabled,is_virtual
       FROM users
      WHERE LOWER(username)=LOWER($1) ${ownershipSql} AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE
      LIMIT 1
@@ -2479,7 +2506,8 @@ app.get('/api/public/profile/:username/teaser', publicTeaserLimiter, asyncRoute(
       headline:String(target.headline || '').slice(0,140),
       bio:String(target.bio || '').slice(0,500),
       avatar:String(target.avatar || '').slice(0,2000),
-      cover:String(target.cover || '').slice(0,2000)
+      cover:String(target.cover || '').slice(0,2000),
+      is_virtual:Boolean(target.is_virtual)
     },
     posts,
     has_more:hasMore,
@@ -2604,7 +2632,7 @@ async function socialListRows(viewerId, targetId, type, limit, offset) {
   const countWhere = type === 'followers' ? 'followed_id=$1' : 'follower_id=$1';
   const [list,total] = await Promise.all([
     pool.query(`
-      SELECT u.id,u.username,u.name,u.avatar,u.headline,u.account_private,rel.created_at,
+      SELECT u.id,u.username,u.name,u.avatar,u.headline,u.account_private,u.is_virtual,rel.created_at,
         EXISTS(SELECT 1 FROM follows mine WHERE mine.follower_id=$1 AND mine.followed_id=u.id) AS following,
         EXISTS(SELECT 1 FROM follow_requests frq WHERE frq.follower_id=$1 AND frq.followed_id=u.id) AS follow_requested,
         (SELECT COUNT(*)::int FROM follows fc WHERE fc.followed_id=u.id) AS followers_count
@@ -2770,11 +2798,11 @@ app.post('/api/users/:id/block', auth, socialAccountOnly, asyncRoute(async (req,
 }));
 
 app.get('/api/blocked', auth, asyncRoute(async (req,res)=>{
-  const {rows}=await pool.query('SELECT u.id,u.username,u.name,u.avatar,b.created_at FROM blocks b JOIN users u ON u.id=b.blocked_id WHERE b.blocker_id=$1 ORDER BY b.created_at DESC',[req.user.id]);
+  const {rows}=await pool.query('SELECT u.id,u.username,u.name,u.avatar,u.is_virtual,b.created_at FROM blocks b JOIN users u ON u.id=b.blocked_id WHERE b.blocker_id=$1 ORDER BY b.created_at DESC',[req.user.id]);
   res.json(rows);
 }));
 app.get('/api/muted', auth, asyncRoute(async (req,res)=>{
-  const {rows}=await pool.query('SELECT u.id,u.username,u.name,u.avatar,m.created_at FROM mutes m JOIN users u ON u.id=m.muted_id WHERE m.muter_id=$1 ORDER BY m.created_at DESC',[req.user.id]);
+  const {rows}=await pool.query('SELECT u.id,u.username,u.name,u.avatar,u.is_virtual,m.created_at FROM mutes m JOIN users u ON u.id=m.muted_id WHERE m.muter_id=$1 ORDER BY m.created_at DESC',[req.user.id]);
   res.json(rows);
 }));
 
@@ -2802,7 +2830,7 @@ function friendshipPair(a, b) {
 
 app.get('/api/friends', auth, asyncRoute(async (req, res) => {
   const { rows } = await pool.query(`
-    SELECT u.id,u.username,u.name,u.avatar,u.bio,u.last_seen_at,fr.created_at
+    SELECT u.id,u.username,u.name,u.avatar,u.bio,u.last_seen_at,u.is_virtual,fr.created_at
       FROM friendships fr
       JOIN users u ON u.id = CASE WHEN fr.user1_id=$1 THEN fr.user2_id ELSE fr.user1_id END
      WHERE (fr.user1_id=$1 OR fr.user2_id=$1)
@@ -2970,7 +2998,7 @@ app.get('/api/search', auth, asyncRoute(async (req, res) => {
   const personTerm = q.startsWith('@') ? q.slice(1) : q;
   const pattern = `%${personTerm}%`;
   const users = await pool.query(`
-    SELECT u.id, u.username, u.name, u.bio, u.avatar, u.headline, u.interests, u.last_seen_at, u.account_private,
+    SELECT u.id, u.username, u.name, u.bio, u.avatar, u.headline, u.interests, u.last_seen_at, u.account_private, u.is_virtual,
       EXISTS(SELECT 1 FROM follows f WHERE f.follower_id = $1 AND f.followed_id = u.id) AS following,
       EXISTS(SELECT 1 FROM follow_requests frq WHERE frq.follower_id=$1 AND frq.followed_id=u.id) AS follow_requested,
       CASE
@@ -2998,7 +3026,7 @@ app.get('/api/trending', auth, asyncRoute(async (req, res) => {
       JOIN users u ON u.id=p.user_id
       CROSS JOIN LATERAL regexp_matches(p.text, '#[[:alnum:]_áéíóúñü]+', 'g') AS rx(tag_match)
       WHERE p.created_at > NOW() - INTERVAL '7 days' AND p.visibility = 'public'
-        AND COALESCE(u.social_hidden,FALSE)=FALSE
+        AND COALESCE(u.social_hidden,FALSE)=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE
         AND (p.user_id=$1 OR NOT u.account_private OR EXISTS(SELECT 1 FROM follows pf WHERE pf.follower_id=$1 AND pf.followed_id=p.user_id))
         AND (
           p.user_id=$1 OR NOT u.friend_gate_enabled OR
@@ -3059,7 +3087,7 @@ app.post('/api/notifications/read', auth, asyncRoute(async (req, res) => {
 app.get('/api/stories', auth, asyncRoute(async (req, res) => {
   const { rows } = await pool.query(`
     SELECT s.id, s.user_id, s.media_id, s.media_type, s.text, s.visibility, s.created_at, s.expires_at,
-           u.username, u.name, u.avatar,
+           u.username, u.name, u.avatar, u.is_virtual,
            EXISTS(SELECT 1 FROM story_views sv WHERE sv.story_id = s.id AND sv.user_id = $1) AS viewed,
            (s.user_id = $1) AS own,
            (SELECT COUNT(*)::int FROM story_views sv2 WHERE sv2.story_id = s.id) AS views_count,
@@ -3166,7 +3194,7 @@ app.get('/api/reels', auth, asyncRoute(async (req, res) => {
     WITH candidates AS (
       SELECT
         p.id, p.user_id, p.text, p.media_id, p.media_type, p.source, p.visibility, p.created_at, p.edited_at, p.repost_of_id,
-        u.username, u.name, u.avatar
+        u.username, u.name, u.avatar, u.is_virtual
       FROM posts p
       JOIN users u ON u.id = p.user_id
       WHERE p.media_type = 'video'
@@ -3288,7 +3316,7 @@ app.get('/api/conversations/:id/access', auth, asyncRoute(async (req,res)=>{
 app.get('/api/conversations', auth, asyncRoute(async (req, res) => {
   const { rows } = await pool.query(`
     SELECT c.id, c.created_at, c.updated_at,
-           u.id AS other_id, u.username, u.name, u.avatar, u.last_seen_at,
+           u.id AS other_id, u.username, u.name, u.avatar, u.last_seen_at, u.is_virtual,
            lm.id AS last_message_id, lm.text AS last_message, lm.media_type AS last_media_type,
            lm.shared_post_id AS last_shared_post_id,
            lm.sender_id AS last_sender_id, lm.created_at AS last_message_at,
@@ -3453,10 +3481,15 @@ app.post('/api/conversations/:id/messages', auth, socialAccountOnly, asyncRoute(
   await pool.query(`INSERT INTO conversation_reads (conversation_id,user_id,last_read_at) VALUES ($1,$2,NOW())
                     ON CONFLICT (conversation_id,user_id) DO UPDATE SET last_read_at = NOW()`, [req.params.id, req.user.id]);
   io.to(`user:${otherId}`).emit('message:new', { conversationId:Number(req.params.id), messageId:Number(rows[0].id), senderId:Number(req.user.id), text:text.slice(0,160), hasMedia:Boolean(mediaId), sharedPostId:sharedPostId || null });
+  const virtualRecipient=await pool.query(`SELECT u.id,u.username,u.name,vp.reply_enabled FROM users u JOIN virtual_profiles vp ON vp.user_id=u.id WHERE u.id=$1 AND u.is_virtual=TRUE AND vp.status<>'retired' LIMIT 1`,[otherId]);
+  if(virtualRecipient.rowCount && virtualRecipient.rows[0].reply_enabled!==false){
+    await pool.query(`INSERT INTO virtual_message_alerts(conversation_id,message_id,virtual_user_id,real_user_id) VALUES($1,$2,$3,$4) ON CONFLICT(message_id) DO NOTHING`,[req.params.id,rows[0].id,otherId,req.user.id]);
+    io.to('admins').emit('virtual-inbox:new',{conversationId:Number(req.params.id),messageId:Number(rows[0].id),virtualUserId:Number(otherId),virtualName:virtualRecipient.rows[0].name,realUserId:Number(req.user.id),text:text.slice(0,160)});
+  }
   res.json(rows[0]);
 }));
 
-// V1.12.20: el remitente puede borrar sus propios mensajes. El borrado es para ambos
+// V1.12.22: el remitente puede borrar sus propios mensajes. El borrado es para ambos
 // participantes, mantiene sincronizados otros dispositivos y limpia multimedia huérfana.
 app.delete('/api/conversations/:id/messages/:messageId', auth, socialAccountOnly, asyncRoute(async (req,res)=>{
   const conversation = await requireConversationMember(req.params.id, req.user.id);
@@ -3483,6 +3516,11 @@ app.delete('/api/conversations/:id/messages/:messageId', auth, socialAccountOnly
   const event={conversationId:Number(req.params.id),messageId:Number(rows[0].id)};
   io.to(`user:${req.user.id}`).emit('message:deleted',event);
   io.to(`user:${otherId}`).emit('message:deleted',event);
+  const virtualSide=await pool.query(`SELECT 1 FROM users WHERE id=$1 AND is_virtual=TRUE LIMIT 1`,[otherId]);
+  if(virtualSide.rowCount){
+    const status=await virtualCommunityStatus(pool);
+    io.to('admins').emit('virtual-inbox:resolved',{conversationId:Number(req.params.id),unread:Number(status.inbox_unread||0)});
+  }
   res.json({ok:true,id:Number(rows[0].id)});
 }));
 
@@ -3676,15 +3714,15 @@ app.post('/api/ads/:id/click', auth, asyncRoute(async (req,res) => {
 app.get('/api/admin/stats', auth, adminOnly, asyncRoute(async (_req, res) => {
   const { rows } = await pool.query(`
     SELECT
-      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(social_hidden,FALSE)=FALSE) AS users,
-      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND account_status='suspended') AS suspended_users,
-      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS posts,
-      (SELECT COUNT(*)::int FROM comments c JOIN users u ON u.id=c.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS comments,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE AND COALESCE(social_hidden,FALSE)=FALSE) AS users,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND account_status='suspended') AS suspended_users,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS posts,
+      (SELECT COUNT(*)::int FROM comments c JOIN users u ON u.id=c.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS comments,
       (SELECT COUNT(*)::int FROM reports WHERE status='open') AS open_reports,
       (SELECT COUNT(*)::int FROM reports WHERE status='reviewing') AS reviewing_reports,
       (SELECT COUNT(*)::int FROM reports WHERE status='closed') AS closed_reports,
-      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND created_at >= NOW()-INTERVAL '7 days') AS new_users_7d,
-      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND p.created_at >= NOW()-INTERVAL '7 days') AS new_posts_7d
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND created_at >= NOW()-INTERVAL '7 days') AS new_users_7d,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND p.created_at >= NOW()-INTERVAL '7 days') AS new_posts_7d
   `);
   res.json(rows[0]);
 }));
@@ -3693,23 +3731,23 @@ app.get('/api/admin/launch-dashboard', auth, adminOnly, asyncRoute(async (_req,r
   const settings = await getLaunchSettings();
   const { rows } = await pool.query(`
     SELECT
-      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(social_hidden,FALSE)=FALSE) AS users_total,
-      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND email_verified_at IS NOT NULL) AS users_verified,
-      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND created_at >= NOW()-INTERVAL '24 hours') AS users_new_24h,
-      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND created_at >= NOW()-INTERVAL '7 days') AS users_new_7d,
-      (SELECT COUNT(DISTINCT ae.user_id)::int FROM app_events ae JOIN users u ON u.id=ae.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND ae.event_type='session_active' AND ae.created_at >= NOW()-INTERVAL '24 hours') AS active_24h,
-      (SELECT COUNT(DISTINCT ae.user_id)::int FROM app_events ae JOIN users u ON u.id=ae.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND ae.event_type='session_active' AND ae.created_at >= NOW()-INTERVAL '7 days') AS active_7d,
-      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND COALESCE(NULLIF(TRIM(avatar),''),'') <> '') AS users_with_avatar,
-      (SELECT COUNT(DISTINCT p.user_id)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS users_with_post,
-      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS posts_total,
-      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND p.created_at >= NOW()-INTERVAL '24 hours') AS posts_24h,
-      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND p.created_at >= NOW()-INTERVAL '7 days') AS posts_7d,
-      (SELECT COUNT(*)::int FROM stories s JOIN users u ON u.id=s.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND s.expires_at > NOW()) AS stories_active,
-      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND p.media_type='video') AS reels_total,
-      (SELECT COUNT(*)::int FROM messages m JOIN users u ON u.id=m.sender_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND m.created_at >= NOW()-INTERVAL '24 hours') AS messages_24h,
-      (SELECT COUNT(*)::int FROM referral_attributions ra JOIN users u ON u.id=ra.invited_user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS referrals_total,
-      (SELECT COUNT(*)::int FROM referral_attributions ra JOIN users u ON u.id=ra.invited_user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND ra.registered_at >= NOW()-INTERVAL '7 days') AS referrals_7d,
-      (SELECT COUNT(*)::int FROM referral_attributions ra JOIN users u ON u.id=ra.invited_user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND ra.qualified_at IS NOT NULL) AS referrals_qualified,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE AND COALESCE(social_hidden,FALSE)=FALSE) AS users_total,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND email_verified_at IS NOT NULL) AS users_verified,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND created_at >= NOW()-INTERVAL '24 hours') AS users_new_24h,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND created_at >= NOW()-INTERVAL '7 days') AS users_new_7d,
+      (SELECT COUNT(DISTINCT ae.user_id)::int FROM app_events ae JOIN users u ON u.id=ae.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND ae.event_type='session_active' AND ae.created_at >= NOW()-INTERVAL '24 hours') AS active_24h,
+      (SELECT COUNT(DISTINCT ae.user_id)::int FROM app_events ae JOIN users u ON u.id=ae.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND ae.event_type='session_active' AND ae.created_at >= NOW()-INTERVAL '7 days') AS active_7d,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND COALESCE(NULLIF(TRIM(avatar),''),'') <> '') AS users_with_avatar,
+      (SELECT COUNT(DISTINCT p.user_id)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS users_with_post,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS posts_total,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND p.created_at >= NOW()-INTERVAL '24 hours') AS posts_24h,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND p.created_at >= NOW()-INTERVAL '7 days') AS posts_7d,
+      (SELECT COUNT(*)::int FROM stories s JOIN users u ON u.id=s.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND s.expires_at > NOW()) AS stories_active,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND p.media_type='video') AS reels_total,
+      (SELECT COUNT(*)::int FROM messages m JOIN users u ON u.id=m.sender_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND m.created_at >= NOW()-INTERVAL '24 hours') AS messages_24h,
+      (SELECT COUNT(*)::int FROM referral_attributions ra JOIN users u ON u.id=ra.invited_user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS referrals_total,
+      (SELECT COUNT(*)::int FROM referral_attributions ra JOIN users u ON u.id=ra.invited_user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND ra.registered_at >= NOW()-INTERVAL '7 days') AS referrals_7d,
+      (SELECT COUNT(*)::int FROM referral_attributions ra JOIN users u ON u.id=ra.invited_user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND ra.qualified_at IS NOT NULL) AS referrals_qualified,
       (SELECT COUNT(*)::int FROM reports WHERE status IN ('open','reviewing')) AS reports_pending,
       (SELECT COUNT(*)::int FROM app_events WHERE severity='error' AND created_at >= NOW()-INTERVAL '24 hours') AS errors_24h
   `);
@@ -3730,15 +3768,15 @@ app.get('/api/admin/launch-readiness', auth, adminOnly, asyncRoute(async (req,re
   const settings = await getLaunchSettings(true);
   const { rows } = await pool.query(`
     SELECT
-      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(social_hidden,FALSE)=FALSE) AS users_total,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE AND COALESCE(social_hidden,FALSE)=FALSE) AS users_total,
       (SELECT COUNT(*)::int FROM users WHERE is_demo=TRUE) AS demo_profiles,
-      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND email_verified_at IS NOT NULL) AS users_verified,
-      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND COALESCE(NULLIF(TRIM(avatar),''),'') <> '') AS users_with_avatar,
-      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND ((COALESCE(NULLIF(TRIM(bio),''),'') <> '') OR (COALESCE(NULLIF(TRIM(headline),''),'') <> '') OR (COALESCE(NULLIF(TRIM(interests),''),'') <> ''))) AS users_profile_complete,
-      (SELECT COUNT(DISTINCT p.user_id)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS users_with_post,
-      (SELECT COUNT(DISTINCT f.follower_id)::int FROM follows f JOIN users u ON u.id=f.follower_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS users_following,
-      (SELECT COUNT(DISTINCT ae.user_id)::int FROM app_events ae JOIN users u ON u.id=ae.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND ae.event_type='session_active' AND ae.created_at >= NOW()-INTERVAL '7 days') AS active_7d,
-      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS posts_total,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND email_verified_at IS NOT NULL) AS users_verified,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND COALESCE(NULLIF(TRIM(avatar),''),'') <> '') AS users_with_avatar,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE AND COALESCE(social_hidden,FALSE)=FALSE AND ((COALESCE(NULLIF(TRIM(bio),''),'') <> '') OR (COALESCE(NULLIF(TRIM(headline),''),'') <> '') OR (COALESCE(NULLIF(TRIM(interests),''),'') <> ''))) AS users_profile_complete,
+      (SELECT COUNT(DISTINCT p.user_id)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS users_with_post,
+      (SELECT COUNT(DISTINCT f.follower_id)::int FROM follows f JOIN users u ON u.id=f.follower_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS users_following,
+      (SELECT COUNT(DISTINCT ae.user_id)::int FROM app_events ae JOIN users u ON u.id=ae.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND ae.event_type='session_active' AND ae.created_at >= NOW()-INTERVAL '7 days') AS active_7d,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS posts_total,
       (SELECT COUNT(*)::int FROM reports WHERE status IN ('open','reviewing')) AS reports_pending,
       (SELECT COUNT(*)::int FROM app_events WHERE severity='error' AND created_at >= NOW()-INTERVAL '24 hours') AS errors_24h,
       (SELECT COUNT(*)::int FROM users WHERE role='admin' OR LOWER(email)=ANY($1::text[])) AS admins_total
@@ -3788,6 +3826,103 @@ app.delete('/api/admin/demo', auth, adminOnly, asyncRoute(async (req,res) => {
   res.json({ ok:true, ...result });
 }));
 
+
+// V1.12.22: Comunidad virtual identificada. No cuenta como usuario real en métricas ni SEO.
+app.get('/api/admin/virtual-community', auth, adminOnly, asyncRoute(async (req,res) => {
+  const [status,profiles,inbox]=await Promise.all([
+    virtualCommunityStatus(pool),
+    listVirtualProfiles(pool,{limit:Number(req.query?.limit||24),q:req.query?.q||''}),
+    virtualInbox(pool,{limit:30})
+  ]);
+  res.json({status,profiles,inbox});
+}));
+
+app.post('/api/admin/virtual-community/seed', auth, adminOnly, asyncRoute(async (req,res) => {
+  const result=await withTransaction(client=>createVirtualCommunity(client));
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'virtual_community_seed',$2)`,[req.user.id,JSON.stringify(result).slice(0,1000)]);
+  io.to('admins').emit('virtual-community:update',{type:'seed',...result});
+  res.json({ok:true,...result});
+}));
+
+app.post('/api/admin/virtual-community/run-activity', auth, adminOnly, asyncRoute(async (req,res) => {
+  const result=await withTransaction(client=>runVirtualActivity(client,{force:Boolean(req.body?.force),limit:Number(req.body?.limit||36)}));
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'virtual_activity_run',$2)`,[req.user.id,JSON.stringify(result).slice(0,1000)]);
+  io.to('admins').emit('virtual-community:update',{type:'activity',...result});
+  res.json({ok:true,...result});
+}));
+
+app.patch('/api/admin/virtual-profiles/:userId', auth, adminOnly, asyncRoute(async (req,res) => {
+  const userId=Number(req.params.userId);
+  if(!Number.isSafeInteger(userId)||userId<=0) return res.status(400).json({error:'Perfil virtual inválido'});
+  const current=await pool.query(`SELECT vp.*,u.username FROM virtual_profiles vp JOIN users u ON u.id=vp.user_id WHERE vp.user_id=$1 AND u.is_virtual=TRUE`,[userId]);
+  if(!current.rowCount) return res.status(404).json({error:'Perfil virtual no encontrado'});
+  const row=current.rows[0];
+  const status=req.body?.status===undefined?row.status:String(req.body.status);
+  if(!['active','paused','retired'].includes(status)) return res.status(400).json({error:'Estado no válido'});
+  const autoPost=req.body?.auto_post_enabled===undefined?Boolean(row.auto_post_enabled):Boolean(req.body.auto_post_enabled);
+  const replyEnabled=req.body?.reply_enabled===undefined?Boolean(row.reply_enabled):Boolean(req.body.reply_enabled);
+  const postsPerWeek=req.body?.posts_per_week===undefined?Number(row.posts_per_week||3):Math.min(7,Math.max(1,Number(req.body.posts_per_week)||3));
+  const {rows}=await withTransaction(async client=>{
+    const updated=await client.query(`UPDATE virtual_profiles SET status=$2,auto_post_enabled=$3,reply_enabled=$4,posts_per_week=$5,updated_at=NOW(),next_auto_post_at=CASE WHEN $2='active' AND next_auto_post_at IS NULL THEN NOW()+INTERVAL '2 hours' ELSE next_auto_post_at END WHERE user_id=$1 RETURNING *`,[userId,status,autoPost,replyEnabled,postsPerWeek]);
+    await client.query(`UPDATE users SET social_hidden=$2 WHERE id=$1 AND is_virtual=TRUE`,[userId,status==='retired']);
+    return updated;
+  });
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,target_user_id,note) VALUES($1,'virtual_profile_update',$2,$3)`,[req.user.id,userId,JSON.stringify({status,auto_post_enabled:autoPost,reply_enabled:replyEnabled,posts_per_week:postsPerWeek}).slice(0,1000)]);
+  res.json({ok:true,profile:rows[0]});
+}));
+
+app.post('/api/admin/virtual-profiles/:userId/media', auth, adminOnly, upload.single('file'), asyncRoute(async (req,res) => {
+  const userId=Number(req.params.userId);
+  if(!req.file) return res.status(400).json({error:'Falta una imagen'});
+  if(!String(req.file.mimetype||'').startsWith('image/')) return res.status(400).json({error:'Solo se admiten imágenes en el pool del perfil virtual'});
+  if(Number(req.file.size||0)>MAX_IMAGE_UPLOAD_BYTES) return res.status(413).json({error:'La imagen supera el límite de 10 MB'});
+  const target=await pool.query(`SELECT id,username FROM users WHERE id=$1 AND is_virtual=TRUE`,[userId]);
+  if(!target.rowCount) return res.status(404).json({error:'Perfil virtual no encontrado'});
+  let mediaId;
+  if(imageUploadConfigured()){
+    const uploaded=await uploadMediaBuffer(req.file.buffer,{mimeType:req.file.mimetype,originalName:req.file.originalname,userId,privateDelivery:true});
+    const inserted=await pool.query(`INSERT INTO media(user_id,mime_type,original_name,size_bytes,data,provider,provider_id,secure_url,resource_type,delivery_type,width,height,duration_seconds,format,migrated_at,provider_status,provider_meta) VALUES($1,$2,$3,$4,NULL,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),$14,$15::jsonb) RETURNING id`,[userId,req.file.mimetype,req.file.originalname,uploaded.sizeBytes||req.file.size,uploaded.provider,uploaded.providerId,uploaded.secureUrl,uploaded.resourceType,uploaded.deliveryType||'',uploaded.width,uploaded.height,uploaded.durationSeconds,uploaded.format,uploaded.providerStatus||'ready',JSON.stringify({virtual:true,uploaded_by_admin:req.user.id})]);
+    mediaId=Number(inserted.rows[0].id);
+  }else{
+    const inserted=await pool.query(`INSERT INTO media(user_id,mime_type,original_name,size_bytes,data,provider,provider_status,provider_meta) VALUES($1,$2,$3,$4,$5,'postgresql','ready',$6::jsonb) RETURNING id`,[userId,req.file.mimetype,req.file.originalname,req.file.size,req.file.buffer,JSON.stringify({virtual:true,uploaded_by_admin:req.user.id})]);
+    mediaId=Number(inserted.rows[0].id);
+  }
+  await pool.query(`INSERT INTO virtual_profile_media(user_id,media_id,label,active) VALUES($1,$2,$3,TRUE) ON CONFLICT(user_id,media_id) DO UPDATE SET active=TRUE`,[userId,mediaId,String(req.body?.label||req.file.originalname||'Foto').slice(0,120)]);
+  if(String(req.body?.use_as_avatar||'').toLowerCase()==='true') await pool.query(`UPDATE users SET avatar=$2 WHERE id=$1`,[userId,`/media/${mediaId}`]);
+  res.json({ok:true,media_id:mediaId});
+}));
+
+app.get('/api/admin/virtual-conversations/:id/messages', auth, adminOnly, asyncRoute(async (req,res) => {
+  const conversationId=Number(req.params.id);
+  const conv=await pool.query(`SELECT c.id,c.user1_id,c.user2_id,CASE WHEN u1.is_virtual THEN u1.id ELSE u2.id END AS virtual_user_id,CASE WHEN u1.is_virtual THEN u2.id ELSE u1.id END AS real_user_id,CASE WHEN u1.is_virtual THEN u1.name ELSE u2.name END AS virtual_name,CASE WHEN u1.is_virtual THEN u1.username ELSE u2.username END AS virtual_username,CASE WHEN u1.is_virtual THEN u2.name ELSE u1.name END AS real_name,CASE WHEN u1.is_virtual THEN u2.username ELSE u1.username END AS real_username,CASE WHEN u1.is_virtual THEN vp.reply_enabled ELSE vp2.reply_enabled END AS reply_enabled FROM conversations c JOIN users u1 ON u1.id=c.user1_id JOIN users u2 ON u2.id=c.user2_id LEFT JOIN virtual_profiles vp ON vp.user_id=u1.id LEFT JOIN virtual_profiles vp2 ON vp2.user_id=u2.id WHERE c.id=$1 AND (u1.is_virtual=TRUE OR u2.is_virtual=TRUE) AND NOT(u1.is_virtual=TRUE AND u2.is_virtual=TRUE) LIMIT 1`,[conversationId]);
+  if(!conv.rowCount) return res.status(404).json({error:'Conversación virtual no encontrada'});
+  await pool.query(`UPDATE virtual_message_alerts SET seen_at=COALESCE(seen_at,NOW()) WHERE conversation_id=$1 AND replied_at IS NULL`,[conversationId]);
+  const {rows}=await pool.query(`SELECT m.id,m.sender_id,m.text,m.media_id,m.media_type,m.created_at,u.username,u.name,u.avatar,COALESCE(u.is_virtual,FALSE) AS is_virtual,mm.provider AS media_provider,mm.provider_status AS media_provider_status FROM messages m JOIN users u ON u.id=m.sender_id LEFT JOIN media mm ON mm.id=m.media_id WHERE m.conversation_id=$1 ORDER BY m.created_at ASC,m.id ASC LIMIT 200`,[conversationId]);
+  const data=conv.rows[0];
+  res.json({conversation:data,messages:rows.map(r=>({...r,own:Number(r.sender_id)===Number(data.virtual_user_id),media_url:r.media_id&&!(String(r.media_provider||'')==='bunny_stream'&&String(r.media_provider_status||'')!=='ready')?protectedMediaUrl(r.media_id,req.user.id):''}))});
+}));
+
+app.post('/api/admin/virtual-conversations/:id/messages', auth, adminOnly, asyncRoute(async (req,res) => {
+  const conversationId=Number(req.params.id);
+  const text=String(req.body?.text||'').trim().slice(0,4000);
+  if(!text) return res.status(400).json({error:'El mensaje está vacío'});
+  const conv=await pool.query(`SELECT c.id,CASE WHEN u1.is_virtual THEN u1.id ELSE u2.id END AS virtual_user_id,CASE WHEN u1.is_virtual THEN u2.id ELSE u1.id END AS real_user_id,CASE WHEN u1.is_virtual THEN vp.reply_enabled ELSE vp2.reply_enabled END AS reply_enabled FROM conversations c JOIN users u1 ON u1.id=c.user1_id JOIN users u2 ON u2.id=c.user2_id LEFT JOIN virtual_profiles vp ON vp.user_id=u1.id LEFT JOIN virtual_profiles vp2 ON vp2.user_id=u2.id WHERE c.id=$1 AND (u1.is_virtual=TRUE OR u2.is_virtual=TRUE) AND NOT(u1.is_virtual=TRUE AND u2.is_virtual=TRUE) LIMIT 1`,[conversationId]);
+  const item=conv.rows[0];
+  if(!item) return res.status(404).json({error:'Conversación virtual no encontrada'});
+  if(item.reply_enabled===false) return res.status(403).json({error:'Las respuestas están desactivadas para este perfil virtual'});
+  const result=await withTransaction(async client=>{
+    const inserted=await client.query(`INSERT INTO messages(conversation_id,sender_id,text,media_type) VALUES($1,$2,$3,'none') RETURNING id,created_at`,[conversationId,item.virtual_user_id,text]);
+    await client.query(`UPDATE conversations SET updated_at=NOW() WHERE id=$1`,[conversationId]);
+    await client.query(`UPDATE virtual_message_alerts SET seen_at=COALESCE(seen_at,NOW()),replied_at=NOW() WHERE conversation_id=$1 AND replied_at IS NULL`,[conversationId]);
+    await client.query(`UPDATE users SET last_seen_at=NOW() WHERE id=$1`,[item.virtual_user_id]);
+    return inserted.rows[0];
+  });
+  io.to(`user:${item.real_user_id}`).emit('message:new',{conversationId,messageId:Number(result.id),senderId:Number(item.virtual_user_id),text:text.slice(0,160),hasMedia:false,sharedPostId:null});
+  const status=await virtualCommunityStatus(pool);
+  io.to('admins').emit('virtual-inbox:resolved',{conversationId,unread:Number(status.inbox_unread||0)});
+  res.json({ok:true,...result});
+}));
+
 app.patch('/api/admin/launch/settings', auth, adminOnly, asyncRoute(async (req,res) => {
   const current = await getLaunchSettings(true);
   const mode=String(req.body?.registration_mode ?? current.registration_mode ?? 'open');
@@ -3813,12 +3948,12 @@ app.get('/api/admin/community-launch', auth, adminOnly, asyncRoute(async (_req,r
   const settings = await getLaunchSettings(true);
   const {rows}=await pool.query(`
     SELECT
-      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE) AS members_total,
-      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE AND created_at>=NOW()-INTERVAL '7 days') AS members_7d,
-      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND p.created_at>=NOW()-INTERVAL '7 days') AS posts_7d,
-      (SELECT COUNT(DISTINCT p.user_id)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS authors_total,
-      (SELECT COUNT(*)::int FROM users u WHERE u.is_demo=FALSE AND u.account_status='active' AND COALESCE(u.social_hidden,FALSE)=FALSE AND COALESCE(NULLIF(TRIM(u.avatar),''),'')<>'' AND ((COALESCE(NULLIF(TRIM(u.bio),''),'')<>'') OR (COALESCE(NULLIF(TRIM(u.headline),''),'')<>'') OR (COALESCE(NULLIF(TRIM(u.interests),''),'')<>'')) AND EXISTS(SELECT 1 FROM posts p WHERE p.user_id=u.id) AND EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=u.id)) AS activated_members,
-      (SELECT COUNT(DISTINCT ae.user_id)::int FROM app_events ae JOIN users u ON u.id=ae.user_id WHERE u.is_demo=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND ae.event_type='session_active' AND ae.created_at>=NOW()-INTERVAL '7 days') AS active_7d,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE) AS members_total,
+      (SELECT COUNT(*)::int FROM users WHERE is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE AND account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE AND created_at>=NOW()-INTERVAL '7 days') AS members_7d,
+      (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND p.created_at>=NOW()-INTERVAL '7 days') AS posts_7d,
+      (SELECT COUNT(DISTINCT p.user_id)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE) AS authors_total,
+      (SELECT COUNT(*)::int FROM users u WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND u.account_status='active' AND COALESCE(u.social_hidden,FALSE)=FALSE AND COALESCE(NULLIF(TRIM(u.avatar),''),'')<>'' AND ((COALESCE(NULLIF(TRIM(u.bio),''),'')<>'') OR (COALESCE(NULLIF(TRIM(u.headline),''),'')<>'') OR (COALESCE(NULLIF(TRIM(u.interests),''),'')<>'')) AND EXISTS(SELECT 1 FROM posts p WHERE p.user_id=u.id) AND EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=u.id)) AS activated_members,
+      (SELECT COUNT(DISTINCT ae.user_id)::int FROM app_events ae JOIN users u ON u.id=ae.user_id WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.social_hidden,FALSE)=FALSE AND ae.event_type='session_active' AND ae.created_at>=NOW()-INTERVAL '7 days') AS active_7d,
       (SELECT COUNT(*)::int FROM users WHERE is_demo=TRUE) AS demo_profiles
   `);
   res.json({
@@ -4144,7 +4279,7 @@ app.get('/api/admin/users', auth, adminOnly, asyncRoute(async (req, res) => {
            (SELECT COUNT(*)::int FROM posts p WHERE p.user_id=u.id) AS posts_count,
            (SELECT COUNT(*)::int FROM referral_attributions r WHERE r.inviter_id=u.id) AS referrals_count
       FROM users u
-     WHERE u.is_demo=FALSE
+     WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE
        AND ($1::text='' OR u.username ILIKE $2::text OR u.name ILIKE $2::text OR u.email ILIKE $2::text)
      ORDER BY u.created_at DESC
      LIMIT $3::int OFFSET $4::int
@@ -4152,7 +4287,7 @@ app.get('/api/admin/users', auth, adminOnly, asyncRoute(async (req, res) => {
   const totalResult = await pool.query(`
     SELECT COUNT(*)::int AS total
       FROM users u
-     WHERE u.is_demo=FALSE
+     WHERE u.is_demo=FALSE AND COALESCE(u.is_virtual,FALSE)=FALSE
        AND ($1::text='' OR u.username ILIKE $2::text OR u.name ILIKE $2::text OR u.email ILIKE $2::text)
   `, [q, like]);
   res.json({
@@ -4176,7 +4311,7 @@ app.delete('/api/admin/users/:id', auth, adminOnly, asyncRoute(async (req, res) 
     const targetResult = await client.query(`
       SELECT id,username,name,email,role,account_status
         FROM users
-       WHERE id=$1 AND is_demo=FALSE
+       WHERE id=$1 AND is_demo=FALSE AND COALESCE(is_virtual,FALSE)=FALSE
        FOR UPDATE
     `, [targetId]);
     const target = targetResult.rows[0];
@@ -4326,7 +4461,7 @@ app.post('/api/bunny/stream/webhook', asyncRoute(async (req,res) => {
   res.json({ok:true});
 }));
 
-// V1.12.20 · Sitemap dinámico de perfiles que han activado la vista pública.
+// V1.12.22 · Sitemap dinámico de perfiles que han activado la vista pública.
 app.get('/sitemap-profiles.xml', asyncRoute(async (_req,res)=>{
   const {rows}=await pool.query(`
     SELECT u.username,u.created_at,MAX(p.created_at) FILTER (WHERE p.visibility='public') AS last_public_post
@@ -4352,7 +4487,7 @@ app.get('/sitemap-profiles.xml', asyncRoute(async (_req,res)=>{
 // Hub rastreable que crea enlaces internos a perfiles públicos.
 app.get(['/perfiles','/perfiles/'], asyncRoute(async (_req,res)=>{
   const {rows}=await pool.query(`
-    SELECT u.username,u.name,u.headline,u.bio,u.avatar,
+    SELECT u.username,u.name,u.headline,u.bio,u.avatar,u.is_virtual,
            MAX(p.created_at) FILTER (WHERE p.visibility='public') AS last_public_post
       FROM users u
       LEFT JOIN posts p ON p.user_id=u.id
@@ -4360,7 +4495,7 @@ app.get(['/perfiles','/perfiles/'], asyncRoute(async (_req,res)=>{
        AND COALESCE(u.social_hidden,FALSE)=FALSE
        AND COALESCE(u.account_private,FALSE)=FALSE
        AND COALESCE(u.public_profile_preview_enabled,FALSE)=TRUE
-     GROUP BY u.id,u.username,u.name,u.headline,u.bio,u.avatar
+     GROUP BY u.id,u.username,u.name,u.headline,u.bio,u.avatar,u.is_virtual
      ORDER BY last_public_post DESC NULLS LAST,u.id DESC
      LIMIT 120
   `);
@@ -4374,7 +4509,7 @@ app.get('/:username', asyncRoute(async (req,res,next)=>{
   const lower=username.toLowerCase();
   if(!/^[a-zA-Z0-9_.]{3,30}$/.test(username) || RESERVED_PROFILE_SLUGS.has(lower)) return next();
   const {rows}=await pool.query(`
-    SELECT u.id,u.username,u.name,u.headline,u.bio,u.avatar,u.cover,u.invite_code,u.created_at,
+    SELECT u.id,u.username,u.name,u.headline,u.bio,u.avatar,u.cover,u.invite_code,u.created_at,u.location,u.is_virtual,
            u.account_private,u.public_profile_preview_enabled,
            (SELECT COUNT(*)::int FROM follows f WHERE f.followed_id=u.id) AS followers_count,
            (SELECT COUNT(*)::int FROM posts p2 WHERE p2.user_id=u.id AND p2.visibility='public') AS posts_count
@@ -4463,11 +4598,16 @@ async function start() {
   await syncSystemAccounts();
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Instant Admirers V1.12.20 en http://localhost:${PORT}`);
+    console.log(`Instant Admirers V1.12.22 en http://localhost:${PORT}`);
     void hardenLegacyCloudinaryMedia().catch(err => console.error('Protección multimedia heredada:', err.message));
     void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message));
     const bunnyStatusTimer=setInterval(() => void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message)),30000);
     bunnyStatusTimer.unref?.();
+    // Comunidad virtual: revisa actividad pendiente sin depender de cron externo.
+    const runVirtualTick=()=>void withTransaction(client=>runVirtualActivity(client,{force:false,limit:20})).catch(err=>console.error('Actividad virtual:',err.message));
+    setTimeout(runVirtualTick,15000).unref?.();
+    const virtualActivityTimer=setInterval(runVirtualTick,30*60*1000);
+    virtualActivityTimer.unref?.();
   });
 }
 

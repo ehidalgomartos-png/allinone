@@ -1,4 +1,4 @@
-/* Instant Admirers V1.12.20 · selector global de tema claro/oscuro */
+/* Instant Admirers V1.12.22 · selector global de tema claro/oscuro */
 :root{
   --theme-toggle-bg:rgba(15,17,24,.86);
   --theme-toggle-border:rgba(255,255,255,.11);
@@ -355,7 +355,7 @@ html[data-theme="light"] .image-viewer-hint{color:#fff}
 }
 
 
-/* V1.12.20 · Ajustes de contraste del modo claro detectados en uso real */
+/* V1.12.22 · Ajustes de contraste del modo claro detectados en uso real */
 html[data-theme="light"] .trend{
   color:#6544bd!important;
 }
@@ -411,8 +411,27 @@ html[data-theme="light"] .message.theirs .message-bubble small{
 }
 
 
-/* V1.12.20 · acciones de mensajes enviados */
+/* V1.12.22 · acciones de mensajes enviados */
 html[data-theme="light"] .message-delete-btn,
 html[data-theme="light"] .message-reply-btn{background:#eef1f6!important;color:#4b5263!important;border:1px solid #dce1e9!important}
 html[data-theme="light"] .message-delete-btn:hover{background:#fff0f3!important;color:#c92d58!important;border-color:#f0c4d0!important}
 html[data-theme="light"] .message-delete-confirm p{color:#4e5565!important}
+
+/* V1.12.22 · Comunidad virtual en tema claro */
+html[data-theme="light"] .virtual-badge{background:linear-gradient(100deg,rgba(255,45,154,.075),rgba(124,60,255,.10))!important;border-color:rgba(101,70,199,.20)!important;color:#6947c8!important}
+html[data-theme="light"] .virtual-profile-notice{background:linear-gradient(110deg,rgba(255,45,154,.045),rgba(124,60,255,.065))!important;border-color:rgba(101,70,199,.18)!important}
+html[data-theme="light"] .virtual-profile-notice b{color:#5f3fc1!important}
+html[data-theme="light"] .virtual-community-empty,
+html[data-theme="light"] .virtual-community-metrics span,
+html[data-theme="light"] .virtual-inbox-row,
+html[data-theme="light"] .virtual-admin-profile,
+html[data-theme="light"] .virtual-profile-toolbar input,
+html[data-theme="light"] .virtual-admin-message,
+html[data-theme="light"] .virtual-admin-compose textarea{background:#f7f8fb!important;border-color:#dde2eb!important;color:#202431!important}
+html[data-theme="light"] .virtual-inbox-row:hover{background:#f1f3f8!important;border-color:#cfc5ef!important}
+html[data-theme="light"] .virtual-inbox-row.unread{background:#fff6fb!important;border-color:rgba(211,55,142,.28)!important}
+html[data-theme="light"] .virtual-inbox-avatars i{background:#fff!important;border-color:#dfe3eb!important;color:#555c6d!important}
+html[data-theme="light"] .virtual-admin-profile-meta>span{background:#edf0f5!important}
+html[data-theme="light"] .virtual-admin-message.from-virtual{background:linear-gradient(110deg,#fff1f8,#f4f0ff)!important;border-color:#decff2!important}
+html[data-theme="light"] .virtual-chat-disclosure{background:linear-gradient(100deg,#fff6fb,#f6f3ff)!important;border-color:#ded1f0!important}html[data-theme="light"] .virtual-chat-disclosure b{color:#6546c7!important}
+html[data-theme="light"] .virtual-cadence select{background:#fff;color:#182033;border-color:#dfe3ed}
