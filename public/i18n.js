@@ -1,4 +1,4 @@
-// Instant Admirers V1.12.23 · Español / English
+// Instant Admirers V1.12.24 · Español / English
 (() => {
   const STORAGE_KEY = 'iaLanguage';
   const SUPPORTED = new Set(['es','en']);
@@ -54,6 +54,9 @@
     'Ver reto':'View challenge',
     'Chat no disponible':'Chat unavailable',
     'No puedes enviar mensajes a esta persona en este momento.':'You cannot send messages to this person right now.'
+  });
+  Object.assign(ES_EN,{
+    'Imágenes':'Images','Biblioteca visual':'Visual library','Imágenes activas':'Active images','usos hoy':'uses today','Subir varias imágenes':'Upload multiple images','Seleccionar imágenes':'Select images','Nombre interno':'Internal name','Etiquetas: café, playa, cine…':'Tags: coffee, beach, cinema…','Texto alternativo':'Alt text','Guardar':'Save','Portada':'Cover','Destacar ★':'Feature ★','Quitar ★':'Remove ★','Archivar':'Archive','Restaurar':'Restore','Historial reciente':'Recent history','sin usar':'unused','Imagen actualizada':'Image updated','Avatar actualizado':'Avatar updated','Portada actualizada':'Cover updated','Imagen archivada':'Image archived','Imagen restaurada':'Image restored','Imagen eliminada de la biblioteca':'Image removed from library','Este perfil todavía no tiene imágenes en su biblioteca.':'This profile does not have images in its library yet.','Se guardarán en el pool del personaje. Puedes asignarlas como avatar o portada después.':'They will be saved in the character media pool. You can assign them as avatar or cover later.'
   });
   const EN_ES = Object.fromEntries(Object.entries(ES_EN).map(([es,en]) => [en,es]));
   const normalized = obj => {
@@ -131,11 +134,14 @@
   }
 
   function translateHead(){
-    document.documentElement.lang=current;
     // Las páginas públicas de perfil llegan con SEO dinámico renderizado por servidor.
-    // No sobrescribir title/description/OG/Twitter al hidratar la SPA: Google ejecuta JS
-    // y, si lo hiciéramos, terminaría viendo los metadatos genéricos de la portada.
-    if(document.querySelector('meta[name="ia-dynamic-seo"][content="profile"]')) return;
+    // Mantener también el idioma del documento renderizado por servidor para que
+    // los rastreadores no lo conviertan a inglés según el idioma de su navegador.
+    if(document.querySelector('meta[name="ia-dynamic-seo"][content="profile"]')){
+      document.documentElement.lang='es';
+      return;
+    }
+    document.documentElement.lang=current;
     const isLegal=/^\/(?:en\/)?(?:legal|privacy|cookies|terms|community-guidelines)\/?$/i.test(location.pathname);
     if(isLegal) return;
     if(/\/offline\.html$/i.test(location.pathname)){ document.title=current==='es'?'Instant Admirers · Sin conexión':'Instant Admirers · Offline'; return; }
