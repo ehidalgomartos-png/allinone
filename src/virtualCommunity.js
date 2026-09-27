@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
+const { selectVirtualProfileMedia, recordVirtualProfileMediaUsage } = require('./virtualImageSystem');
 
 const VIRTUAL_PROFILE_COUNT = 100;
 const VIRTUAL_WOMEN = 50;
@@ -222,15 +223,16 @@ async function runVirtualActivity(client,{force=false,limit=36}={}) {
     const p={index:idx,age:Number(row.age||30),profession:String(row.headline||'').split('·')[1]?.trim()||'proyectos',interests:interestList.length?interestList:['planes','música'],city:row.location||'España'};
     const count=await client.query(`SELECT COUNT(*)::int AS count FROM posts WHERE user_id=$1 AND source='virtual'`,[row.user_id]);
     const seq=Number(count.rows[0]?.count||0);
-    const media=await client.query(`SELECT vpm.id,vpm.media_id FROM virtual_profile_media vpm JOIN media m ON m.id=vpm.media_id WHERE vpm.user_id=$1 AND vpm.active=TRUE AND m.provider_status='ready' ORDER BY vpm.last_used_at NULLS FIRST,vpm.id LIMIT 1`,[row.user_id]);
-    const useMedia=seq%3!==2 && media.rows[0];
-    const mediaId=useMedia?Number(media.rows[0].media_id):null;
-    await client.query(`INSERT INTO posts(user_id,text,media_id,media_type,source,external_url,visibility,created_at) VALUES($1,$2,$3,$4,'virtual','','public',NOW())`,[row.user_id,makePostText(p,seq),mediaId,mediaId?'image':'none']);
-    if(useMedia) await client.query(`UPDATE virtual_profile_media SET last_used_at=NOW() WHERE id=$1`,[media.rows[0].id]);
+    const postText=makePostText(p,seq);
+    const selected=seq%3!==2 ? await selectVirtualProfileMedia(client,{userId:row.user_id,text:postText,usageType:'post'}) : null;
+    const mediaId=selected?Number(selected.media_id):null;
+    const insertedPost=await client.query(`INSERT INTO posts(user_id,text,media_id,media_type,source,external_url,visibility,created_at) VALUES($1,$2,$3,$4,'virtual','','public',NOW()) RETURNING id`,[row.user_id,postText,mediaId,mediaId?'image':'none']);
+    if(selected) await recordVirtualProfileMediaUsage(client,{poolId:selected.id,userId:row.user_id,postId:Number(insertedPost.rows[0].id),usageType:'post'});
     posts+=1;
     // Algunas actualizaciones se convierten también en Story para que la actividad no sea uniforme.
     if(mediaId && seq%4===0){
-      await client.query(`INSERT INTO stories(user_id,media_id,media_type,text,visibility,created_at,expires_at) VALUES($1,$2,'image',$3,'public',NOW(),NOW()+INTERVAL '24 hours')`,[row.user_id,mediaId,'Un momento del día ✨']);
+      const insertedStory=await client.query(`INSERT INTO stories(user_id,media_id,media_type,text,visibility,created_at,expires_at) VALUES($1,$2,'image',$3,'public',NOW(),NOW()+INTERVAL '24 hours') RETURNING id`,[row.user_id,mediaId,'Un momento del día ✨']);
+      if(selected) await recordVirtualProfileMediaUsage(client,{poolId:selected.id,userId:row.user_id,storyId:Number(insertedStory.rows[0].id),usageType:'story'});
       stories+=1;
     }
     const hours=Math.max(18,Math.round((7/Math.max(1,Number(row.posts_per_week||3)))*24)+seededNumber(`gap-${row.user_id}-${seq}`,-4,8));
@@ -250,6 +252,8 @@ async function virtualCommunityStatus(pool) {
       COUNT(*) FILTER(WHERE vp.gender='woman')::int AS women,
       COUNT(*) FILTER(WHERE vp.gender='man')::int AS men,
       (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_virtual=TRUE AND p.created_at>=CURRENT_DATE) AS posts_today,
+      (SELECT COUNT(*)::int FROM virtual_profile_media vpm WHERE vpm.active=TRUE AND vpm.archived_at IS NULL) AS media_total,
+      (SELECT COUNT(*)::int FROM virtual_profile_media_usage WHERE used_at>=CURRENT_DATE) AS media_uses_today,
       (SELECT COUNT(*)::int FROM virtual_message_alerts WHERE replied_at IS NULL) AS inbox_unread
     FROM virtual_profiles vp
   `);
@@ -263,7 +267,8 @@ async function listVirtualProfiles(pool,{limit=24,q=''}={}) {
     SELECT u.id,u.username,u.name,u.avatar,u.location,u.headline,u.last_seen_at,
            vp.gender,vp.age,vp.status,vp.auto_post_enabled,vp.reply_enabled,vp.posts_per_week,vp.last_auto_post_at,vp.next_auto_post_at,
            (SELECT COUNT(*)::int FROM posts p WHERE p.user_id=u.id) AS posts_count,
-           (SELECT COUNT(*)::int FROM virtual_profile_media vpm WHERE vpm.user_id=u.id AND vpm.active=TRUE) AS media_count
+           (SELECT COUNT(*)::int FROM virtual_profile_media vpm WHERE vpm.user_id=u.id AND vpm.active=TRUE AND vpm.archived_at IS NULL) AS media_count,
+           (SELECT COUNT(*)::int FROM virtual_profile_media vpm WHERE vpm.user_id=u.id AND vpm.featured=TRUE AND vpm.archived_at IS NULL) AS featured_media_count
       FROM virtual_profiles vp JOIN users u ON u.id=vp.user_id
      WHERE ($1='%%' OR u.username ILIKE $1 OR u.name ILIKE $1 OR u.location ILIKE $1 OR u.headline ILIKE $1)
      ORDER BY CASE vp.status WHEN 'active' THEN 0 WHEN 'paused' THEN 1 ELSE 2 END,u.id

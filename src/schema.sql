@@ -713,6 +713,32 @@ CREATE TABLE IF NOT EXISTS virtual_profile_media (
 );
 CREATE INDEX IF NOT EXISTS idx_virtual_profile_media_user ON virtual_profile_media(user_id,active,last_used_at);
 
+-- V1.12.24: biblioteca visual avanzada para perfiles virtuales.
+ALTER TABLE virtual_profile_media ADD COLUMN IF NOT EXISTS kind VARCHAR(20) NOT NULL DEFAULT 'post';
+ALTER TABLE virtual_profile_media ADD COLUMN IF NOT EXISTS tags JSONB NOT NULL DEFAULT '[]'::jsonb;
+ALTER TABLE virtual_profile_media ADD COLUMN IF NOT EXISTS alt_text TEXT NOT NULL DEFAULT '';
+ALTER TABLE virtual_profile_media ADD COLUMN IF NOT EXISTS featured BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE virtual_profile_media ADD COLUMN IF NOT EXISTS sort_order INTEGER NOT NULL DEFAULT 100;
+ALTER TABLE virtual_profile_media ADD COLUMN IF NOT EXISTS times_used INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE virtual_profile_media ADD COLUMN IF NOT EXISTS archived_at TIMESTAMPTZ;
+ALTER TABLE virtual_profile_media ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE virtual_profile_media DROP CONSTRAINT IF EXISTS virtual_profile_media_kind_check;
+ALTER TABLE virtual_profile_media ADD CONSTRAINT virtual_profile_media_kind_check CHECK (kind IN ('avatar','cover','post','story','teaser','gallery'));
+CREATE INDEX IF NOT EXISTS idx_virtual_profile_media_selection ON virtual_profile_media(user_id,active,kind,archived_at,last_used_at,times_used);
+CREATE INDEX IF NOT EXISTS idx_virtual_profile_media_featured ON virtual_profile_media(user_id,featured) WHERE featured=TRUE;
+
+CREATE TABLE IF NOT EXISTS virtual_profile_media_usage (
+  id BIGSERIAL PRIMARY KEY,
+  virtual_profile_media_id BIGINT NOT NULL REFERENCES virtual_profile_media(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  post_id BIGINT REFERENCES posts(id) ON DELETE SET NULL,
+  story_id BIGINT REFERENCES stories(id) ON DELETE SET NULL,
+  usage_type VARCHAR(24) NOT NULL DEFAULT 'post',
+  used_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_virtual_profile_media_usage_user ON virtual_profile_media_usage(user_id,used_at DESC);
+CREATE INDEX IF NOT EXISTS idx_virtual_profile_media_usage_image ON virtual_profile_media_usage(virtual_profile_media_id,used_at DESC);
+
 CREATE TABLE IF NOT EXISTS virtual_message_alerts (
   id BIGSERIAL PRIMARY KEY,
   conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
