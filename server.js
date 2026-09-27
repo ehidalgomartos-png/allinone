@@ -123,14 +123,26 @@ function seoAbsoluteUrl(value='') {
   if(raw.startsWith('/')) return `${APP_URL}${raw}`;
   return '';
 }
+function seoProfileInterests(profile={}) {
+  return String(profile.interests || '')
+    .split(',')
+    .map(value=>seoPlainText(value,48))
+    .filter(Boolean)
+    .slice(0,4);
+}
 function seoProfileDescription(profile={}) {
   const display=seoPlainText(profile.name || profile.username || 'Perfil',80);
   const handle=seoPlainText(profile.username || '',30);
   const details=seoPlainText([profile.headline,profile.bio].filter(Boolean).join(' · '),220);
   const location=seoPlainText(profile.location || '',80);
   if(profile.is_virtual){
-    const prefix=`${display}${handle ? ` (@${handle})` : ''} es un perfil virtual gestionado por Instant Admirers${location ? ` en ${location}` : ''}.`;
-    return seoPlainText(details ? `${prefix} ${details}` : `${prefix} Descubre sus publicaciones e interactúa con este anfitrión virtual de la comunidad.`,158);
+    const age=Number(profile.virtual_age || 0);
+    const interests=seoProfileInterests(profile);
+    const parts=[`${display}${handle ? ` (@${handle})` : ''} es un perfil virtual gestionado por Instant Admirers${location ? ` en ${location}` : ''}.`];
+    if(Number.isFinite(age) && age>=18 && age<=99) parts.push(`${age} años.`);
+    if(interests.length) parts.push(`Intereses: ${interests.slice(0,3).join(', ')}.`);
+    else if(details) parts.push(details);
+    return seoPlainText(parts.join(' '),158);
   }
   const prefix=`Descubre el perfil de ${display}${handle ? ` (@${handle})` : ''} en Instant Admirers.`;
   return seoPlainText(details ? `${prefix} ${details}` : `${prefix} Lee sus publicaciones públicas y conecta en la comunidad.`,158);
@@ -159,7 +171,13 @@ function seoProfileJsonLd(profile, counts={}) {
     '@id':`${url}#profile`, '@type':'Person', name:seoPlainText(profile.name || profile.username,100),
     alternateName:`@${seoPlainText(profile.username,30)}`, description, url
   };
-  if(profile.is_virtual) person.disambiguatingDescription='Personaje virtual y anfitrión de comunidad gestionado por Instant Admirers; no representa a una persona real.';
+  if(profile.is_virtual) {
+    person.disambiguatingDescription='Personaje virtual y anfitrión de comunidad gestionado por Instant Admirers; no representa a una persona real.';
+    const location=seoPlainText(profile.location || '',80);
+    const interests=seoProfileInterests(profile);
+    if(location) person.homeLocation={'@type':'Place',name:location};
+    if(interests.length) person.knowsAbout=interests;
+  }
   if(image) person.image=image;
   if(stats.length) person.interactionStatistic=stats;
   const data={'@context':'https://schema.org','@type':'ProfilePage',url,name:seoProfileTitle(profile),description,mainEntity:person};
@@ -188,6 +206,7 @@ function seoProfileServerHtml(profile, posts=[], counts={}) {
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#0b0b12"><meta name="color-scheme" content="dark light">
 <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1">
+<meta name="ia-dynamic-seo" content="profile">
 <title>${seoEscapeHtml(title)}</title>
 <meta name="description" content="${seoEscapeHtml(description)}">
 <link rel="canonical" href="${seoEscapeHtml(canonical)}">
@@ -197,17 +216,17 @@ function seoProfileServerHtml(profile, posts=[], counts={}) {
 <meta property="og:title" content="${seoEscapeHtml(title)}"><meta property="og:description" content="${seoEscapeHtml(description)}"><meta property="og:url" content="${seoEscapeHtml(canonical)}"><meta property="og:image" content="${seoEscapeHtml(shareImage)}">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${seoEscapeHtml(title)}"><meta name="twitter:description" content="${seoEscapeHtml(description)}"><meta name="twitter:image" content="${seoEscapeHtml(shareImage)}">
 <script type="application/ld+json">${seoProfileJsonLd(profile,counts)}</script>
-<script src="/theme.js?v=1.12.22"></script>
-<link rel="stylesheet" href="/styles.css?v=1.12.22">
+<script src="/theme.js?v=1.12.23"></script>
+<link rel="stylesheet" href="/styles.css?v=1.12.23">
 <style>.seo-profile-prerender{max-width:760px;margin:0 auto;padding:26px 16px 110px;color:#f7f7fb;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.seo-profile-brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:#fff;font-size:24px;font-weight:800;margin-bottom:18px}.seo-profile-brand img{width:38px;height:38px}.seo-profile-card{overflow:hidden;border:1px solid #2b2d3c;border-radius:22px;background:#141620}.seo-profile-cover{height:190px;background:#222532}.seo-profile-cover img{width:100%;height:100%;object-fit:cover}.seo-profile-body{padding:0 22px 22px}.seo-profile-avatar{width:104px;height:104px;border-radius:50%;margin-top:-54px;border:5px solid #141620;background:#242736;overflow:hidden;display:grid;place-items:center;font-size:28px;font-weight:800}.seo-profile-avatar img{width:100%;height:100%;object-fit:cover}.seo-profile-body h1{font-size:30px;margin:12px 0 2px}.seo-handle{color:#9da3b4}.seo-headline{font-weight:700;margin:15px 0 6px}.seo-bio{color:#d4d7e3;line-height:1.55;white-space:pre-wrap}.seo-virtual-notice{display:flex;gap:8px;align-items:flex-start;margin:14px 0;padding:12px 14px;border:1px solid #7147b8;border-radius:13px;background:rgba(124,60,255,.12);color:#e8dcff;line-height:1.45}.seo-virtual-notice b{white-space:nowrap;color:#ff74c7}.seo-cta{display:inline-flex;margin-top:16px;padding:12px 17px;border-radius:12px;text-decoration:none;color:#fff;font-weight:800;background:linear-gradient(135deg,#ff2aa1,#7c3cff)}.seo-profile-posts{margin-top:20px}.seo-profile-posts h2{font-size:21px}.seo-profile-post{border:1px solid #292c3b;background:#12141d;border-radius:16px;padding:16px;margin:12px 0}.seo-profile-post p{line-height:1.55;white-space:pre-wrap}.seo-media-lock{margin-top:12px;border:1px dashed #555a70;border-radius:12px;padding:18px;color:#c7cad7;text-align:center}.seo-empty{color:#aeb3c3}.seo-profile-prerender-noscript{display:block}</style>
-<link rel="stylesheet" href="/theme.css?v=1.12.22">
+<link rel="stylesheet" href="/theme.css?v=1.12.23">
 </head><body>
 <div id="app"><main class="seo-profile-prerender">
 <a class="seo-profile-brand" href="/"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a>
 <section class="seo-profile-card">${cover?`<div class="seo-profile-cover"><img src="${seoEscapeHtml(cover)}" alt="Cabecera de ${seoEscapeHtml(profile.name||profile.username)}"></div>`:'<div class="seo-profile-cover"></div>'}<div class="seo-profile-body"><div class="seo-profile-avatar">${avatar?`<img src="${seoEscapeHtml(avatar)}" alt="${seoEscapeHtml(profile.name||profile.username)}">`:`${seoEscapeHtml(String(profile.name||profile.username||'?').slice(0,1).toUpperCase())}`}</div><h1>${seoEscapeHtml(profile.name||profile.username)}</h1><div class="seo-handle">@${seoEscapeHtml(profile.username)}</div>${profile.is_virtual?'<div class="seo-virtual-notice"><b>✦ Perfil virtual</b><span>Personaje ficticio y anfitrión gestionado por Instant Admirers. No representa a una persona real.</span></div>':''}${profile.headline?`<div class="seo-headline">${seoEscapeHtml(seoPlainText(profile.headline,180))}</div>`:''}${profile.bio?`<p class="seo-bio">${seoEscapeHtml(seoPlainText(profile.bio,700))}</p>`:''}<a class="seo-cta" href="${seoEscapeHtml(registerUrl)}">Crear cuenta para ver todo el contenido</a></div></section>
 <section class="seo-profile-posts"><h2>Publicaciones públicas de ${seoEscapeHtml(profile.name||profile.username)}</h2>${postHtml}</section>
 </main></div><div id="modal-root"></div>
-<script src="/i18n.js?v=1.12.22"></script><script src="/socket.io/socket.io.js"></script><script src="/vendor/hls/hls.min.js?v=1.12.22"></script><script src="/app.js?v=1.12.22"></script>
+<script src="/i18n.js?v=1.12.23"></script><script src="/socket.io/socket.io.js"></script><script src="/vendor/hls/hls.min.js?v=1.12.23"></script><script src="/app.js?v=1.12.23"></script>
 </body></html>`;
 }
 function seoProfilesHubHtml(profiles=[]) {
@@ -218,7 +237,7 @@ function seoProfilesHubHtml(profiles=[]) {
     const desc=seoPlainText(p.headline || p.bio || `Perfil de @${p.username} en Instant Admirers.`,150);
     return `<a class="hub-card" href="/${encodeURIComponent(p.username)}">${avatar?`<img src="${seoEscapeHtml(avatar)}" alt="${seoEscapeHtml(p.name||p.username)}" loading="lazy">`:''}<span>@${seoEscapeHtml(p.username)}</span><b>${seoEscapeHtml(p.name||p.username)}</b>${p.is_virtual?'<em class="hub-virtual-badge">✦ Perfil virtual</em>':''}<p>${seoEscapeHtml(desc)}</p></a>`;
   }).join('');
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0b12"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1"><title>${title}</title><meta name="description" content="${description}"><link rel="canonical" href="${APP_URL}/perfiles/"><link rel="icon" href="/favicon.ico" sizes="any"><script src="/theme.js?v=1.12.22"></script><link rel="stylesheet" href="/seo.css?v=1.12.22"><link rel="stylesheet" href="/theme.css?v=1.12.22"><style>.hub-card img{width:58px;height:58px;object-fit:cover;border-radius:50%;margin-bottom:10px}.hub-virtual-badge{display:inline-flex;width:max-content;margin:7px 0 1px;padding:4px 8px;border-radius:999px;background:rgba(124,60,255,.12);border:1px solid rgba(124,60,255,.35);color:#9a5dff;font-size:12px;font-style:normal;font-weight:800}</style><script type="application/ld+json">${JSON.stringify({'@context':'https://schema.org','@type':'CollectionPage',name:title,description,url:`${APP_URL}/perfiles/`,isPartOf:{'@type':'WebSite',name:'Instant Admirers',url:`${APP_URL}/`}}).replace(/</g,'\\u003c')}</script></head><body><header class="site-header"><div class="nav-wrap"><a class="brand" href="/" aria-label="Instant Admirers"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a><nav aria-label="Navegación principal"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/perfiles/">Perfiles</a><a href="/?auth=login">Entrar</a><a class="nav-cta" href="/?auth=register&utm_source=seo&utm_medium=organic&utm_campaign=public-profiles">Crear cuenta</a></nav></div></header><main><section class="hero"><div class="hero-inner"><div class="breadcrumbs"><a href="/">Inicio</a><span>›</span><span>Perfiles</span></div><p class="eyebrow">Perfiles de Instant Admirers</p><h1>Tu próxima conexión puede estar aquí</h1><p class="hero-lead hub-intro">Descubre perfiles públicos y anfitriones virtuales identificados de Instant Admirers.</p></div></section><section class="hub-grid">${cards || '<div class="hub-card"><b>Muy pronto</b><p>Nuevos perfiles por descubrir.</p></div>'}</section></main><footer class="site-footer"><div class="footer-wrap"><div><b>Instant Admirers</b><p>Comunidad 18+ para conectar, compartir y descubrir perfiles e intereses.</p></div><div class="footer-links"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/privacy/">Privacidad</a><a href="/terms/">Términos</a></div></div></footer></body></html>`;
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0b12"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1"><title>${title}</title><meta name="description" content="${description}"><link rel="canonical" href="${APP_URL}/perfiles/"><link rel="icon" href="/favicon.ico" sizes="any"><script src="/theme.js?v=1.12.23"></script><link rel="stylesheet" href="/seo.css?v=1.12.23"><link rel="stylesheet" href="/theme.css?v=1.12.23"><style>.hub-card img{width:58px;height:58px;object-fit:cover;border-radius:50%;margin-bottom:10px}.hub-virtual-badge{display:inline-flex;width:max-content;margin:7px 0 1px;padding:4px 8px;border-radius:999px;background:rgba(124,60,255,.12);border:1px solid rgba(124,60,255,.35);color:#9a5dff;font-size:12px;font-style:normal;font-weight:800}</style><script type="application/ld+json">${JSON.stringify({'@context':'https://schema.org','@type':'CollectionPage',name:title,description,url:`${APP_URL}/perfiles/`,isPartOf:{'@type':'WebSite',name:'Instant Admirers',url:`${APP_URL}/`}}).replace(/</g,'\\u003c')}</script></head><body><header class="site-header"><div class="nav-wrap"><a class="brand" href="/" aria-label="Instant Admirers"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a><nav aria-label="Navegación principal"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/perfiles/">Perfiles</a><a href="/?auth=login">Entrar</a><a class="nav-cta" href="/?auth=register&utm_source=seo&utm_medium=organic&utm_campaign=public-profiles">Crear cuenta</a></nav></div></header><main><section class="hero"><div class="hero-inner"><div class="breadcrumbs"><a href="/">Inicio</a><span>›</span><span>Perfiles</span></div><p class="eyebrow">Perfiles de Instant Admirers</p><h1>Tu próxima conexión puede estar aquí</h1><p class="hero-lead hub-intro">Descubre perfiles públicos y anfitriones virtuales identificados de Instant Admirers.</p></div></section><section class="hub-grid">${cards || '<div class="hub-card"><b>Muy pronto</b><p>Nuevos perfiles por descubrir.</p></div>'}</section></main><footer class="site-footer"><div class="footer-wrap"><div><b>Instant Admirers</b><p>Comunidad 18+ para conectar, compartir y descubrir perfiles e intereses.</p></div><div class="footer-links"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/privacy/">Privacidad</a><a href="/terms/">Términos</a></div></div></footer></body></html>`;
 }
 
 function tokenDigest(raw='') { return crypto.createHash('sha256').update(String(raw)).digest('hex'); }
@@ -1302,7 +1321,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.12.22', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default','growth-public-teaser-profile','growth-teaser-media-lock','growth-teaser-signup-attribution','public-teaser-desktop-layout-fix','feed-full-image-fit','full-image-viewer','protected-image-lightbox','friend-gate-chat-lock','conversation-reply-continuity','chat-video-processing-refresh','chat-scroll-containment','chat-bottom-autoscroll','mobile-chat-composer-layout','mobile-chat-composer-viewport-fix','mobile-chat-active-header-compaction','direct-public-profile','direct-profile-media-lock','direct-profile-referral-attribution','public-profile-preview-control','seo-public-profiles','dynamic-profile-meta','profilepage-structured-data','profile-sitemap','public-profiles-hub','seo-profile-privacy-noindex','seo-navigation-cache-safety','visitor-theme-switcher','light-theme','dark-theme','theme-preference-persistence','light-theme-contrast-fix','light-sent-message-contrast-fix','sent-message-delete','message-delete-realtime','virtual-community','virtual-host-profiles','virtual-daily-activity','virtual-admin-inbox','virtual-admin-reply','virtual-profile-media-pools','virtual-profile-disclosure','virtual-profile-seo','virtual-profile-sitemap','virtual-profile-public-hub','virtual-profile-seo-disclosure'] });
+  res.json({ ok: true, version: '1.12.23', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default','growth-public-teaser-profile','growth-teaser-media-lock','growth-teaser-signup-attribution','public-teaser-desktop-layout-fix','feed-full-image-fit','full-image-viewer','protected-image-lightbox','friend-gate-chat-lock','conversation-reply-continuity','chat-video-processing-refresh','chat-scroll-containment','chat-bottom-autoscroll','mobile-chat-composer-layout','mobile-chat-composer-viewport-fix','mobile-chat-active-header-compaction','direct-public-profile','direct-profile-media-lock','direct-profile-referral-attribution','public-profile-preview-control','seo-public-profiles','dynamic-profile-meta','profilepage-structured-data','profile-sitemap','public-profiles-hub','seo-profile-privacy-noindex','seo-navigation-cache-safety','visitor-theme-switcher','light-theme','dark-theme','theme-preference-persistence','light-theme-contrast-fix','light-sent-message-contrast-fix','sent-message-delete','message-delete-realtime','virtual-community','virtual-host-profiles','virtual-daily-activity','virtual-admin-inbox','virtual-admin-reply','virtual-profile-media-pools','virtual-profile-disclosure','virtual-profile-seo','virtual-profile-sitemap','virtual-profile-public-hub','virtual-profile-seo-disclosure','virtual-profile-dynamic-meta','profile-seo-hydration-preservation'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -2434,7 +2453,7 @@ app.get('/api/public/profile/:username', asyncRoute(async (req, res) => {
 }));
 
 
-// V1.12.22: teaser público desde Growth Engine o directamente desde /usuario; tema claro/oscuro disponible en la capa cliente.
+// V1.12.23: teaser público desde Growth Engine o directamente desde /usuario; tema claro/oscuro disponible en la capa cliente.
 // La URL directa sólo funciona si el propietario la activa y la cuenta no es privada.
 // Nunca se entregan URLs de fotos/vídeos; sólo texto y el tipo de multimedia bloqueada.
 app.get('/api/public/profile/:username/teaser', publicTeaserLimiter, asyncRoute(async (req,res)=>{
@@ -3827,7 +3846,7 @@ app.delete('/api/admin/demo', auth, adminOnly, asyncRoute(async (req,res) => {
 }));
 
 
-// V1.12.22: Comunidad virtual identificada. No cuenta como usuario real en métricas ni SEO.
+// Comunidad virtual identificada: no cuenta como usuario real en métricas; los perfiles públicos elegibles sí participan en SEO con divulgación explícita.
 app.get('/api/admin/virtual-community', auth, adminOnly, asyncRoute(async (req,res) => {
   const [status,profiles,inbox]=await Promise.all([
     virtualCommunityStatus(pool),
@@ -4461,7 +4480,7 @@ app.post('/api/bunny/stream/webhook', asyncRoute(async (req,res) => {
   res.json({ok:true});
 }));
 
-// V1.12.22 · Sitemap dinámico de perfiles que han activado la vista pública.
+// V1.12.23 · Sitemap dinámico de perfiles que han activado la vista pública.
 app.get('/sitemap-profiles.xml', asyncRoute(async (_req,res)=>{
   const {rows}=await pool.query(`
     SELECT u.username,u.created_at,MAX(p.created_at) FILTER (WHERE p.visibility='public') AS last_public_post
@@ -4509,11 +4528,12 @@ app.get('/:username', asyncRoute(async (req,res,next)=>{
   const lower=username.toLowerCase();
   if(!/^[a-zA-Z0-9_.]{3,30}$/.test(username) || RESERVED_PROFILE_SLUGS.has(lower)) return next();
   const {rows}=await pool.query(`
-    SELECT u.id,u.username,u.name,u.headline,u.bio,u.avatar,u.cover,u.invite_code,u.created_at,u.location,u.is_virtual,
-           u.account_private,u.public_profile_preview_enabled,
+    SELECT u.id,u.username,u.name,u.headline,u.bio,u.avatar,u.cover,u.invite_code,u.created_at,u.location,u.interests,u.is_virtual,
+           vp.age AS virtual_age,u.account_private,u.public_profile_preview_enabled,
            (SELECT COUNT(*)::int FROM follows f WHERE f.followed_id=u.id) AS followers_count,
            (SELECT COUNT(*)::int FROM posts p2 WHERE p2.user_id=u.id AND p2.visibility='public') AS posts_count
       FROM users u
+      LEFT JOIN virtual_profiles vp ON vp.user_id=u.id
      WHERE LOWER(u.username)=LOWER($1) AND u.account_status='active' AND u.is_demo=FALSE
        AND COALESCE(u.social_hidden,FALSE)=FALSE
      LIMIT 1
@@ -4598,7 +4618,7 @@ async function start() {
   await syncSystemAccounts();
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Instant Admirers V1.12.22 en http://localhost:${PORT}`);
+    console.log(`Instant Admirers V1.12.23 en http://localhost:${PORT}`);
     void hardenLegacyCloudinaryMedia().catch(err => console.error('Protección multimedia heredada:', err.message));
     void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message));
     const bunnyStatusTimer=setInterval(() => void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message)),30000);
