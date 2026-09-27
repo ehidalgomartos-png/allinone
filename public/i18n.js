@@ -1,4 +1,4 @@
-// Instant Admirers V1.12.22 · Español / English
+// Instant Admirers V1.12.23 · Español / English
 (() => {
   const STORAGE_KEY = 'iaLanguage';
   const SUPPORTED = new Set(['es','en']);
@@ -132,6 +132,10 @@
 
   function translateHead(){
     document.documentElement.lang=current;
+    // Las páginas públicas de perfil llegan con SEO dinámico renderizado por servidor.
+    // No sobrescribir title/description/OG/Twitter al hidratar la SPA: Google ejecuta JS
+    // y, si lo hiciéramos, terminaría viendo los metadatos genéricos de la portada.
+    if(document.querySelector('meta[name="ia-dynamic-seo"][content="profile"]')) return;
     const isLegal=/^\/(?:en\/)?(?:legal|privacy|cookies|terms|community-guidelines)\/?$/i.test(location.pathname);
     if(isLegal) return;
     if(/\/offline\.html$/i.test(location.pathname)){ document.title=current==='es'?'Instant Admirers · Sin conexión':'Instant Admirers · Offline'; return; }
