@@ -1,0 +1,62 @@
+{
+  "schema": "instant-admirers.virtual-pack/v1",
+  "batch": "profiles-02-11-v1",
+  "profiles": [
+    {
+      "username": "sofia.gimenez.02",
+      "identity_version": "v1",
+      "images": [
+        {
+          "file": "profiles/sofia.gimenez.02/avatar.jpg",
+          "kind": "avatar",
+          "label": "Avatar principal realista",
+          "tags": ["retrato", "valencia", "casual"],
+          "alt_text": "Retrato de Sofía G., anfitriona virtual de Instant Admirers",
+          "featured": true,
+          "sort_order": 0
+        },
+        {
+          "file": "profiles/sofia.gimenez.02/cover.jpg",
+          "kind": "cover",
+          "label": "Portada principal",
+          "tags": ["valencia", "atardecer", "ciudad"],
+          "alt_text": "Sofía G. en Valencia al atardecer",
+          "sort_order": 1
+        },
+        {
+          "file": "profiles/sofia.gimenez.02/post-01.jpg",
+          "kind": "post",
+          "label": "Café y paseo",
+          "tags": ["cafe", "paseos", "valencia"],
+          "alt_text": "Sofía G. disfrutando de un café en Valencia",
+          "featured": true,
+          "sort_order": 11
+        },
+        {
+          "file": "profiles/sofia.gimenez.02/post-02.jpg",
+          "kind": "post",
+          "label": "Plan al aire libre",
+          "tags": ["aire libre", "paseos", "viajes"],
+          "alt_text": "Sofía G. disfrutando de un plan al aire libre",
+          "sort_order": 12
+        },
+        {
+          "file": "profiles/sofia.gimenez.02/post-03.jpg",
+          "kind": "post",
+          "label": "Momento cotidiano",
+          "tags": ["casual", "planes", "vida diaria"],
+          "alt_text": "Sofía G. en un momento cotidiano",
+          "sort_order": 13
+        },
+        {
+          "file": "profiles/sofia.gimenez.02/post-04.jpg",
+          "kind": "post",
+          "label": "Noche y ocio",
+          "tags": ["ocio", "musica", "planes"],
+          "alt_text": "Sofía G. disfrutando de un plan de ocio",
+          "sort_order": 14
+        }
+      ]
+    }
+  ]
+}

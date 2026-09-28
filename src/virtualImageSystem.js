@@ -234,15 +234,24 @@ async function virtualPackStatus(db){
   const {rows}=await db.query(`
     SELECT COUNT(*)::int AS profiles_total,
            COUNT(*) FILTER(WHERE media_count>=6)::int AS complete_packs,
-           COALESCE(SUM(media_count),0)::int AS pack_images
+           COALESCE(SUM(media_count),0)::int AS pack_images,
+           COUNT(*) FILTER(WHERE realistic_count>=6)::int AS realistic_packs,
+           COALESCE(SUM(realistic_count),0)::int AS realistic_images
       FROM (
-        SELECT u.id,COUNT(vpm.id) FILTER(WHERE vpm.active=TRUE AND vpm.archived_at IS NULL)::int AS media_count
-          FROM users u LEFT JOIN virtual_profile_media vpm ON vpm.user_id=u.id
+        SELECT u.id,
+               COUNT(vpm.id) FILTER(WHERE vpm.active=TRUE AND vpm.archived_at IS NULL)::int AS media_count,
+               COUNT(vpm.id) FILTER(
+                 WHERE vpm.active=TRUE AND vpm.archived_at IS NULL
+                   AND (COALESCE(m.provider_meta->>'realistic_pack','false')='true' OR m.provider_meta->>'pilot'='v1.12.24')
+               )::int AS realistic_count
+          FROM users u
+          LEFT JOIN virtual_profile_media vpm ON vpm.user_id=u.id
+          LEFT JOIN media m ON m.id=vpm.media_id
          WHERE u.is_virtual=TRUE
          GROUP BY u.id
       ) x
   `);
-  return rows[0]||{profiles_total:0,complete_packs:0,pack_images:0};
+  return rows[0]||{profiles_total:0,complete_packs:0,pack_images:0,realistic_packs:0,realistic_images:0};
 }
 
 module.exports={IMAGE_KINDS,normalizeTags,safeKind,listVirtualProfileMedia,selectVirtualProfileMedia,recordVirtualProfileMediaUsage,syncPilotVirtualImages,syncVirtualProfileBasePacks,virtualPackStatus};

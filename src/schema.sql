@@ -739,6 +739,25 @@ CREATE TABLE IF NOT EXISTS virtual_profile_media_usage (
 CREATE INDEX IF NOT EXISTS idx_virtual_profile_media_usage_user ON virtual_profile_media_usage(user_id,used_at DESC);
 CREATE INDEX IF NOT EXISTS idx_virtual_profile_media_usage_image ON virtual_profile_media_usage(virtual_profile_media_id,used_at DESC);
 
+-- V1.12.26: historial de importaciones ZIP de packs fotográficos realistas.
+CREATE TABLE IF NOT EXISTS virtual_profile_pack_imports (
+  id BIGSERIAL PRIMARY KEY,
+  admin_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  batch_key VARCHAR(80) NOT NULL DEFAULT '',
+  archive_name VARCHAR(180) NOT NULL DEFAULT '',
+  archive_sha256 VARCHAR(64) NOT NULL DEFAULT '',
+  profiles_requested INTEGER NOT NULL DEFAULT 0,
+  profiles_imported INTEGER NOT NULL DEFAULT 0,
+  images_requested INTEGER NOT NULL DEFAULT 0,
+  images_imported INTEGER NOT NULL DEFAULT 0,
+  images_reused INTEGER NOT NULL DEFAULT 0,
+  partial BOOLEAN NOT NULL DEFAULT FALSE,
+  summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_virtual_pack_imports_created ON virtual_profile_pack_imports(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_virtual_pack_imports_sha ON virtual_profile_pack_imports(archive_sha256);
+
 CREATE TABLE IF NOT EXISTS virtual_message_alerts (
   id BIGSERIAL PRIMARY KEY,
   conversation_id BIGINT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
