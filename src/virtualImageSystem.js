@@ -151,4 +151,98 @@ async function syncPilotVirtualImages(db) {
   return {installed:true,added,user_id:Number(user.id),avatar_media_id:ids.avatar||null,cover_media_id:ids.cover||null};
 }
 
-module.exports={IMAGE_KINDS,normalizeTags,safeKind,listVirtualProfileMedia,selectVirtualProfileMedia,recordVirtualProfileMediaUsage,syncPilotVirtualImages};
+
+const BASE_PACK_SCENES=[
+  {scene:1,label:'Café y conversación',tags:['cafe','conversacion','planes']},
+  {scene:2,label:'Escapada y aire libre',tags:['escapada','aire libre','viajes','naturaleza']},
+  {scene:3,label:'Música y planes',tags:['musica','planes','ocio']},
+  {scene:4,label:'Atardecer y ciudad',tags:['atardecer','ciudad','paseos']}
+];
+
+function packAssetSize(rel){
+  try{return fs.statSync(path.join(__dirname,'..','public',String(rel||'').replace(/^\//,''))).size;}catch{return 0;}
+}
+
+async function ensureLocalPackMedia(db,{userId,providerId,rel,mimeType='image/svg+xml',width=1080,height=1080,meta={}}){
+  let media=(await db.query(`SELECT id FROM media WHERE user_id=$1 AND provider='virtual_local' AND provider_id=$2 LIMIT 1`,[userId,providerId])).rows[0];
+  if(media) return {id:Number(media.id),created:false};
+  const inserted=await db.query(`
+    INSERT INTO media(user_id,mime_type,original_name,size_bytes,data,provider,provider_id,secure_url,resource_type,delivery_type,width,height,format,migrated_at,provider_status,provider_meta)
+    VALUES($1,$2,$3,$4,NULL,'virtual_local',$5,$6,'image','upload',$7,$8,$9,NOW(),'ready',$10::jsonb) RETURNING id
+  `,[userId,mimeType,path.basename(rel),packAssetSize(rel),providerId,rel,width,height,path.extname(rel).replace('.','')||'svg',JSON.stringify(meta)]);
+  return {id:Number(inserted.rows[0].id),created:true};
+}
+
+async function upsertPackPoolItem(db,{userId,mediaId,label,kind,tags,altText,featured=false,sortOrder=100,reactivate=true}){
+  const activeSql=reactivate?'TRUE':'virtual_profile_media.active';
+  const archivedSql=reactivate?'NULL':'virtual_profile_media.archived_at';
+  await db.query(`
+    INSERT INTO virtual_profile_media(user_id,media_id,label,kind,tags,alt_text,active,featured,sort_order,times_used,created_at,updated_at)
+    VALUES($1,$2,$3,$4,$5::jsonb,$6,TRUE,$7,$8,0,NOW(),NOW())
+    ON CONFLICT(user_id,media_id) DO UPDATE SET label=EXCLUDED.label,kind=EXCLUDED.kind,tags=EXCLUDED.tags,alt_text=EXCLUDED.alt_text,
+      active=${activeSql},featured=EXCLUDED.featured,sort_order=EXCLUDED.sort_order,archived_at=${archivedSql},updated_at=NOW()
+  `,[userId,mediaId,label,kind,JSON.stringify(normalizeTags(tags)),altText,Boolean(featured),Number(sortOrder||100)]);
+}
+
+async function syncVirtualProfileBasePacks(db,{includePilot=false}={}){
+  const {rows}=await db.query(`
+    SELECT u.id,u.username,u.name,u.avatar,u.cover,u.location,u.interests,vp.persona_key
+      FROM users u JOIN virtual_profiles vp ON vp.user_id=u.id
+     WHERE u.is_virtual=TRUE AND u.account_status='active'
+     ORDER BY u.id
+  `);
+  let profiles=0,images=0,createdMedia=0,avatars=0,covers=0;
+  const details=[];
+  for(const user of rows){
+    const idx=Number(String(user.persona_key||'').replace(/\D/g,''));
+    if(!Number.isFinite(idx)||idx<1||idx>100) continue;
+    if(idx===1&&!includePilot) continue;
+    const n=String(idx).padStart(3,'0');
+    const interests=String(user.interests||'').split(',').map(x=>x.trim()).filter(Boolean);
+    const baseTags=[user.location||'',...interests];
+    const avatarRel=`/assets/virtual/avatar-${n}.svg`;
+    const coverRel=`/assets/virtual/cover-${n}.svg`;
+    const avatar=await ensureLocalPackMedia(db,{userId:user.id,providerId:`virtual-pack-${idx}-avatar`,rel:avatarRel,width:512,height:512,meta:{virtual:true,synthetic:true,pack:'v1.12.25',pack_stage:'base',profile_index:idx,role:'avatar'}});
+    const cover=await ensureLocalPackMedia(db,{userId:user.id,providerId:`virtual-pack-${idx}-cover`,rel:coverRel,width:1200,height:420,meta:{virtual:true,synthetic:true,pack:'v1.12.25',pack_stage:'base',profile_index:idx,role:'cover'}});
+    createdMedia+=Number(avatar.created)+Number(cover.created);
+    await upsertPackPoolItem(db,{userId:user.id,mediaId:avatar.id,label:'Avatar base del personaje',kind:'avatar',tags:[...baseTags,'retrato','avatar'],altText:`Avatar de ${user.name}, anfitrión virtual de Instant Admirers`,featured:true,sortOrder:0});
+    await upsertPackPoolItem(db,{userId:user.id,mediaId:cover.id,label:`Portada de ${user.location||'Instant Admirers'}`,kind:'cover',tags:[...baseTags,'portada','ciudad'],altText:`Portada de ${user.name}, perfil virtual de Instant Admirers`,sortOrder:1});
+    images+=2;
+    // Las cuatro escenas ya existían desde la creación de la comunidad; ahora pasan a formar parte del pack gestionado.
+    for(const spec of BASE_PACK_SCENES){
+      const providerId=`virtual-${idx}-${spec.scene}`;
+      const rel=`/assets/virtual/scene-${n}-${spec.scene}.svg`;
+      let media=(await db.query(`SELECT id FROM media WHERE user_id=$1 AND provider='virtual_local' AND provider_id=$2 LIMIT 1`,[user.id,providerId])).rows[0];
+      if(!media){
+        const created=await ensureLocalPackMedia(db,{userId:user.id,providerId,rel,width:1080,height:1080,meta:{virtual:true,synthetic:true,pack:'v1.12.25',pack_stage:'base',profile_index:idx,scene:spec.scene}});
+        media={id:created.id};createdMedia+=Number(created.created);
+      }
+      await upsertPackPoolItem(db,{userId:user.id,mediaId:Number(media.id),label:spec.label,kind:'post',tags:[...baseTags,...spec.tags],altText:`${spec.label} de ${user.name}, perfil virtual de Instant Admirers`,featured:spec.scene===1,sortOrder:10+spec.scene});
+      images+=1;
+    }
+    const currentAvatar=String(user.avatar||'');
+    const currentCover=String(user.cover||'');
+    if(!currentAvatar||currentAvatar===avatarRel||currentAvatar.startsWith('/assets/virtual/avatar-')){await db.query(`UPDATE users SET avatar=$2 WHERE id=$1`,[user.id,`/media/${avatar.id}`]);avatars+=1;}
+    if(!currentCover||currentCover===coverRel||currentCover.startsWith('/assets/virtual/cover-')){await db.query(`UPDATE users SET cover=$2 WHERE id=$1`,[user.id,`/media/${cover.id}`]);covers+=1;}
+    profiles+=1;
+    details.push({user_id:Number(user.id),username:user.username,index:idx,images:6});
+  }
+  return {profiles,images,created_media:createdMedia,avatars_updated:avatars,covers_updated:covers,complete_packs:profiles,details};
+}
+
+async function virtualPackStatus(db){
+  const {rows}=await db.query(`
+    SELECT COUNT(*)::int AS profiles_total,
+           COUNT(*) FILTER(WHERE media_count>=6)::int AS complete_packs,
+           COALESCE(SUM(media_count),0)::int AS pack_images
+      FROM (
+        SELECT u.id,COUNT(vpm.id) FILTER(WHERE vpm.active=TRUE AND vpm.archived_at IS NULL)::int AS media_count
+          FROM users u LEFT JOIN virtual_profile_media vpm ON vpm.user_id=u.id
+         WHERE u.is_virtual=TRUE
+         GROUP BY u.id
+      ) x
+  `);
+  return rows[0]||{profiles_total:0,complete_packs:0,pack_images:0};
+}
+
+module.exports={IMAGE_KINDS,normalizeTags,safeKind,listVirtualProfileMedia,selectVirtualProfileMedia,recordVirtualProfileMediaUsage,syncPilotVirtualImages,syncVirtualProfileBasePacks,virtualPackStatus};
