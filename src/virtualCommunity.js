@@ -166,6 +166,195 @@ function makePostText(p, n=0) {
   return fill(postTemplates[(p.index*3+n*5)%postTemplates.length],p);
 }
 
+
+// V1.12.33 · Actividad virtual 2.0
+// Mantiene la divulgación de perfil virtual y hace que la actividad programada sea
+// menos uniforme: horarios diurnos, formatos mixtos, fin de semana, tono propio,
+// anti-repetición e historial auditable desde Administración.
+const activityTemplates = {
+  morning: [
+    'Empezando el día con calma y pensando en algún plan de {i1}. ¿Alguna recomendación por {city}?',
+    'Mañana tranquila, café cerca y una lista demasiado larga de cosas que quiero hacer. Hoy toca elegir una 😄',
+    'Hay días que empiezan mejor si sales un rato antes de meterte de lleno en todo. Hoy ha sido uno de esos.',
+    'Primera decisión del día: hacer hueco para {i2}. La segunda todavía está pendiente.'
+  ],
+  afternoon: [
+    'Pausa de media tarde y cabeza en modo próximo plan. Algo relacionado con {i1} no estaría nada mal.',
+    'Hoy el día pedía cambiar un poco de escenario. A veces con eso basta para volver con otra energía.',
+    'Entre una cosa y otra he terminado guardando otro sitio pendiente en {city}. La lista no para de crecer.',
+    'Tarde sencilla: un rato para {i2}, algo rico y cero prisas. Difícil mejorarla.'
+  ],
+  evening: [
+    'Cerrando el día con ganas de conversación y algún plan tranquilo. ¿Qué tal ha ido el vuestro?',
+    'A estas horas siempre me entran ganas de organizar una escapada que seguramente acabaré improvisando 😄',
+    'Hoy me quedo con un momento pequeño que no estaba planeado. Suelen ser los mejores.',
+    'Noche de bajar revoluciones. Algo de {i1} y mañana será otro día.'
+  ],
+  weekend: [
+    'Fin de semana sin agenda cerrada. Si aparece un plan de {i1}, probablemente me apunte.',
+    'Hoy gana el “vamos y vemos”. Los mejores fines de semana suelen empezar así.',
+    'Sábado/domingo de descubrir algún rincón nuevo de {city}. Se aceptan ideas.',
+    'El finde mejora bastante cuando hay tiempo para {i2} y ninguna obligación mirando el reloj.',
+    'Plan de fin de semana: salir de lo de siempre aunque sea solo un par de horas.'
+  ],
+  cercano: [
+    'Me apetecía pasar por aquí y preguntar algo sencillo: ¿qué pequeño plan os ha alegrado la semana?',
+    'Cada vez valoro más los planes que permiten hablar de verdad. Con {i1} de por medio, mejor todavía.'
+  ],
+  tranquilo: [
+    'Hoy estoy en modo bajar un poco el ritmo. Un paseo, algo de {i2} y poco más hace falta.',
+    'Día para no correr detrás de nada. A veces desconectar un rato es el mejor plan.'
+  ],
+  curioso: [
+    'Curiosidad del día: ¿qué sitio de {city} recomendaríais a alguien que quiere salirse de lo típico?',
+    'Pregunta abierta: ¿qué afición relacionada con {i1} os gustaría probar si tuvierais una tarde libre?'
+  ],
+  espontaneo: [
+    'He cambiado de plan a última hora y creo que ha sido lo mejor del día. Improvisar tiene sus ventajas.',
+    'Cero agenda para lo que queda de día. Si aparece algo relacionado con {i2}, mejor.'
+  ],
+  divertido: [
+    'Mi talento de hoy: convertir un plan de una hora en media tarde 😄',
+    'Confirmado: decir “solo un rato” sigue siendo una mentira bastante frecuente por aquí.'
+  ]
+};
+
+const storyTemplates = [
+  'Un momento del día ✨',
+  'Pausa rápida y seguimos',
+  'Plan improvisado 😄',
+  'Un poco de aire por aquí',
+  'Hoy tocaba salir de la rutina',
+  'Guardando este momento',
+  'Modo desconexión',
+  'Un rincón de {city}',
+  'Hoy: {i1}',
+  'Pequeño plan, buen día'
+];
+
+function normalizeActivityText(value='') {
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
+}
+
+function madridClock(date=new Date()) {
+  const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{
+    timeZone:'Europe/Madrid',weekday:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'
+  }).formatToParts(date).filter(p=>p.type!=='literal').map(p=>[p.type,p.value]));
+  const weekdays={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6};
+  const weekday=weekdays[parts.weekday] ?? date.getUTCDay();
+  const hour=Number(parts.hour||0);
+  return {weekday,hour,minute:Number(parts.minute||0),weekend:weekday===0||weekday===6};
+}
+
+function toneKey(value='') {
+  const v=normalizeActivityText(value);
+  if(v.includes('tranquilo')) return 'tranquilo';
+  if(v.includes('curioso')) return 'curioso';
+  if(v.includes('espont')) return 'espontaneo';
+  if(v.includes('divert')) return 'divertido';
+  return 'cercano';
+}
+
+function activityTextCandidates(p,{clock,tone='cercano'}={}) {
+  const pool=[];
+  if(clock?.weekend) pool.push(...activityTemplates.weekend);
+  if((clock?.hour??12)<12) pool.push(...activityTemplates.morning);
+  else if((clock?.hour??12)<19) pool.push(...activityTemplates.afternoon);
+  else pool.push(...activityTemplates.evening);
+  pool.push(...(activityTemplates[toneKey(tone)]||activityTemplates.cercano));
+  pool.push(...postTemplates);
+  return pool.map(t=>fill(t,p));
+}
+
+function pickFreshActivityText(p,{seq=0,clock=madridClock(),tone='cercano',recentTexts=[]}={}) {
+  const candidates=activityTextCandidates(p,{clock,tone});
+  const used=new Set((recentTexts||[]).map(normalizeActivityText).filter(Boolean));
+  const start=seededNumber(`activity-text-${p.index}-${seq}-${clock.weekday}-${clock.hour}`,0,Math.max(0,candidates.length-1));
+  for(let offset=0;offset<candidates.length;offset+=1){
+    const candidate=candidates[(start+offset)%candidates.length];
+    if(!used.has(normalizeActivityText(candidate))) return candidate;
+  }
+  return `${makePostText(p,seq)} ${seq%2===0?'✨':'🙂'}`;
+}
+
+function pickStoryText(p,{seq=0}={}) {
+  return fill(storyTemplates[seededNumber(`story-text-${p.index}-${seq}`,0,storyTemplates.length-1)],p);
+}
+
+function activityKindFor(row,eventSeq) {
+  const roll=seededNumber(`activity-kind-${row.user_id}-${eventSeq}`,0,99);
+  if(roll<14) return 'story-only';
+  if(roll<39) return 'post-text';
+  if(roll<82) return 'post-photo';
+  return 'post-photo-story';
+}
+
+function nextActivityDate(row,eventSeq,now=new Date()) {
+  const postsPerWeek=Math.min(7,Math.max(1,Number(row.posts_per_week||3)));
+  const baseHours=168/postsPerWeek;
+  const tone=toneKey(row.tone);
+  const factor=tone==='tranquilo'?1.12:tone==='espontaneo'?0.92:tone==='divertido'?0.96:1;
+  const jitterPct=seededNumber(`activity-gap-${row.user_id}-${eventSeq}`,-24,26)/100;
+  let hours=Math.max(12,Math.round(baseHours*factor*(1+jitterPct)));
+  let candidate=new Date(now.getTime()+hours*3600000);
+  let c=madridClock(candidate);
+  // Nunca programar actividad automática de madrugada. El tick de servidor se
+  // ejecuta cada 30 min, así que basta desplazar la siguiente fecha a la mañana.
+  if(c.hour<8){
+    hours+=8-c.hour+seededNumber(`activity-morning-${row.user_id}-${eventSeq}`,0,2);
+  } else if(c.hour>=23){
+    hours+=(24-c.hour)+8+seededNumber(`activity-morning-${row.user_id}-${eventSeq}`,0,2);
+  }
+  candidate=new Date(now.getTime()+hours*3600000);
+  return candidate;
+}
+
+async function recordActivityLog(db,{userId,activityType,postId=null,storyId=null,mediaId=null,text='',metadata={}}={}) {
+  const hash=text?crypto.createHash('sha256').update(normalizeActivityText(text)).digest('hex'):'';
+  await db.query(`
+    INSERT INTO virtual_activity_log(user_id,activity_type,post_id,story_id,media_id,text_hash,metadata,created_at)
+    VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,NOW())
+  `,[Number(userId),String(activityType||'activity').slice(0,32),postId||null,storyId||null,mediaId||null,hash,JSON.stringify(metadata||{})]);
+}
+
+async function rescheduleVirtualActivity(db,{limit=100}={}) {
+  const safeLimit=Math.min(100,Math.max(1,Number(limit)||100));
+  const {rows}=await db.query(`
+    SELECT vp.user_id,vp.posts_per_week,vp.tone,vp.persona_key
+      FROM virtual_profiles vp JOIN users u ON u.id=vp.user_id
+     WHERE vp.status='active' AND vp.auto_post_enabled=TRUE AND u.account_status='active' AND COALESCE(u.social_hidden,FALSE)=FALSE
+     ORDER BY vp.user_id LIMIT $1
+  `,[safeLimit]);
+  let updated=0;
+  const now=new Date();
+  for(const row of rows){
+    const idx=Number(String(row.persona_key||'').replace(/\D/g,''))||Number(row.user_id);
+    // Distribuye los primeros eventos entre 1 y 72 horas para que no salgan todos juntos.
+    const initialHours=seededNumber(`activity-reschedule-${idx}-${now.toISOString().slice(0,10)}`,1,72);
+    let target=new Date(now.getTime()+initialHours*3600000);
+    let clock=madridClock(target);
+    if(clock.hour<8) target=new Date(target.getTime()+(8-clock.hour+seededNumber(`rs-a-${idx}`,0,2))*3600000);
+    else if(clock.hour>=23) target=new Date(target.getTime()+((24-clock.hour)+8+seededNumber(`rs-b-${idx}`,0,2))*3600000);
+    await db.query(`UPDATE virtual_profiles SET next_auto_post_at=$2,updated_at=NOW() WHERE user_id=$1`,[row.user_id,target]);
+    updated+=1;
+  }
+  return {profiles:updated};
+}
+
+async function virtualActivityHistory(pool,{limit=24}={}) {
+  const lim=Math.min(100,Math.max(1,Number(limit)||24));
+  const {rows}=await pool.query(`
+    SELECT val.id,val.user_id,u.username,u.name,u.avatar,val.activity_type,val.post_id,val.story_id,val.media_id,val.metadata,val.created_at,
+           COALESCE(NULLIF(p.text,''),NULLIF(s.text,''),'') AS text
+      FROM virtual_activity_log val
+      JOIN users u ON u.id=val.user_id
+      LEFT JOIN posts p ON p.id=val.post_id
+      LEFT JOIN stories s ON s.id=val.story_id
+     ORDER BY val.id DESC LIMIT $1
+  `,[lim]);
+  return rows;
+}
+
 async function createVirtualCommunity(client) {
   const existing=await client.query(`SELECT COUNT(*)::int AS count FROM users WHERE COALESCE(is_virtual,FALSE)=TRUE`);
   if(Number(existing.rows[0]?.count||0)>0){ const e=new Error('La comunidad virtual ya está creada.'); e.status=409; throw e; }
@@ -216,30 +405,84 @@ async function runVirtualActivity(client,{force=false,limit=36}={}) {
      ORDER BY COALESCE(vp.next_auto_post_at,'epoch'::timestamptz),vp.user_id
      LIMIT $2
   `,[Boolean(force),safeLimit]);
-  let posts=0,stories=0;
+
+  let posts=0,stories=0,textPosts=0,photoPosts=0,storyOnly=0,quietRescheduled=0;
+  const clockNow=madridClock(new Date());
   for(const row of due.rows){
     const idx=Number(String(row.persona_key||'').replace(/\D/g,'')) || ((Number(row.user_id)%100)+1);
     const interestList=String(row.interests||'').split(',').map(x=>x.trim()).filter(Boolean);
-    const p={index:idx,age:Number(row.age||30),profession:String(row.headline||'').split('·')[1]?.trim()||'proyectos',interests:interestList.length?interestList:['planes','música'],city:row.location||'España'};
-    const count=await client.query(`SELECT COUNT(*)::int AS count FROM posts WHERE user_id=$1 AND source='virtual'`,[row.user_id]);
-    const seq=Number(count.rows[0]?.count||0);
-    const postText=makePostText(p,seq);
-    const selected=seq%3!==2 ? await selectVirtualProfileMedia(client,{userId:row.user_id,text:postText,usageType:'post'}) : null;
-    const mediaId=selected?Number(selected.media_id):null;
-    const insertedPost=await client.query(`INSERT INTO posts(user_id,text,media_id,media_type,source,external_url,visibility,created_at) VALUES($1,$2,$3,$4,'virtual','','public',NOW()) RETURNING id`,[row.user_id,postText,mediaId,mediaId?'image':'none']);
-    if(selected) await recordVirtualProfileMediaUsage(client,{poolId:selected.id,userId:row.user_id,postId:Number(insertedPost.rows[0].id),usageType:'post'});
-    posts+=1;
-    // Algunas actualizaciones se convierten también en Story para que la actividad no sea uniforme.
-    if(mediaId && seq%4===0){
-      const insertedStory=await client.query(`INSERT INTO stories(user_id,media_id,media_type,text,visibility,created_at,expires_at) VALUES($1,$2,'image',$3,'public',NOW(),NOW()+INTERVAL '24 hours') RETURNING id`,[row.user_id,mediaId,'Un momento del día ✨']);
-      if(selected) await recordVirtualProfileMediaUsage(client,{poolId:selected.id,userId:row.user_id,storyId:Number(insertedStory.rows[0].id),usageType:'story'});
-      stories+=1;
+    const p={index:idx,age:Number(row.age||30),profession:String(row.headline||'').split('·')[1]?.trim()||'proyectos',interests:interestList.length>=2?interestList:['planes','música'],city:row.location||'España'};
+
+    const eventCount=await client.query(`SELECT COUNT(*)::int AS count FROM virtual_activity_log WHERE user_id=$1`,[row.user_id]);
+    const eventSeq=Number(eventCount.rows[0]?.count||0);
+
+    // Actividad automática silenciosa de madrugada; una ejecución manual del admin sí puede forzarla.
+    if(!force && (clockNow.hour<8 || clockNow.hour>=23)){
+      const next=nextActivityDate({...row,posts_per_week:Math.max(Number(row.posts_per_week||3),5)},eventSeq,new Date());
+      await client.query(`UPDATE virtual_profiles SET next_auto_post_at=$2,updated_at=NOW() WHERE user_id=$1`,[row.user_id,next]);
+      quietRescheduled+=1;
+      continue;
     }
-    const hours=Math.max(18,Math.round((7/Math.max(1,Number(row.posts_per_week||3)))*24)+seededNumber(`gap-${row.user_id}-${seq}`,-4,8));
-    await client.query(`UPDATE virtual_profiles SET last_auto_post_at=NOW(),next_auto_post_at=NOW()+($2::int*INTERVAL '1 hour'),updated_at=NOW() WHERE user_id=$1`,[row.user_id,hours]);
+
+    const recent=await client.query(`SELECT text FROM posts WHERE user_id=$1 AND source='virtual' ORDER BY created_at DESC,id DESC LIMIT 18`,[row.user_id]);
+    const recentTexts=recent.rows.map(r=>r.text).filter(Boolean);
+    const postText=pickFreshActivityText(p,{seq:eventSeq,clock:clockNow,tone:row.tone,recentTexts});
+    let kind=activityKindFor(row,eventSeq);
+    let postId=null,storyId=null,mediaId=null,selected=null,storyText='';
+
+    if(kind==='story-only'){
+      storyText=pickStoryText(p,{seq:eventSeq});
+      selected=await selectVirtualProfileMedia(client,{userId:row.user_id,text:storyText,usageType:'story'});
+      if(selected){
+        mediaId=Number(selected.media_id);
+        const inserted=await client.query(`INSERT INTO stories(user_id,media_id,media_type,text,visibility,created_at,expires_at) VALUES($1,$2,'image',$3,'public',NOW(),NOW()+INTERVAL '24 hours') RETURNING id`,[row.user_id,mediaId,storyText]);
+        storyId=Number(inserted.rows[0].id);
+        await recordVirtualProfileMediaUsage(client,{poolId:selected.id,userId:row.user_id,storyId,usageType:'story'});
+        stories+=1;storyOnly+=1;
+      } else {
+        kind='post-text';
+      }
+    }
+
+    if(kind!=='story-only'){
+      if(kind!=='post-text') selected=await selectVirtualProfileMedia(client,{userId:row.user_id,text:postText,usageType:'post'});
+      if(kind!=='post-text' && selected) mediaId=Number(selected.media_id);
+      else if(kind!=='post-text' && !selected) kind='post-text';
+
+      const insertedPost=await client.query(`INSERT INTO posts(user_id,text,media_id,media_type,source,external_url,visibility,created_at) VALUES($1,$2,$3,$4,'virtual','','public',NOW()) RETURNING id`,[row.user_id,postText,mediaId,mediaId?'image':'none']);
+      postId=Number(insertedPost.rows[0].id);
+      posts+=1;
+      if(mediaId){
+        photoPosts+=1;
+        await recordVirtualProfileMediaUsage(client,{poolId:selected.id,userId:row.user_id,postId,usageType:'post'});
+      } else textPosts+=1;
+
+      if(kind==='post-photo-story' && mediaId){
+        storyText=pickStoryText(p,{seq:eventSeq});
+        const insertedStory=await client.query(`INSERT INTO stories(user_id,media_id,media_type,text,visibility,created_at,expires_at) VALUES($1,$2,'image',$3,'public',NOW(),NOW()+INTERVAL '24 hours') RETURNING id`,[row.user_id,mediaId,storyText]);
+        storyId=Number(insertedStory.rows[0].id);
+        await recordVirtualProfileMediaUsage(client,{poolId:selected.id,userId:row.user_id,storyId,usageType:'story'});
+        stories+=1;
+      }
+    }
+
+    await recordActivityLog(client,{
+      userId:row.user_id,activityType:kind,postId,storyId,mediaId,text:postId?postText:storyText,
+      metadata:{weekend:clockNow.weekend,hour:clockNow.hour,tone:toneKey(row.tone),forced:Boolean(force)}
+    });
+
+    const next=nextActivityDate(row,eventSeq+1,new Date());
+    await client.query(`UPDATE virtual_profiles SET last_auto_post_at=NOW(),next_auto_post_at=$2,updated_at=NOW() WHERE user_id=$1`,[row.user_id,next]);
     await client.query(`UPDATE users SET last_seen_at=NOW() WHERE id=$1`,[row.user_id]);
   }
-  return {profiles_processed:due.rows.length,posts,stories};
+  return {
+    profiles_processed:due.rows.length,
+    posts,stories,
+    text_posts:textPosts,
+    photo_posts:photoPosts,
+    story_only:storyOnly,
+    quiet_rescheduled:quietRescheduled
+  };
 }
 
 async function virtualCommunityStatus(pool) {
@@ -251,13 +494,19 @@ async function virtualCommunityStatus(pool) {
       COUNT(*) FILTER(WHERE vp.status='retired')::int AS retired,
       COUNT(*) FILTER(WHERE vp.gender='woman')::int AS women,
       COUNT(*) FILTER(WHERE vp.gender='man')::int AS men,
+      COUNT(*) FILTER(WHERE vp.status='active' AND vp.auto_post_enabled=TRUE)::int AS auto_enabled,
       (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_virtual=TRUE AND p.created_at>=CURRENT_DATE) AS posts_today,
       (SELECT COUNT(*)::int FROM virtual_profile_media vpm WHERE vpm.active=TRUE AND vpm.archived_at IS NULL) AS media_total,
       (SELECT COUNT(*)::int FROM virtual_profile_media_usage WHERE used_at>=CURRENT_DATE) AS media_uses_today,
-      (SELECT COUNT(*)::int FROM virtual_message_alerts WHERE replied_at IS NULL) AS inbox_unread
+      (SELECT COUNT(*)::int FROM virtual_message_alerts WHERE replied_at IS NULL) AS inbox_unread,
+      (SELECT COUNT(*)::int FROM virtual_activity_log WHERE created_at>=CURRENT_DATE) AS activity_events_today,
+      (SELECT COUNT(*)::int FROM virtual_activity_log WHERE created_at>=CURRENT_DATE AND activity_type='post-text') AS text_posts_today,
+      (SELECT COUNT(*)::int FROM virtual_activity_log WHERE created_at>=CURRENT_DATE AND activity_type IN ('post-photo','post-photo-story')) AS photo_posts_today,
+      (SELECT COUNT(*)::int FROM virtual_activity_log WHERE created_at>=CURRENT_DATE AND (story_id IS NOT NULL)) AS stories_today,
+      (SELECT COUNT(DISTINCT user_id)::int FROM virtual_activity_log WHERE created_at>=NOW()-INTERVAL '7 days') AS active_profiles_7d
     FROM virtual_profiles vp
   `);
-  return rows[0]||{total:0,active:0,paused:0,retired:0,women:0,men:0,posts_today:0,inbox_unread:0};
+  return rows[0]||{total:0,active:0,paused:0,retired:0,women:0,men:0,posts_today:0,inbox_unread:0,auto_enabled:0,activity_events_today:0,text_posts_today:0,photo_posts_today:0,stories_today:0,active_profiles_7d:0};
 }
 
 async function listVirtualProfiles(pool,{limit=24,q=''}={}) {
@@ -265,7 +514,8 @@ async function listVirtualProfiles(pool,{limit=24,q=''}={}) {
   const pattern=`%${String(q||'').trim().slice(0,80)}%`;
   const {rows}=await pool.query(`
     SELECT u.id,u.username,u.name,u.avatar,u.location,u.headline,u.last_seen_at,
-           vp.gender,vp.age,vp.status,vp.auto_post_enabled,vp.reply_enabled,vp.posts_per_week,vp.last_auto_post_at,vp.next_auto_post_at,
+           vp.gender,vp.age,vp.status,vp.auto_post_enabled,vp.reply_enabled,vp.posts_per_week,vp.tone,vp.last_auto_post_at,vp.next_auto_post_at,
+           (SELECT val.activity_type FROM virtual_activity_log val WHERE val.user_id=u.id ORDER BY val.id DESC LIMIT 1) AS last_activity_type,
            (SELECT COUNT(*)::int FROM posts p WHERE p.user_id=u.id) AS posts_count,
            (SELECT COUNT(*)::int FROM virtual_profile_media vpm WHERE vpm.user_id=u.id AND vpm.active=TRUE AND vpm.archived_at IS NULL) AS media_count,
            (SELECT COUNT(*)::int FROM virtual_profile_media vpm WHERE vpm.user_id=u.id AND vpm.featured=TRUE AND vpm.archived_at IS NULL) AS featured_media_count
@@ -296,4 +546,4 @@ async function virtualInbox(pool,{limit=30}={}) {
   return rows;
 }
 
-module.exports={VIRTUAL_PROFILE_COUNT,VIRTUAL_WOMEN,VIRTUAL_MEN,personas,createVirtualCommunity,runVirtualActivity,virtualCommunityStatus,listVirtualProfiles,virtualInbox};
+module.exports={VIRTUAL_PROFILE_COUNT,VIRTUAL_WOMEN,VIRTUAL_MEN,personas,createVirtualCommunity,runVirtualActivity,rescheduleVirtualActivity,virtualActivityHistory,virtualCommunityStatus,listVirtualProfiles,virtualInbox};

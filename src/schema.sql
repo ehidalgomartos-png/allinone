@@ -771,3 +771,19 @@ CREATE TABLE IF NOT EXISTS virtual_message_alerts (
 );
 CREATE INDEX IF NOT EXISTS idx_virtual_alerts_open ON virtual_message_alerts(replied_at,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_virtual_alerts_conversation ON virtual_message_alerts(conversation_id,created_at DESC);
+
+-- V1.12.33: Actividad virtual 2.0. Historial auditable de publicaciones/Stories
+-- automáticas para evitar repeticiones y mostrar métricas recientes en Administración.
+CREATE TABLE IF NOT EXISTS virtual_activity_log (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  activity_type VARCHAR(32) NOT NULL DEFAULT 'activity',
+  post_id BIGINT REFERENCES posts(id) ON DELETE SET NULL,
+  story_id BIGINT REFERENCES stories(id) ON DELETE SET NULL,
+  media_id BIGINT REFERENCES media(id) ON DELETE SET NULL,
+  text_hash VARCHAR(64) NOT NULL DEFAULT '',
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_virtual_activity_log_user ON virtual_activity_log(user_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_virtual_activity_log_type ON virtual_activity_log(activity_type,created_at DESC);
