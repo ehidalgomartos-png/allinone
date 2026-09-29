@@ -1,14 +1,14 @@
-const CACHE_NAME = 'instant-admirers-v1.12.31';
+const CACHE_NAME = 'instant-admirers-v1.12.32';
 const APP_SHELL = [
   '/',
   '/index.html',
   '/offline.html',
-  '/styles.css?v=1.12.31',
-  '/theme.css?v=1.12.31',
-  '/theme.js?v=1.12.31',
-  '/app.js?v=1.12.31',
-  '/i18n.js?v=1.12.31',
-  '/vendor/hls/hls.min.js?v=1.12.31',
+  '/styles.css?v=1.12.32',
+  '/theme.css?v=1.12.32',
+  '/theme.js?v=1.12.32',
+  '/app.js?v=1.12.32',
+  '/i18n.js?v=1.12.32',
+  '/vendor/hls/hls.min.js?v=1.12.32',
   '/manifest.webmanifest',
   '/assets/brand/instant-admirers-mark.svg',
   '/assets/brand/icon-192.png',

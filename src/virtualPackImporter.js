@@ -244,16 +244,14 @@ async function importRealisticPackArchive({db, withTransaction, archiveBuffer, a
       });
       const currentMediaIds=uploaded.map(x=>x.mediaId);
       const result=await withTransaction(async client=>{
-        // V1.12.31: guarda el mapeo de las fotos realistas activas anteriores.
-        // Si el nuevo pack sustituye una imagen de tipo post, las publicaciones
-        // históricas deben conservarse pero pasar a apuntar al nuevo media_id.
+        // V1.12.32: guarda el mapeo de TODAS las fotos realistas anteriores,
+        // incluidas las ya archivadas. Así podemos reparar publicaciones y
+        // stories/reels visuales que todavía apunten a una versión vieja del pack.
         const previousPostMedia=await client.query(`
           SELECT vpm.id AS pool_id,vpm.media_id,vpm.sort_order
             FROM virtual_profile_media vpm
             JOIN media m ON m.id=vpm.media_id
            WHERE vpm.user_id=$1
-             AND vpm.active=TRUE
-             AND vpm.archived_at IS NULL
              AND vpm.kind='post'
              AND COALESCE(m.provider_meta->>'realistic_pack','false')='true'
            ORDER BY vpm.sort_order,vpm.id
@@ -289,27 +287,35 @@ async function importRealisticPackArchive({db, withTransaction, archiveBuffer, a
         if(!avatarId||!coverId) throw importError(`@${profile.username}: faltan avatar o portada.`);
         await client.query(`UPDATE users SET avatar=$2,cover=$3 WHERE id=$1 AND is_virtual=TRUE`,[user.id,`/media/${avatarId}`,`/media/${coverId}`]);
 
-        // Reenlaza publicaciones históricas al post equivalente del nuevo pack.
-        // Se usa sort_order (11..14 en los packs estándar) para mantener
-        // la correspondencia post-01 → post-01, etc. No se toca texto, fecha,
-        // likes, comentarios, visibilidad ni ningún otro dato del post.
+        // Reenlaza publicaciones Y stories históricas al post equivalente
+        // del nuevo pack. Se usa sort_order (11..14) para mantener la
+        // correspondencia post-01 → post-01, etc. Esto conserva texto, fecha,
+        // likes, comentarios, visibilidad y el resto de metadatos.
         let historicalPostsRelinked=0;
+        let historicalStoriesRelinked=0;
         for(const previous of previousPostMedia.rows){
           const replacement=newPostMediaByOrder.get(Number(previous.sort_order));
           if(!replacement || !replacement.mediaId || Number(previous.media_id)===replacement.mediaId) continue;
-          const changed=await client.query(`
+          const changedPosts=await client.query(`
             UPDATE posts
                SET media_id=$3
              WHERE user_id=$1 AND media_id=$2
           `,[user.id,Number(previous.media_id),replacement.mediaId]);
-          historicalPostsRelinked += changed.rowCount || 0;
+          historicalPostsRelinked += changedPosts.rowCount || 0;
+
+          const changedStories=await client.query(`
+            UPDATE stories
+               SET media_id=$3
+             WHERE user_id=$1 AND media_id=$2
+          `,[user.id,Number(previous.media_id),replacement.mediaId]);
+          historicalStoriesRelinked += changedStories.rowCount || 0;
         }
-        return {baseArchived:baseArchived.rowCount||0,previousArchived:previousArchived.rowCount||0,avatarId,coverId,historicalPostsRelinked};
+        return {baseArchived:baseArchived.rowCount||0,previousArchived:previousArchived.rowCount||0,avatarId,coverId,historicalPostsRelinked,historicalStoriesRelinked};
       });
       const imported=uploaded.filter(x=>!x.reused).length;
       const reused=uploaded.filter(x=>x.reused).length;
       report.profiles_imported+=1;report.images_imported+=imported;report.images_reused+=reused;report.base_images_archived+=result.baseArchived;report.realistic_images_archived+=result.previousArchived;
-      report.profiles.push({username:profile.username,user_id:Number(user.id),images:6,uploaded:imported,reused,avatar_media_id:result.avatarId,cover_media_id:result.coverId,historical_posts_relinked:Number(result.historicalPostsRelinked||0),status:'imported'});
+      report.profiles.push({username:profile.username,user_id:Number(user.id),images:6,uploaded:imported,reused,avatar_media_id:result.avatarId,cover_media_id:result.coverId,historical_posts_relinked:Number(result.historicalPostsRelinked||0),historical_stories_relinked:Number(result.historicalStoriesRelinked||0),status:'imported'});
     } catch (err) {
       report.errors.push({username:profile.username,error:String(err?.message||err).slice(0,500),code:err?.code||'IMPORT_FAILED'});
     }
