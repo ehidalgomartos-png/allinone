@@ -244,6 +244,21 @@ async function importRealisticPackArchive({db, withTransaction, archiveBuffer, a
       });
       const currentMediaIds=uploaded.map(x=>x.mediaId);
       const result=await withTransaction(async client=>{
+        // V1.12.31: guarda el mapeo de las fotos realistas activas anteriores.
+        // Si el nuevo pack sustituye una imagen de tipo post, las publicaciones
+        // históricas deben conservarse pero pasar a apuntar al nuevo media_id.
+        const previousPostMedia=await client.query(`
+          SELECT vpm.id AS pool_id,vpm.media_id,vpm.sort_order
+            FROM virtual_profile_media vpm
+            JOIN media m ON m.id=vpm.media_id
+           WHERE vpm.user_id=$1
+             AND vpm.active=TRUE
+             AND vpm.archived_at IS NULL
+             AND vpm.kind='post'
+             AND COALESCE(m.provider_meta->>'realistic_pack','false')='true'
+           ORDER BY vpm.sort_order,vpm.id
+        `,[user.id]);
+
         const baseArchived=await client.query(`
           UPDATE virtual_profile_media vpm SET active=FALSE,archived_at=COALESCE(vpm.archived_at,NOW()),updated_at=NOW()
             FROM media m
@@ -258,24 +273,43 @@ async function importRealisticPackArchive({db, withTransaction, archiveBuffer, a
              AND NOT (vpm.media_id=ANY($2::bigint[]))
         `,[user.id,currentMediaIds]);
         let avatarId=null,coverId=null;
+        const newPostMediaByOrder=new Map();
         for (const item of uploaded) {
           const image=item.image;
-          await client.query(`
+          const savedPool=await client.query(`
             INSERT INTO virtual_profile_media(user_id,media_id,label,kind,tags,alt_text,active,featured,sort_order,updated_at)
             VALUES($1,$2,$3,$4,$5::jsonb,$6,TRUE,$7,$8,NOW())
             ON CONFLICT(user_id,media_id) DO UPDATE SET label=EXCLUDED.label,kind=EXCLUDED.kind,tags=EXCLUDED.tags,alt_text=EXCLUDED.alt_text,active=TRUE,featured=EXCLUDED.featured,sort_order=EXCLUDED.sort_order,archived_at=NULL,updated_at=NOW()
+            RETURNING id,media_id,kind,sort_order
           `,[user.id,item.mediaId,image.label,image.kind,JSON.stringify(image.tags),image.alt_text||`${user.name} · ${image.label}`,Boolean(image.featured),image.sort_order]);
           if(image.kind==='avatar') avatarId=item.mediaId;
           if(image.kind==='cover') coverId=item.mediaId;
+          if(image.kind==='post') newPostMediaByOrder.set(Number(image.sort_order),{mediaId:Number(item.mediaId),poolId:Number(savedPool.rows[0]?.id||0)});
         }
         if(!avatarId||!coverId) throw importError(`@${profile.username}: faltan avatar o portada.`);
         await client.query(`UPDATE users SET avatar=$2,cover=$3 WHERE id=$1 AND is_virtual=TRUE`,[user.id,`/media/${avatarId}`,`/media/${coverId}`]);
-        return {baseArchived:baseArchived.rowCount||0,previousArchived:previousArchived.rowCount||0,avatarId,coverId};
+
+        // Reenlaza publicaciones históricas al post equivalente del nuevo pack.
+        // Se usa sort_order (11..14 en los packs estándar) para mantener
+        // la correspondencia post-01 → post-01, etc. No se toca texto, fecha,
+        // likes, comentarios, visibilidad ni ningún otro dato del post.
+        let historicalPostsRelinked=0;
+        for(const previous of previousPostMedia.rows){
+          const replacement=newPostMediaByOrder.get(Number(previous.sort_order));
+          if(!replacement || !replacement.mediaId || Number(previous.media_id)===replacement.mediaId) continue;
+          const changed=await client.query(`
+            UPDATE posts
+               SET media_id=$3
+             WHERE user_id=$1 AND media_id=$2
+          `,[user.id,Number(previous.media_id),replacement.mediaId]);
+          historicalPostsRelinked += changed.rowCount || 0;
+        }
+        return {baseArchived:baseArchived.rowCount||0,previousArchived:previousArchived.rowCount||0,avatarId,coverId,historicalPostsRelinked};
       });
       const imported=uploaded.filter(x=>!x.reused).length;
       const reused=uploaded.filter(x=>x.reused).length;
       report.profiles_imported+=1;report.images_imported+=imported;report.images_reused+=reused;report.base_images_archived+=result.baseArchived;report.realistic_images_archived+=result.previousArchived;
-      report.profiles.push({username:profile.username,user_id:Number(user.id),images:6,uploaded:imported,reused,avatar_media_id:result.avatarId,cover_media_id:result.coverId,status:'imported'});
+      report.profiles.push({username:profile.username,user_id:Number(user.id),images:6,uploaded:imported,reused,avatar_media_id:result.avatarId,cover_media_id:result.coverId,historical_posts_relinked:Number(result.historicalPostsRelinked||0),status:'imported'});
     } catch (err) {
       report.errors.push({username:profile.username,error:String(err?.message||err).slice(0,500),code:err?.code||'IMPORT_FAILED'});
     }
