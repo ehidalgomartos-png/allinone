@@ -1,7 +1,7 @@
 {
   "name": "instant-admirers-community",
-  "version": "1.12.27",
-  "description": "Instant Admirers V1.12.27 - Virtual Image Admin Preview Fix: corrige las miniaturas protegidas del gestor de imágenes virtuales",
+  "version": "1.12.28",
+  "description": "Instant Admirers V1.12.28 - Virtual Profile Retire + Cover Display Fix",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
