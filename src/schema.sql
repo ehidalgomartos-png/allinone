@@ -321,6 +321,10 @@ ALTER TABLE users ADD CONSTRAINT users_role_check CHECK (role IN ('user','admin'
 ALTER TABLE users ADD COLUMN IF NOT EXISTS social_hidden BOOLEAN NOT NULL DEFAULT FALSE;
 -- V1.11.0: idioma preferido del usuario (vacío = detectar por navegador).
 ALTER TABLE users ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(5) NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_social_notifications BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_like_notifications BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_comment_notifications BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_connection_notifications BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_preferred_language_check;
 ALTER TABLE users ADD CONSTRAINT users_preferred_language_check CHECK (preferred_language IN ('','es','en'));
 

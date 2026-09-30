@@ -1,4 +1,4 @@
-// V1.12.35 · Social post previews + Virtual Interaction 2.0 + Virtual Activity 2.0 + Virtual Profile Packs + Image System + Dynamic SEO + Light/Dark Theme + Bunny Media + Growth Engine
+// V1.12.36 · Social post previews + Virtual Interaction 2.0 + Virtual Activity 2.0 + Virtual Profile Packs + Image System + Dynamic SEO + Light/Dark Theme + Bunny Media + Growth Engine
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en','ciudades','guias',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','sitemap-core.xml','sitemap-landings.xml','login','register','logout','admin',
@@ -3179,6 +3179,10 @@ window.openAccountSettings = () => {
         <div class="settings-actions">${state.me?.email_verified_at?'':'<button class="btn ghost compact" onclick="sendMyVerification()">Verificar</button>'}<button class="btn ghost compact" onclick="openEmailChange()">Cambiar email</button></div>
       </section>
       <section class="settings-block">
+        <div><b>Notificaciones por email</b><small>Recibe avisos cuando alguien te da Me gusta, comenta, te sigue o quiere conectar contigo.</small></div>
+        <button class="btn ghost compact" onclick="openEmailNotificationSettings()">Configurar</button>
+      </section>
+      <section class="settings-block">
         <div><b>Contraseña</b><small>Cambia tu contraseña usando la actual.</small></div>
         <button class="btn ghost compact" onclick="openPasswordChange()">Cambiar contraseña</button>
       </section>
@@ -3208,6 +3212,35 @@ window.openAccountSettings = () => {
         <button class="btn danger compact" onclick="openDeleteAccount()">Eliminar cuenta</button>
       </section>
     </div>`);
+};
+
+
+window.openEmailNotificationSettings = async () => {
+  try{
+    const settings=await api('/api/email-notifications');
+    modal(`<div class="modal-head"><h3>Notificaciones por email</h3><button class="icon-btn" onclick="openAccountSettings()">×</button></div>
+      <div class="privacy-settings email-notification-settings">
+        <section class="privacy-section"><div><b>Avisos sociales por email</b><small>Control general. Si lo desactivas, no recibirás ningún correo por actividad social.</small></div><label class="switch"><input id="emailNotifEnabled" type="checkbox" ${settings.enabled?'checked':''}><span></span></label></section>
+        <section class="privacy-section"><div><b>Me gusta</b><small>Te avisaremos cuando alguien indique que le gusta una de tus publicaciones.</small></div><label class="switch"><input id="emailNotifLikes" type="checkbox" ${settings.likes?'checked':''}><span></span></label></section>
+        <section class="privacy-section"><div><b>Comentarios y menciones</b><small>Comentarios en tus publicaciones, menciones y republicaciones.</small></div><label class="switch"><input id="emailNotifComments" type="checkbox" ${settings.comments?'checked':''}><span></span></label></section>
+        <section class="privacy-section"><div><b>Seguidores y amistades</b><small>Nuevos seguidores, solicitudes y aceptaciones de seguimiento o amistad.</small></div><label class="switch"><input id="emailNotifConnections" type="checkbox" ${settings.connections?'checked':''}><span></span></label></section>
+        ${settings.email_configured?'':'<div class="muted" style="font-size:11px">El envío de correo no está configurado todavía en el servidor.</div>'}
+        <div class="settings-actions"><button class="btn ghost" onclick="openAccountSettings()">Volver</button><button class="btn primary" onclick="saveEmailNotificationSettings()">Guardar cambios</button></div>
+      </div>`);
+  }catch(e){toast(e.message,'error');}
+};
+
+window.saveEmailNotificationSettings = async () => {
+  try{
+    await api('/api/email-notifications',{method:'PATCH',body:JSON.stringify({
+      enabled:Boolean($('#emailNotifEnabled')?.checked),
+      likes:Boolean($('#emailNotifLikes')?.checked),
+      comments:Boolean($('#emailNotifComments')?.checked),
+      connections:Boolean($('#emailNotifConnections')?.checked)
+    })});
+    toast('Notificaciones por email actualizadas');
+    await openEmailNotificationSettings();
+  }catch(e){toast(e.message,'error');}
 };
 
 
@@ -3484,14 +3517,14 @@ function virtualCommunityAdminHtml(data={}) {
   const interactionHtml=interactions.length ? interactions.slice(0,18).map(x=>`<div class="virtual-activity-row virtual-interaction-row"><img src="${escapeAttr(x.avatar||'/assets/brand/instant-admirers-mark.svg')}" alt=""><span><b>${escapeHtml(x.name||x.username||'Perfil virtual')} <small>@${escapeHtml(x.username||'')}</small></b><em>${interactionLabel(x.interaction_type)} → @${escapeHtml(x.target_username||'usuario')}</em><small>${escapeHtml(String(x.comment_text||x.post_text||'Interacción con contenido público').slice(0,105))}</small></span><time>${x.created_at?timeAgo(x.created_at):''}</time></div>`).join('') : '<div class="empty compact-empty">Todavía no hay interacciones automáticas registradas.</div>';
   const profilesHtml=profiles.length ? profiles.map(u=>`<article class="virtual-admin-profile ${escapeAttr(u.status||'active')}"><div class="virtual-admin-profile-main"><img src="${escapeAttr(u.avatar||'/assets/brand/instant-admirers-mark.svg')}" alt=""><div><b>${escapeHtml(u.name)} <span class="virtual-badge compact">✦ Virtual</span></b><small>@${escapeHtml(u.username)} · ${escapeHtml(u.location||'')} · ${Number(u.age||0)} años</small><span>${escapeHtml(u.headline||'')}</span></div></div><div class="virtual-admin-profile-meta"><span class="virtual-status ${escapeAttr(u.status||'active')}">${statusLabel(u.status)}</span><span class="${u.auto_post_enabled?'virtual-auto-on':'virtual-auto-off'}">Posts ${u.auto_post_enabled?'ON':'OFF'}</span><span class="${u.auto_interact_enabled?'virtual-auto-on':'virtual-auto-off'}">Interacción ${u.auto_interact_enabled?'ON':'OFF'}</span><span>${Number(u.posts_count||0)} posts</span><span>${Number(u.media_count||0)} fotos</span><label class="virtual-cadence"><span>Publicaciones</span><select onchange="setVirtualProfileCadence(${Number(u.id)},this.value)">${[1,2,3,4,5,6,7].map(n=>`<option value="${n}" ${Number(u.posts_per_week||0)===n?'selected':''}>${n===7?'Diaria':`${n}/semana`}</option>`).join('')}</select></label><label class="virtual-cadence"><span>Interacciones</span><select onchange="setVirtualProfileInteractionCadence(${Number(u.id)},this.value)">${[1,2,3,4].map(n=>`<option value="${n}" ${Number(u.interactions_per_day||2)===n?'selected':''}>${n}/día</option>`).join('')}</select></label><small>${u.next_auto_post_at?`Post ${timeAgo(u.next_auto_post_at)}`:'Sin post programado'}${u.next_auto_interact_at?` · Interacción ${timeAgo(u.next_auto_interact_at)}`:' · Sin interacción programada'}${u.last_interaction_type?` · Última int.: ${interactionLabel(u.last_interaction_type)}`:''}</small></div><div class="virtual-admin-profile-actions">${u.status!=='active'?`<button class="btn primary compact" onclick="setVirtualProfileStatus(${Number(u.id)},'active')">Activar</button>`:`<button class="btn ghost compact" onclick="setVirtualProfileStatus(${Number(u.id)},'paused')">Pausar</button>`}<button class="btn ghost compact" onclick="toggleVirtualProfileAuto(${Number(u.id)},${u.auto_post_enabled?'false':'true'})">Posts ${u.auto_post_enabled?'OFF':'ON'}</button><button class="btn ghost compact" onclick="toggleVirtualProfileInteractions(${Number(u.id)},${u.auto_interact_enabled?'false':'true'})">Interacción ${u.auto_interact_enabled?'OFF':'ON'}</button>${u.status!=='retired'?`<button class="btn ghost compact" onclick="setVirtualProfileStatus(${Number(u.id)},'retired')">Retirar</button>`:''}<label class="btn ghost compact virtual-media-upload">+ Foto<input type="file" accept="image/*" hidden onchange="uploadVirtualProfileMedia(${Number(u.id)},this.files?.[0],this,false)"></label><label class="btn ghost compact virtual-media-upload">Avatar<input type="file" accept="image/*" hidden onchange="uploadVirtualProfileMedia(${Number(u.id)},this.files?.[0],this,true)"></label><button class="btn ghost compact" onclick="openVirtualImageManager(${Number(u.id)})">Imágenes</button><button class="btn ghost compact" onclick="openProfile('${escapeAttr(u.username)}')">Ver perfil</button></div></article>`).join('') : '';
   return `<section class="card admin-section virtual-community-admin">
-    <div class="section-row"><div><h3>Comunidad virtual</h3><p>100 anfitriones ficticios identificados como virtuales. Actividad e interacción programadas con límites, historial y control individual.</p></div><span class="virtual-community-version">V1.12.35</span></div>
+    <div class="section-row"><div><h3>Comunidad virtual</h3><p>100 anfitriones ficticios identificados como virtuales. Actividad e interacción programadas con límites, historial y control individual.</p></div><span class="virtual-community-version">V1.12.36</span></div>
     ${total===0 ? `<div class="virtual-community-empty"><div>✦</div><b>La comunidad virtual todavía no está creada</b><p>Crea 50 perfiles de mujer y 50 de hombre, con ciudades, intereses, bios, contenido inicial y actividad programada. Todos se muestran con la etiqueta “Perfil virtual”.</p><button class="btn primary" onclick="seedVirtualCommunity()">Crear 100 perfiles virtuales</button></div>` : `
       <div class="virtual-community-metrics"><span><b>${total}</b> perfiles</span><span><b>${Number(st.active||0)}</b> activos</span><span><b>${Number(st.auto_enabled||0)}</b> posts Auto</span><span><b>${Number(st.auto_interact_enabled||0)}</b> interacción Auto</span><span><b>${Number(st.activity_events_today||0)}</b> actividad hoy</span><span><b>${Number(st.interaction_events_today||0)}</b> interacciones hoy</span><span><b>${Number(st.virtual_likes_today||0)}</b> likes</span><span><b>${Number(st.virtual_comments_today||0)}</b> comentarios</span><span><b>${Number(st.virtual_follows_today||0)}</b> follows</span><span><b>${Number(st.stories_today||0)}</b> Stories hoy</span><span><b>${Number(st.interacting_profiles_7d||0)}</b> interactuando 7d</span><span><b>${Number(st.media_total||0)}</b> imágenes activas</span><span class="${Number(st.inbox_unread||0)>0?'has-unread':''}"><b>${Number(st.inbox_unread||0)}</b> mensajes pendientes</span></div>
       <div class="virtual-community-actions"><button class="btn primary compact" onclick="runVirtualCommunityNow()">Generar actividad ahora</button><button class="btn primary compact" onclick="runVirtualInteractionsNow()">Generar interacciones ahora</button><button class="btn ghost compact" onclick="rescheduleVirtualCommunity()">Reprogramar posts</button><button class="btn ghost compact" onclick="rescheduleVirtualInteractionsNow()">Reprogramar interacciones</button><button class="btn ghost compact" onclick="syncVirtualImagePacks()">Sincronizar packs base</button><button class="btn ghost compact" onclick="go('feed')">Ver en Inicio</button><small>Interacción 2.0 actúa solo sobre usuarios reales y contenido público, con 1–4 acciones diarias por perfil, anti-ráfagas y afinidad por ciudad/intereses. Los mensajes privados siguen siendo manuales desde el buzón.</small></div>
       <details class="virtual-activity-history" open><summary>Interacción reciente</summary><div class="virtual-activity-list">${interactionHtml}</div></details>
       <details class="virtual-activity-history"><summary>Actividad reciente</summary><div class="virtual-activity-list">${activityHtml}</div></details>
       <div class="virtual-realistic-importer"><div class="virtual-realistic-importer-copy"><b>Importar packs fotográficos realistas</b><small>ZIP de hasta 100 MB · máximo 10 perfiles · exactamente 6 imágenes por perfil: avatar, portada y 4 publicaciones. El importador valida el manifest antes de subir nada.</small><a href="/virtual-pack-import-template.json" target="_blank" rel="noopener">Ver manifest de ejemplo</a></div><label class="btn primary compact">Seleccionar ZIP<input type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden onchange="importVirtualRealisticPacks(this)"></label></div>
-      <div class="virtual-inbox-block"><div class="section-row"><div><h4>Buzón de anfitriones</h4><p>Cuando una persona real escribe a un perfil virtual, aparece aquí para que administración responda desde ese personaje. V1.12.35 no automatiza mensajes privados.</p></div><span>${Number(st.inbox_unread||0)}</span></div><div class="virtual-inbox-list">${inboxHtml}</div></div>
+      <div class="virtual-inbox-block"><div class="section-row"><div><h4>Buzón de anfitriones</h4><p>Cuando una persona real escribe a un perfil virtual, aparece aquí para que administración responda desde ese personaje. V1.12.36 no automatiza mensajes privados.</p></div><span>${Number(st.inbox_unread||0)}</span></div><div class="virtual-inbox-list">${inboxHtml}</div></div>
       <details class="virtual-profile-manager" ${profiles.length && profiles.length<=12?'open':''}><summary>Gestionar los ${total} perfiles</summary><div class="virtual-profile-toolbar"><input id="virtualProfileSearch" placeholder="Buscar nombre, usuario, ciudad…" onkeydown="if(event.key==='Enter')searchVirtualProfiles()"><button class="btn ghost compact" onclick="searchVirtualProfiles()">Buscar</button><button class="btn ghost compact" onclick="resetVirtualProfiles()">Todos</button></div><div id="virtualProfileList" class="virtual-admin-profile-list">${profilesHtml}</div></details>
     `}
   </section>`;
@@ -3726,7 +3759,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.35</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.36</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>
@@ -3973,6 +4006,9 @@ async function init(options = {}) {
     trackSessionActivity();
     connectRealtime();
     const pendingProfile = String(options.preferredProfile || pendingProfileDestination()).trim();
+    let emailRequestedView='';
+    try{ emailRequestedView=String(new URLSearchParams(location.search).get('view')||'').toLowerCase(); }catch(_){}
+    if(!pendingProfile && emailRequestedView==='notifications' && !isSystemAccount()) state.view='notifications';
     if (pendingProfile) {
       rememberPendingProfile(pendingProfile);
       state.view='profile';

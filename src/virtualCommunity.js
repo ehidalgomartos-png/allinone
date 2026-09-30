@@ -447,11 +447,12 @@ async function recordInteractionLog(db,{virtualUserId,targetUserId,interactionTy
   `,[Number(virtualUserId),Number(targetUserId),String(interactionType||'like').slice(0,20),postId||null,commentId||null,String(textHash||'').slice(0,64),JSON.stringify(metadata||{})]);
 }
 
-async function addVirtualInteractionNotification(db,{targetUserId,virtualUserId,type,postId=null,text=''}={}) {
+async function addVirtualInteractionNotification(db,{targetUserId,virtualUserId,type,postId=null,text='',onNotification=null}={}) {
   if(Number(targetUserId)===Number(virtualUserId)) return;
   await db.query(`INSERT INTO notifications(user_id,actor_id,type,post_id,text,created_at) VALUES($1,$2,$3,$4,$5,NOW())`,[
     Number(targetUserId),Number(virtualUserId),String(type),postId||null,String(text||'').slice(0,1000)
   ]);
+  if(typeof onNotification==='function') onNotification({userId:Number(targetUserId),actorId:Number(virtualUserId),type:String(type),postId:postId||null,text:String(text||'')});
 }
 
 async function rescheduleVirtualInteractions(db,{limit=100}={}) {
@@ -492,7 +493,7 @@ async function virtualInteractionHistory(pool,{limit=24}={}) {
   return rows;
 }
 
-async function runVirtualInteractions(client,{force=false,limit=12}={}) {
+async function runVirtualInteractions(client,{force=false,limit=12,onNotification=null}={}) {
   const safeLimit=Math.min(30,Math.max(1,Number(limit)||12));
   const clockNow=madridClock(new Date());
   const due=await client.query(`
@@ -573,7 +574,7 @@ async function runVirtualInteractions(client,{force=false,limit=12}={}) {
     if(kind==='like'){
       const inserted=await client.query(`INSERT INTO likes(user_id,post_id) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING user_id`,[row.user_id,target.id]);
       if(inserted.rowCount){
-        await addVirtualInteractionNotification(client,{targetUserId:target.user_id,virtualUserId:row.user_id,type:'like',postId:target.id});
+        await addVirtualInteractionNotification(client,{targetUserId:target.user_id,virtualUserId:row.user_id,type:'like',postId:target.id,onNotification});
         likes+=1;performed=true;
       }
     } else if(kind==='comment'){
@@ -581,12 +582,12 @@ async function runVirtualInteractions(client,{force=false,limit=12}={}) {
       const picked=pickVirtualComment(row,target,{seq:interactionSeq,recentHashes:recent.rows.map(x=>x.text_hash).filter(Boolean)});
       const inserted=await client.query(`INSERT INTO comments(post_id,user_id,text,created_at) VALUES($1,$2,$3,NOW()) RETURNING id`,[target.id,row.user_id,picked.text]);
       commentId=Number(inserted.rows[0].id);textHash=picked.hash;
-      await addVirtualInteractionNotification(client,{targetUserId:target.user_id,virtualUserId:row.user_id,type:'comment',postId:target.id,text:picked.text});
+      await addVirtualInteractionNotification(client,{targetUserId:target.user_id,virtualUserId:row.user_id,type:'comment',postId:target.id,text:picked.text,onNotification});
       comments+=1;performed=true;
     } else {
       const inserted=await client.query(`INSERT INTO follows(follower_id,followed_id,created_at) VALUES($1,$2,NOW()) ON CONFLICT DO NOTHING RETURNING follower_id`,[row.user_id,target.user_id]);
       if(inserted.rowCount){
-        await addVirtualInteractionNotification(client,{targetUserId:target.user_id,virtualUserId:row.user_id,type:'follow'});
+        await addVirtualInteractionNotification(client,{targetUserId:target.user_id,virtualUserId:row.user_id,type:'follow',onNotification});
         follows+=1;performed=true;
       }
     }

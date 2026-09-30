@@ -1,4 +1,4 @@
-// Instant Admirers V1.12.35 · Español / English
+// Instant Admirers V1.12.36 · Español / English
 (() => {
   const STORAGE_KEY = 'iaLanguage';
   const SUPPORTED = new Set(['es','en']);
@@ -57,7 +57,20 @@
     'Este perfil protege sus mensajes con un reto de acceso. Complétalo antes de enviar mensajes, fotos o vídeos.':'This profile protects messages with an access challenge. Complete it before sending messages, photos or videos.',
     'Ver reto':'View challenge',
     'Chat no disponible':'Chat unavailable',
-    'No puedes enviar mensajes a esta persona en este momento.':'You cannot send messages to this person right now.'
+    'No puedes enviar mensajes a esta persona en este momento.':'You cannot send messages to this person right now.',
+    'Notificaciones por email':'Email notifications',
+    'Recibe avisos cuando alguien te da Me gusta, comenta, te sigue o quiere conectar contigo.':'Get alerts when someone likes or comments on your posts, follows you or wants to connect.',
+    'Configurar':'Configure',
+    'Avisos sociales por email':'Social email alerts',
+    'Control general. Si lo desactivas, no recibirás ningún correo por actividad social.':'Master control. If you turn it off, you will not receive social activity emails.',
+    'Te avisaremos cuando alguien indique que le gusta una de tus publicaciones.':'We will let you know when someone likes one of your posts.',
+    'Comentarios y menciones':'Comments and mentions',
+    'Comentarios en tus publicaciones, menciones y republicaciones.':'Comments on your posts, mentions and reposts.',
+    'Seguidores y amistades':'Followers and friends',
+    'Nuevos seguidores, solicitudes y aceptaciones de seguimiento o amistad.':'New followers, requests, and follow or friend acceptances.',
+    'El envío de correo no está configurado todavía en el servidor.':'Outgoing email is not configured on the server yet.',
+    'Notificaciones por email actualizadas':'Email notifications updated',
+    'Volver':'Back'
   });
   Object.assign(ES_EN,{
     'Imágenes':'Images','Biblioteca visual':'Visual library','Imágenes activas':'Active images','usos hoy':'uses today','Subir varias imágenes':'Upload multiple images','Seleccionar imágenes':'Select images','Nombre interno':'Internal name','Etiquetas: café, playa, cine…':'Tags: coffee, beach, cinema…','Texto alternativo':'Alt text','Guardar':'Save','Portada':'Cover','Destacar ★':'Feature ★','Quitar ★':'Remove ★','Archivar':'Archive','Restaurar':'Restore','Historial reciente':'Recent history','sin usar':'unused','Imagen actualizada':'Image updated','Avatar actualizado':'Avatar updated','Portada actualizada':'Cover updated','Imagen archivada':'Image archived','Imagen restaurada':'Image restored','Imagen eliminada de la biblioteca':'Image removed from library','Este perfil todavía no tiene imágenes en su biblioteca.':'This profile does not have images in its library yet.','Se guardarán en el pool del personaje. Puedes asignarlas como avatar o portada después.':'They will be saved in the character media pool. You can assign them as avatar or cover later.'

@@ -218,17 +218,17 @@ function seoProfileServerHtml(profile, posts=[], counts={}) {
 <meta property="og:title" content="${seoEscapeHtml(title)}"><meta property="og:description" content="${seoEscapeHtml(description)}"><meta property="og:url" content="${seoEscapeHtml(canonical)}"><meta property="og:image" content="${seoEscapeHtml(shareImage)}">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${seoEscapeHtml(title)}"><meta name="twitter:description" content="${seoEscapeHtml(description)}"><meta name="twitter:image" content="${seoEscapeHtml(shareImage)}">
 <script type="application/ld+json">${seoProfileJsonLd(profile,counts)}</script>
-<script src="/theme.js?v=1.12.35"></script>
-<link rel="stylesheet" href="/styles.css?v=1.12.35">
+<script src="/theme.js?v=1.12.36"></script>
+<link rel="stylesheet" href="/styles.css?v=1.12.36">
 <style>.seo-profile-prerender{max-width:760px;margin:0 auto;padding:26px 16px 110px;color:#f7f7fb;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.seo-profile-brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:#fff;font-size:24px;font-weight:800;margin-bottom:18px}.seo-profile-brand img{width:38px;height:38px}.seo-profile-card{overflow:hidden;border:1px solid #2b2d3c;border-radius:22px;background:#141620}.seo-profile-cover{height:190px;background:#222532}.seo-profile-cover img{width:100%;height:100%;object-fit:cover}.seo-profile-body{padding:0 22px 22px}.seo-profile-avatar{width:104px;height:104px;border-radius:50%;margin-top:-54px;border:5px solid #141620;background:#242736;overflow:hidden;display:grid;place-items:center;font-size:28px;font-weight:800}.seo-profile-avatar img{width:100%;height:100%;object-fit:cover}.seo-profile-body h1{font-size:30px;margin:12px 0 2px}.seo-handle{color:#9da3b4}.seo-headline{font-weight:700;margin:15px 0 6px}.seo-bio{color:#d4d7e3;line-height:1.55;white-space:pre-wrap}.seo-virtual-notice{display:flex;gap:8px;align-items:flex-start;margin:14px 0;padding:12px 14px;border:1px solid #7147b8;border-radius:13px;background:rgba(124,60,255,.12);color:#e8dcff;line-height:1.45}.seo-virtual-notice b{white-space:nowrap;color:#ff74c7}.seo-cta{display:inline-flex;margin-top:16px;padding:12px 17px;border-radius:12px;text-decoration:none;color:#fff;font-weight:800;background:linear-gradient(135deg,#ff2aa1,#7c3cff)}.seo-profile-posts{margin-top:20px}.seo-profile-posts h2{font-size:21px}.seo-profile-post{border:1px solid #292c3b;background:#12141d;border-radius:16px;padding:16px;margin:12px 0}.seo-profile-post p{line-height:1.55;white-space:pre-wrap}.seo-media-lock{margin-top:12px;border:1px dashed #555a70;border-radius:12px;padding:18px;color:#c7cad7;text-align:center}.seo-empty{color:#aeb3c3}.seo-profile-prerender-noscript{display:block}</style>
-<link rel="stylesheet" href="/theme.css?v=1.12.35">
+<link rel="stylesheet" href="/theme.css?v=1.12.36">
 </head><body>
 <div id="app"><main class="seo-profile-prerender">
 <a class="seo-profile-brand" href="/"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a>
 <section class="seo-profile-card">${cover?`<div class="seo-profile-cover"><img src="${seoEscapeHtml(cover)}" alt="Cabecera de ${seoEscapeHtml(profile.name||profile.username)}"></div>`:'<div class="seo-profile-cover"></div>'}<div class="seo-profile-body"><div class="seo-profile-avatar">${avatar?`<img src="${seoEscapeHtml(avatar)}" alt="${seoEscapeHtml(profile.name||profile.username)}">`:`${seoEscapeHtml(String(profile.name||profile.username||'?').slice(0,1).toUpperCase())}`}</div><h1>${seoEscapeHtml(profile.name||profile.username)}</h1><div class="seo-handle">@${seoEscapeHtml(profile.username)}</div>${profile.is_virtual?'<div class="seo-virtual-notice"><b>✦ Perfil virtual</b><span>Personaje ficticio y anfitrión gestionado por Instant Admirers. No representa a una persona real.</span></div>':''}${profile.headline?`<div class="seo-headline">${seoEscapeHtml(seoPlainText(profile.headline,180))}</div>`:''}${profile.bio?`<p class="seo-bio">${seoEscapeHtml(seoPlainText(profile.bio,700))}</p>`:''}<a class="seo-cta" href="${seoEscapeHtml(registerUrl)}">Crear cuenta para ver todo el contenido</a></div></section>
 <section class="seo-profile-posts"><h2>Publicaciones públicas de ${seoEscapeHtml(profile.name||profile.username)}</h2>${postHtml}</section>
 </main></div><div id="modal-root"></div>
-<script src="/i18n.js?v=1.12.35"></script><script src="/socket.io/socket.io.js"></script><script src="/vendor/hls/hls.min.js?v=1.12.35"></script><script src="/app.js?v=1.12.35"></script>
+<script src="/i18n.js?v=1.12.36"></script><script src="/socket.io/socket.io.js"></script><script src="/vendor/hls/hls.min.js?v=1.12.36"></script><script src="/app.js?v=1.12.36"></script>
 </body></html>`;
 }
 function seoProfilesHubHtml(profiles=[]) {
@@ -239,7 +239,7 @@ function seoProfilesHubHtml(profiles=[]) {
     const desc=seoPlainText(p.headline || p.bio || `Perfil de @${p.username} en Instant Admirers.`,150);
     return `<a class="hub-card" href="/${encodeURIComponent(p.username)}">${avatar?`<img src="${seoEscapeHtml(avatar)}" alt="${seoEscapeHtml(p.name||p.username)}" loading="lazy">`:''}<span>@${seoEscapeHtml(p.username)}</span><b>${seoEscapeHtml(p.name||p.username)}</b>${p.is_virtual?'<em class="hub-virtual-badge">✦ Perfil virtual</em>':''}<p>${seoEscapeHtml(desc)}</p></a>`;
   }).join('');
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0b12"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1"><title>${title}</title><meta name="description" content="${description}"><link rel="canonical" href="${APP_URL}/perfiles/"><link rel="icon" href="/favicon.ico" sizes="any"><script src="/theme.js?v=1.12.35"></script><link rel="stylesheet" href="/seo.css?v=1.12.35"><link rel="stylesheet" href="/theme.css?v=1.12.35"><style>.hub-card img{width:58px;height:58px;object-fit:cover;border-radius:50%;margin-bottom:10px}.hub-virtual-badge{display:inline-flex;width:max-content;margin:7px 0 1px;padding:4px 8px;border-radius:999px;background:rgba(124,60,255,.12);border:1px solid rgba(124,60,255,.35);color:#9a5dff;font-size:12px;font-style:normal;font-weight:800}</style><script type="application/ld+json">${JSON.stringify({'@context':'https://schema.org','@type':'CollectionPage',name:title,description,url:`${APP_URL}/perfiles/`,isPartOf:{'@type':'WebSite',name:'Instant Admirers',url:`${APP_URL}/`}}).replace(/</g,'\\u003c')}</script></head><body><header class="site-header"><div class="nav-wrap"><a class="brand" href="/" aria-label="Instant Admirers"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a><nav aria-label="Navegación principal"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/perfiles/">Perfiles</a><a href="/?auth=login">Entrar</a><a class="nav-cta" href="/?auth=register&utm_source=seo&utm_medium=organic&utm_campaign=public-profiles">Crear cuenta</a></nav></div></header><main><section class="hero"><div class="hero-inner"><div class="breadcrumbs"><a href="/">Inicio</a><span>›</span><span>Perfiles</span></div><p class="eyebrow">Perfiles de Instant Admirers</p><h1>Tu próxima conexión puede estar aquí</h1><p class="hero-lead hub-intro">Descubre perfiles públicos y anfitriones virtuales identificados de Instant Admirers.</p></div></section><section class="hub-grid">${cards || '<div class="hub-card"><b>Muy pronto</b><p>Nuevos perfiles por descubrir.</p></div>'}</section></main><footer class="site-footer"><div class="footer-wrap"><div><b>Instant Admirers</b><p>Comunidad 18+ para conectar, compartir y descubrir perfiles e intereses.</p></div><div class="footer-links"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/privacy/">Privacidad</a><a href="/terms/">Términos</a></div></div></footer></body></html>`;
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0b12"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1"><title>${title}</title><meta name="description" content="${description}"><link rel="canonical" href="${APP_URL}/perfiles/"><link rel="icon" href="/favicon.ico" sizes="any"><script src="/theme.js?v=1.12.36"></script><link rel="stylesheet" href="/seo.css?v=1.12.36"><link rel="stylesheet" href="/theme.css?v=1.12.36"><style>.hub-card img{width:58px;height:58px;object-fit:cover;border-radius:50%;margin-bottom:10px}.hub-virtual-badge{display:inline-flex;width:max-content;margin:7px 0 1px;padding:4px 8px;border-radius:999px;background:rgba(124,60,255,.12);border:1px solid rgba(124,60,255,.35);color:#9a5dff;font-size:12px;font-style:normal;font-weight:800}</style><script type="application/ld+json">${JSON.stringify({'@context':'https://schema.org','@type':'CollectionPage',name:title,description,url:`${APP_URL}/perfiles/`,isPartOf:{'@type':'WebSite',name:'Instant Admirers',url:`${APP_URL}/`}}).replace(/</g,'\\u003c')}</script></head><body><header class="site-header"><div class="nav-wrap"><a class="brand" href="/" aria-label="Instant Admirers"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a><nav aria-label="Navegación principal"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/perfiles/">Perfiles</a><a href="/?auth=login">Entrar</a><a class="nav-cta" href="/?auth=register&utm_source=seo&utm_medium=organic&utm_campaign=public-profiles">Crear cuenta</a></nav></div></header><main><section class="hero"><div class="hero-inner"><div class="breadcrumbs"><a href="/">Inicio</a><span>›</span><span>Perfiles</span></div><p class="eyebrow">Perfiles de Instant Admirers</p><h1>Tu próxima conexión puede estar aquí</h1><p class="hero-lead hub-intro">Descubre perfiles públicos y anfitriones virtuales identificados de Instant Admirers.</p></div></section><section class="hub-grid">${cards || '<div class="hub-card"><b>Muy pronto</b><p>Nuevos perfiles por descubrir.</p></div>'}</section></main><footer class="site-footer"><div class="footer-wrap"><div><b>Instant Admirers</b><p>Comunidad 18+ para conectar, compartir y descubrir perfiles e intereses.</p></div><div class="footer-links"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/privacy/">Privacidad</a><a href="/terms/">Términos</a></div></div></footer></body></html>`;
 }
 
 function tokenDigest(raw='') { return crypto.createHash('sha256').update(String(raw)).digest('hex'); }
@@ -479,6 +479,111 @@ El enlace caduca en 24 horas.`,
   });
   if (!sent && process.env.NODE_ENV !== 'production') console.log('VERIFY EMAIL:', url);
   return sent;
+}
+
+
+// V1.12.36 · Avisos sociales por email.
+// Se envían fuera de la transacción para no bloquear likes/comentarios por Resend.
+function socialEmailPreferenceKey(type='') {
+  if (type === 'like') return 'email_like_notifications';
+  if (['comment','mention','repost'].includes(type)) return 'email_comment_notifications';
+  if (['follow','follow_request','follow_accept','friend_request','friend_accept'].includes(type)) return 'email_connection_notifications';
+  return '';
+}
+
+function socialEmailCopy({type,actorName,actorUsername,actorVirtual=false,text='',english=false}={}) {
+  const display=String(actorName || actorUsername || (english?'Someone':'Alguien')).trim();
+  const safeDisplay=seoEscapeHtml(display);
+  const safeHandle=seoEscapeHtml(actorUsername ? `@${actorUsername}` : '');
+  const virtualNote=actorVirtual
+    ? (english?' <span style="color:#a98cff;font-weight:700">· Virtual profile</span>':' <span style="color:#a98cff;font-weight:700">· Perfil virtual</span>')
+    : '';
+  const preview=seoEscapeHtml(String(text||'').replace(/\s+/g,' ').trim().slice(0,220));
+  const who=`<b style="color:#fff">${safeDisplay}</b>${safeHandle?` <span style="color:#9a9daf">${safeHandle}</span>`:''}${virtualNote}`;
+  const es={
+    like:{subject:`${display} ha indicado que le gusta tu publicación`,title:'Nuevo Me gusta',body:`<p>${who} ha indicado que le gusta tu publicación.</p>`},
+    comment:{subject:`${display} ha comentado tu publicación`,title:'Nuevo comentario',body:`<p>${who} ha comentado tu publicación.</p>${preview?`<div style="margin:14px 0;padding:12px 14px;border-left:3px solid #ff2aa1;background:#0e1018;border-radius:10px">${preview}</div>`:''}`},
+    mention:{subject:`${display} te ha mencionado`,title:'Te han mencionado',body:`<p>${who} te ha mencionado en Instant Admirers.</p>${preview?`<div style="margin:14px 0;padding:12px 14px;border-left:3px solid #ff2aa1;background:#0e1018;border-radius:10px">${preview}</div>`:''}`},
+    repost:{subject:`${display} ha compartido tu publicación`,title:'Han compartido tu publicación',body:`<p>${who} ha republicado tu contenido en Instant Admirers.</p>`},
+    follow:{subject:`${display} ha empezado a seguirte`,title:'Nuevo seguidor',body:`<p>${who} ha empezado a seguirte.</p>`},
+    follow_request:{subject:`${display} quiere seguirte`,title:'Nueva solicitud de seguimiento',body:`<p>${who} quiere seguir tu cuenta privada.</p>`},
+    follow_accept:{subject:`${display} ha aceptado tu solicitud`,title:'Solicitud aceptada',body:`<p>${who} ha aceptado tu solicitud de seguimiento.</p>`},
+    friend_request:{subject:`${display} te ha enviado una solicitud de amistad`,title:'Nueva solicitud de amistad',body:`<p>${who} quiere añadirte como amigo.</p>`},
+    friend_accept:{subject:`${display} ha aceptado tu amistad`,title:'Ahora sois amigos',body:`<p>${who} ha aceptado tu solicitud de amistad.</p>`}
+  };
+  const en={
+    like:{subject:`${display} liked your post`,title:'New like',body:`<p>${who} liked your post.</p>`},
+    comment:{subject:`${display} commented on your post`,title:'New comment',body:`<p>${who} commented on your post.</p>${preview?`<div style="margin:14px 0;padding:12px 14px;border-left:3px solid #ff2aa1;background:#0e1018;border-radius:10px">${preview}</div>`:''}`},
+    mention:{subject:`${display} mentioned you`,title:'You were mentioned',body:`<p>${who} mentioned you on Instant Admirers.</p>${preview?`<div style="margin:14px 0;padding:12px 14px;border-left:3px solid #ff2aa1;background:#0e1018;border-radius:10px">${preview}</div>`:''}`},
+    repost:{subject:`${display} shared your post`,title:'Your post was shared',body:`<p>${who} reposted your content on Instant Admirers.</p>`},
+    follow:{subject:`${display} started following you`,title:'New follower',body:`<p>${who} started following you.</p>`},
+    follow_request:{subject:`${display} wants to follow you`,title:'New follow request',body:`<p>${who} wants to follow your private account.</p>`},
+    follow_accept:{subject:`${display} accepted your request`,title:'Request accepted',body:`<p>${who} accepted your follow request.</p>`},
+    friend_request:{subject:`${display} sent you a friend request`,title:'New friend request',body:`<p>${who} wants to add you as a friend.</p>`},
+    friend_accept:{subject:`${display} accepted your friendship`,title:'You are now friends',body:`<p>${who} accepted your friend request.</p>`}
+  };
+  return (english?en:es)[type] || null;
+}
+
+async function sendSocialNotificationEmail({userId,actorId,type,postId=null,text=''}={}) {
+  if (!emailConfigured() || !userId || !actorId) return false;
+  const preferenceKey=socialEmailPreferenceKey(String(type||''));
+  if (!preferenceKey) return false;
+  const {rows}=await pool.query(`
+    SELECT recipient.id,recipient.email,recipient.username,recipient.name,recipient.preferred_language,recipient.email_verified_at,
+           recipient.is_virtual,recipient.email_social_notifications,recipient.email_like_notifications,
+           recipient.email_comment_notifications,recipient.email_connection_notifications,
+           actor.username AS actor_username,actor.name AS actor_name,actor.is_virtual AS actor_is_virtual
+      FROM users recipient JOIN users actor ON actor.id=$2
+     WHERE recipient.id=$1 AND recipient.account_status='active'
+       AND COALESCE(recipient.social_hidden,FALSE)=FALSE
+     LIMIT 1
+  `,[Number(userId),Number(actorId)]);
+  const row=rows[0];
+  if(!row || row.is_virtual || !row.email || !row.email_verified_at || row.email_social_notifications===false || row[preferenceKey]===false) return false;
+
+  // Evita correos repetidos por dobles pulsaciones o varias acciones iguales seguidas.
+  const dedupe=await pool.query(`
+    SELECT COUNT(*)::int AS count FROM notifications
+     WHERE user_id=$1 AND actor_id=$2 AND type=$3
+       AND COALESCE(post_id,0)=COALESCE($4::bigint,0)
+       AND created_at>=NOW()-INTERVAL '3 minutes'
+  `,[Number(userId),Number(actorId),String(type),postId?Number(postId):null]);
+  if(Number(dedupe.rows[0]?.count||0)>1) return false;
+
+  const english=String(row.preferred_language||'').toLowerCase()==='en';
+  const copy=socialEmailCopy({type:String(type),actorName:row.actor_name,actorUsername:row.actor_username,actorVirtual:Boolean(row.actor_is_virtual),text,english});
+  if(!copy) return false;
+  const activityUrl=`${APP_URL}/?view=notifications`;
+  const actorLabel=String(row.actor_name || row.actor_username || (english?'Someone':'Alguien'));
+  const plainMap={
+    like:english?`${actorLabel} liked your post.`:`${actorLabel} ha indicado que le gusta tu publicación.`,
+    comment:english?`${actorLabel} commented on your post${text?`: ${String(text).slice(0,220)}`:'.'}`:`${actorLabel} ha comentado tu publicación${text?`: ${String(text).slice(0,220)}`:'.'}`,
+    mention:english?`${actorLabel} mentioned you on Instant Admirers.`:`${actorLabel} te ha mencionado en Instant Admirers.`,
+    repost:english?`${actorLabel} shared your post.`:`${actorLabel} ha compartido tu publicación.`,
+    follow:english?`${actorLabel} started following you.`:`${actorLabel} ha empezado a seguirte.`,
+    follow_request:english?`${actorLabel} wants to follow you.`:`${actorLabel} quiere seguirte.`,
+    follow_accept:english?`${actorLabel} accepted your follow request.`:`${actorLabel} ha aceptado tu solicitud de seguimiento.`,
+    friend_request:english?`${actorLabel} sent you a friend request.`:`${actorLabel} te ha enviado una solicitud de amistad.`,
+    friend_accept:english?`${actorLabel} accepted your friend request.`:`${actorLabel} ha aceptado tu solicitud de amistad.`
+  };
+  const virtualFooter=row.actor_is_virtual
+    ? (english?'This interaction was made by a virtual profile clearly identified in the app.':'Esta interacción procede de un perfil virtual identificado como tal en la aplicación.')
+    : (english?'You can change these email alerts in Account settings.':'Puedes cambiar estos avisos desde Ajustes de cuenta.');
+  return sendEmail({
+    to:row.email,
+    subject:`${copy.subject} · Instant Admirers`,
+    text:`${plainMap[String(type)]||copy.subject}\n\n${activityUrl}`,
+    html:emailShell({lang:english?'en':'es',title:copy.title,body:copy.body,buttonText:english?'View activity':'Ver actividad',buttonUrl:activityUrl,footer:virtualFooter})
+  });
+}
+
+function queueSocialNotificationEmail(payload={}) {
+  if(!emailConfigured()) return;
+  const timer=setTimeout(()=>{
+    void sendSocialNotificationEmail(payload).catch(err=>console.error('social email:',err.message));
+  },250);
+  timer.unref?.();
 }
 
 if (REQUIRE_EMAIL_VERIFICATION && !emailConfigured()) {
@@ -1375,6 +1480,7 @@ async function addNotification(client, { userId, actorId, type, postId = null, t
     RETURNING id, created_at
   `, [userId, actorId, type, postId, String(text || '').slice(0, 500)]);
   io.to(`user:${userId}`).emit('notification:new', { id: rows[0]?.id, type, actorId: Number(actorId), postId: postId ? Number(postId) : null, text });
+  queueSocialNotificationEmail({userId,actorId,type,postId,text});
   return rows[0] || null;
 }
 
@@ -1447,7 +1553,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.12.35', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default','growth-public-teaser-profile','growth-teaser-media-lock','growth-teaser-signup-attribution','public-teaser-desktop-layout-fix','feed-full-image-fit','full-image-viewer','protected-image-lightbox','friend-gate-chat-lock','conversation-reply-continuity','chat-video-processing-refresh','chat-scroll-containment','chat-bottom-autoscroll','mobile-chat-composer-layout','mobile-chat-composer-viewport-fix','mobile-chat-active-header-compaction','direct-public-profile','direct-profile-media-lock','direct-profile-referral-attribution','public-profile-preview-control','seo-public-profiles','dynamic-profile-meta','profilepage-structured-data','profile-sitemap','public-profiles-hub','seo-profile-privacy-noindex','seo-navigation-cache-safety','visitor-theme-switcher','light-theme','dark-theme','theme-preference-persistence','light-theme-contrast-fix','light-sent-message-contrast-fix','sent-message-delete','message-delete-realtime','virtual-community','virtual-host-profiles','virtual-daily-activity','virtual-admin-inbox','virtual-admin-reply','virtual-profile-media-pools','virtual-profile-disclosure','virtual-profile-seo','virtual-profile-sitemap','virtual-profile-public-hub','virtual-profile-seo-disclosure','virtual-profile-dynamic-meta','profile-seo-hydration-preservation','virtual-profile-image-library','virtual-profile-image-tags','virtual-profile-image-usage-history','virtual-profile-image-auto-selection','virtual-profile-image-admin','virtual-profile-image-batch-upload','virtual-profile-image-pilot','virtual-profile-base-packs','virtual-profile-pack-auto-sync','virtual-profile-pack-status','virtual-realistic-pack-importer','virtual-pack-zip-validation','virtual-pack-manifest-v1','virtual-pack-safe-replacement','virtual-pack-import-history','virtual-image-admin-preview-fix','virtual-profile-retire-fix','virtual-profile-cover-display-fix','virtual-profile-retire-transaction-fix','virtual-profile-cover-runtime-resolver','virtual-profile-cover-clean-avatar-fallback','virtual-profile-retire-failsafe','virtual-historical-post-media-relink','virtual-historical-story-media-relink','virtual-activity-2','virtual-activity-smart-schedule','virtual-activity-content-variety','virtual-activity-history','virtual-activity-weekend-mode','virtual-activity-text-photo-mix','virtual-interaction-2','virtual-interaction-smart-targeting','virtual-interaction-rate-limits','virtual-interaction-history','virtual-like-comment-follow','virtual-interaction-no-private-dm','virtual-interaction-ranking-safety','post-comment-previews','post-like-people','post-social-preview-batch'] });
+  res.json({ ok: true, version: '1.12.36', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default','growth-public-teaser-profile','growth-teaser-media-lock','growth-teaser-signup-attribution','public-teaser-desktop-layout-fix','feed-full-image-fit','full-image-viewer','protected-image-lightbox','friend-gate-chat-lock','conversation-reply-continuity','chat-video-processing-refresh','chat-scroll-containment','chat-bottom-autoscroll','mobile-chat-composer-layout','mobile-chat-composer-viewport-fix','mobile-chat-active-header-compaction','direct-public-profile','direct-profile-media-lock','direct-profile-referral-attribution','public-profile-preview-control','seo-public-profiles','dynamic-profile-meta','profilepage-structured-data','profile-sitemap','public-profiles-hub','seo-profile-privacy-noindex','seo-navigation-cache-safety','visitor-theme-switcher','light-theme','dark-theme','theme-preference-persistence','light-theme-contrast-fix','light-sent-message-contrast-fix','sent-message-delete','message-delete-realtime','virtual-community','virtual-host-profiles','virtual-daily-activity','virtual-admin-inbox','virtual-admin-reply','virtual-profile-media-pools','virtual-profile-disclosure','virtual-profile-seo','virtual-profile-sitemap','virtual-profile-public-hub','virtual-profile-seo-disclosure','virtual-profile-dynamic-meta','profile-seo-hydration-preservation','virtual-profile-image-library','virtual-profile-image-tags','virtual-profile-image-usage-history','virtual-profile-image-auto-selection','virtual-profile-image-admin','virtual-profile-image-batch-upload','virtual-profile-image-pilot','virtual-profile-base-packs','virtual-profile-pack-auto-sync','virtual-profile-pack-status','virtual-realistic-pack-importer','virtual-pack-zip-validation','virtual-pack-manifest-v1','virtual-pack-safe-replacement','virtual-pack-import-history','virtual-image-admin-preview-fix','virtual-profile-retire-fix','virtual-profile-cover-display-fix','virtual-profile-retire-transaction-fix','virtual-profile-cover-runtime-resolver','virtual-profile-cover-clean-avatar-fallback','virtual-profile-retire-failsafe','virtual-historical-post-media-relink','virtual-historical-story-media-relink','virtual-activity-2','virtual-activity-smart-schedule','virtual-activity-content-variety','virtual-activity-history','virtual-activity-weekend-mode','virtual-activity-text-photo-mix','virtual-interaction-2','virtual-interaction-smart-targeting','virtual-interaction-rate-limits','virtual-interaction-history','virtual-like-comment-follow','virtual-interaction-no-private-dm','virtual-interaction-ranking-safety','post-comment-previews','post-like-people','post-social-preview-batch','social-email-notifications','email-like-alerts','email-comment-alerts','email-connection-alerts','email-notification-preferences','virtual-interaction-email-alerts'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -2451,7 +2557,7 @@ app.get('/api/bookmarks', auth, asyncRoute(async (req, res) => {
 }));
 
 
-// V1.12.35 · Previsualización social en publicaciones.
+// V1.12.36 · Previsualización social en publicaciones.
 // Devuelve hasta 2 perfiles que han dado like y los 3 comentarios más recientes
 // para las publicaciones que el usuario ya puede ver.
 app.get('/api/posts/social-preview', auth, asyncRoute(async (req, res) => {
@@ -2958,6 +3064,39 @@ app.post('/api/users/:id/follow', auth, socialAccountOnly, asyncRoute(async (req
     return { following:true, requested:false, status:'following' };
   });
   res.json(result);
+}));
+
+// --- V1.12.36: preferencias de avisos sociales por email -------------------
+app.get('/api/email-notifications', auth, asyncRoute(async (req,res)=>{
+  const {rows}=await pool.query(`SELECT email_social_notifications,email_like_notifications,email_comment_notifications,email_connection_notifications FROM users WHERE id=$1`,[req.user.id]);
+  if(!rows[0]) return res.status(404).json({error:'Usuario no encontrado'});
+  res.json({
+    enabled:rows[0].email_social_notifications!==false,
+    likes:rows[0].email_like_notifications!==false,
+    comments:rows[0].email_comment_notifications!==false,
+    connections:rows[0].email_connection_notifications!==false,
+    email_configured:emailConfigured()
+  });
+}));
+
+app.patch('/api/email-notifications', auth, asyncRoute(async (req,res)=>{
+  const value=(key)=>req.body?.[key]===undefined?null:Boolean(req.body[key]);
+  const enabled=value('enabled'),likes=value('likes'),comments=value('comments'),connections=value('connections');
+  const {rows}=await pool.query(`
+    UPDATE users SET
+      email_social_notifications=COALESCE($2,email_social_notifications),
+      email_like_notifications=COALESCE($3,email_like_notifications),
+      email_comment_notifications=COALESCE($4,email_comment_notifications),
+      email_connection_notifications=COALESCE($5,email_connection_notifications)
+    WHERE id=$1
+    RETURNING email_social_notifications,email_like_notifications,email_comment_notifications,email_connection_notifications
+  `,[req.user.id,enabled,likes,comments,connections]);
+  res.json({
+    enabled:rows[0].email_social_notifications!==false,
+    likes:rows[0].email_like_notifications!==false,
+    comments:rows[0].email_comment_notifications!==false,
+    connections:rows[0].email_connection_notifications!==false
+  });
 }));
 
 // --- V0.9: privacidad, solicitudes de seguimiento y control --------------
@@ -4146,7 +4285,7 @@ app.post('/api/admin/virtual-community/reschedule', auth, adminOnly, asyncRoute(
 }));
 
 app.post('/api/admin/virtual-community/run-interactions', auth, adminOnly, asyncRoute(async (req,res) => {
-  const result=await withTransaction(client=>runVirtualInteractions(client,{force:Boolean(req.body?.force),limit:Number(req.body?.limit||12)}));
+  const result=await withTransaction(client=>runVirtualInteractions(client,{force:Boolean(req.body?.force),limit:Number(req.body?.limit||12),onNotification:queueSocialNotificationEmail}));
   await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'virtual_interactions_run',$2)`,[req.user.id,JSON.stringify(result).slice(0,1000)]);
   io.to('admins').emit('virtual-community:update',{type:'interactions',...result});
   res.json({ok:true,...result});
@@ -5026,7 +5165,7 @@ async function start() {
   await syncVirtualProfileBasePacks(pool,{includePilot:false}).catch(err => console.error('Virtual Profile Image Packs:',err.message));
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Instant Admirers V1.12.35 en http://localhost:${PORT}`);
+    console.log(`Instant Admirers V1.12.36 en http://localhost:${PORT}`);
     void hardenLegacyCloudinaryMedia().catch(err => console.error('Protección multimedia heredada:', err.message));
     void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message));
     const bunnyStatusTimer=setInterval(() => void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message)),30000);
@@ -5034,7 +5173,7 @@ async function start() {
     // Comunidad virtual: actividad + interacción moderada, sin depender de cron externo.
     const runVirtualTick=()=>{
       void withTransaction(client=>runVirtualActivity(client,{force:false,limit:20})).catch(err=>console.error('Actividad virtual:',err.message));
-      void withTransaction(client=>runVirtualInteractions(client,{force:false,limit:12})).catch(err=>console.error('Interacción virtual:',err.message));
+      void withTransaction(client=>runVirtualInteractions(client,{force:false,limit:12,onNotification:queueSocialNotificationEmail})).catch(err=>console.error('Interacción virtual:',err.message));
     };
     setTimeout(runVirtualTick,15000).unref?.();
     const virtualActivityTimer=setInterval(runVirtualTick,30*60*1000);
