@@ -787,3 +787,31 @@ CREATE TABLE IF NOT EXISTS virtual_activity_log (
 );
 CREATE INDEX IF NOT EXISTS idx_virtual_activity_log_user ON virtual_activity_log(user_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_virtual_activity_log_type ON virtual_activity_log(activity_type,created_at DESC);
+
+
+-- V1.12.34: Interacción virtual 2.0. Los anfitriones virtuales pueden reaccionar
+-- de forma moderada a contenido público de usuarios reales. Nunca interactúan
+-- automáticamente entre sí ni envían mensajes privados automáticos.
+ALTER TABLE virtual_profiles ADD COLUMN IF NOT EXISTS auto_interact_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE virtual_profiles ADD COLUMN IF NOT EXISTS interactions_per_day INTEGER NOT NULL DEFAULT 2;
+ALTER TABLE virtual_profiles ADD COLUMN IF NOT EXISTS last_auto_interact_at TIMESTAMPTZ;
+ALTER TABLE virtual_profiles ADD COLUMN IF NOT EXISTS next_auto_interact_at TIMESTAMPTZ;
+ALTER TABLE virtual_profiles DROP CONSTRAINT IF EXISTS virtual_profiles_interactions_per_day_check;
+ALTER TABLE virtual_profiles ADD CONSTRAINT virtual_profiles_interactions_per_day_check CHECK (interactions_per_day BETWEEN 1 AND 4);
+CREATE INDEX IF NOT EXISTS idx_virtual_profiles_interactions ON virtual_profiles(status,auto_interact_enabled,next_auto_interact_at);
+
+CREATE TABLE IF NOT EXISTS virtual_interaction_log (
+  id BIGSERIAL PRIMARY KEY,
+  virtual_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  target_user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  interaction_type VARCHAR(20) NOT NULL CHECK (interaction_type IN ('like','comment','follow')),
+  post_id BIGINT REFERENCES posts(id) ON DELETE SET NULL,
+  comment_id BIGINT REFERENCES comments(id) ON DELETE SET NULL,
+  text_hash VARCHAR(64) NOT NULL DEFAULT '',
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (virtual_user_id <> target_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_virtual_interaction_log_virtual ON virtual_interaction_log(virtual_user_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_virtual_interaction_log_target ON virtual_interaction_log(target_user_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_virtual_interaction_log_type ON virtual_interaction_log(interaction_type,created_at DESC);

@@ -1,0 +1,21 @@
+# V1.12.34 — Interacción virtual 2.0
+
+- Añade interacción automática moderada de perfiles virtuales con usuarios reales.
+- Nuevas acciones: likes, comentarios breves y follows.
+- Solo actúa sobre publicaciones públicas de cuentas reales activas.
+- No genera interacción automática virtual→virtual.
+- No accede a cuentas privadas ni a perfiles con acceso condicionado.
+- Respeta bloqueos y silencios en ambos sentidos.
+- Límite configurable por perfil de 1 a 4 interacciones al día.
+- Horarios escalonados, sin ráfagas iniciales y sin actividad automática de madrugada.
+- Afinidad básica por ciudad, intereses y actualidad de la publicación.
+- Protección anti-acoso: evita repetir objetivo durante 36 horas y limita la concentración diaria sobre una misma cuenta.
+- Historial auditable en `virtual_interaction_log`.
+- Nuevas métricas en Administración: interacciones, likes, comentarios, follows y perfiles activos en 7 días.
+- Controles individuales `Interacción ON/OFF` y frecuencia diaria por perfil.
+- Nuevos botones globales `Generar interacciones ahora` y `Reprogramar interacciones`.
+- Los mensajes privados continúan siendo manuales desde el buzón de anfitriones.
+- Las notificaciones y comentarios muestran la etiqueta `Virtual` del perfil actor.
+- Las interacciones virtuales no cuentan como señal de engagement para ordenar “Para ti” ni para la puntuación de Tendencias.
+- Términos ES/EN actualizados para explicar el funcionamiento de estas interacciones.
+- Mantiene intactos Actividad virtual 2.0 de V1.12.33 y el sistema de imágenes/packs.

@@ -355,6 +355,253 @@ async function virtualActivityHistory(pool,{limit=24}={}) {
   return rows;
 }
 
+
+// V1.12.34 · Interacción virtual 2.0
+// Interacciones moderadas y auditables de perfiles virtuales con contenido público
+// de usuarios reales. No hay interacción virtual→virtual ni mensajes automáticos.
+const interactionCommentTemplates = {
+  generic: [
+    'Me ha gustado leer esto 🙂',
+    'Buen punto. A veces un plan sencillo es justo lo que hace falta.',
+    'Esto da para una buena conversación 👀',
+    'Me gusta la idea 😄',
+    'Hay días en los que cambiar un poco de rutina viene genial.',
+    'Me quedo con esa idea ✨',
+    'Buen recordatorio para no dejar siempre los planes para otro día.',
+    'Ese tipo de plan suele ser difícil de mejorar 🙂'
+  ],
+  question: [
+    'Buena pregunta 😄 A ver qué responde la gente.',
+    'Yo también tengo curiosidad por las respuestas 👀',
+    'Esta pregunta abre debate del bueno.',
+    'Difícil elegir una sola respuesta 😄',
+    'Me apunto a leer recomendaciones por aquí.'
+  ],
+  city: [
+    'Por {city} seguro que salen buenas recomendaciones.',
+    '{city} siempre da para descubrir algún sitio nuevo.',
+    'Guardando ideas para el próximo plan por {city} 👀'
+  ]
+};
+
+function parseInterestList(value='') {
+  return String(value||'').split(',').map(x=>normalizeActivityText(x)).filter(Boolean).slice(0,12);
+}
+
+function targetAffinityScore(virtualRow,target) {
+  const vCity=normalizeActivityText(virtualRow.location||'');
+  const tCity=normalizeActivityText(target.location||'');
+  const vInterests=parseInterestList(virtualRow.interests);
+  const targetText=normalizeActivityText(`${target.interests||''} ${target.text||''}`);
+  const overlap=vInterests.filter(x=>x.length>=3 && targetText.includes(x)).length;
+  const created=target.created_at ? new Date(target.created_at).getTime() : 0;
+  const ageHours=created ? Math.max(0,(Date.now()-created)/3600000) : 999;
+  let score=overlap*5;
+  if(vCity && tCity && vCity===tCity) score+=8;
+  if(ageHours<=24) score+=8;
+  else if(ageHours<=72) score+=4;
+  score-=Math.min(12,Number(target.target_virtual_today||0)*5);
+  score+=seededNumber(`interaction-affinity-${virtualRow.user_id}-${target.id}`,0,4);
+  return score;
+}
+
+function pickVirtualComment(virtualRow,target,{seq=0,recentHashes=[]}={}) {
+  const p={
+    city:String(virtualRow.location||'España'),
+    interests:String(virtualRow.interests||'planes,música').split(',').map(x=>x.trim()).filter(Boolean)
+  };
+  if(p.interests.length<2) p.interests=['planes','música'];
+  const pool=[];
+  if(String(target.text||'').includes('?')) pool.push(...interactionCommentTemplates.question);
+  const targetCity=normalizeActivityText(target.location||'');
+  if(targetCity && normalizeActivityText(virtualRow.location||'')===targetCity) pool.push(...interactionCommentTemplates.city);
+  pool.push(...interactionCommentTemplates.generic);
+  const filled=pool.map(t=>fill(t,{...p,age:0,profession:'',interests:p.interests,city:p.city}));
+  const recent=new Set(recentHashes||[]);
+  const start=seededNumber(`interaction-comment-${virtualRow.user_id}-${target.id}-${seq}`,0,Math.max(0,filled.length-1));
+  for(let offset=0;offset<filled.length;offset+=1){
+    const text=filled[(start+offset)%filled.length];
+    const hash=crypto.createHash('sha256').update(normalizeActivityText(text)).digest('hex');
+    if(!recent.has(hash)) return {text,hash};
+  }
+  const text=filled[start]||'Me ha gustado leer esto 🙂';
+  return {text,hash:crypto.createHash('sha256').update(normalizeActivityText(text)).digest('hex')};
+}
+
+function nextInteractionDate(row,eventSeq,now=new Date()) {
+  const perDay=Math.min(4,Math.max(1,Number(row.interactions_per_day||2)));
+  const baseHours=24/perDay;
+  const jitter=seededNumber(`interaction-gap-${row.user_id}-${eventSeq}`,-25,35)/100;
+  let hours=Math.max(3,Math.round(baseHours*(1+jitter)));
+  let candidate=new Date(now.getTime()+hours*3600000);
+  const clock=madridClock(candidate);
+  if(clock.hour<8) candidate=new Date(candidate.getTime()+(8-clock.hour+seededNumber(`interaction-morning-a-${row.user_id}-${eventSeq}`,0,2))*3600000);
+  else if(clock.hour>=23) candidate=new Date(candidate.getTime()+((24-clock.hour)+8+seededNumber(`interaction-morning-b-${row.user_id}-${eventSeq}`,0,2))*3600000);
+  return candidate;
+}
+
+async function recordInteractionLog(db,{virtualUserId,targetUserId,interactionType,postId=null,commentId=null,textHash='',metadata={}}={}) {
+  await db.query(`
+    INSERT INTO virtual_interaction_log(virtual_user_id,target_user_id,interaction_type,post_id,comment_id,text_hash,metadata,created_at)
+    VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,NOW())
+  `,[Number(virtualUserId),Number(targetUserId),String(interactionType||'like').slice(0,20),postId||null,commentId||null,String(textHash||'').slice(0,64),JSON.stringify(metadata||{})]);
+}
+
+async function addVirtualInteractionNotification(db,{targetUserId,virtualUserId,type,postId=null,text=''}={}) {
+  if(Number(targetUserId)===Number(virtualUserId)) return;
+  await db.query(`INSERT INTO notifications(user_id,actor_id,type,post_id,text,created_at) VALUES($1,$2,$3,$4,$5,NOW())`,[
+    Number(targetUserId),Number(virtualUserId),String(type),postId||null,String(text||'').slice(0,1000)
+  ]);
+}
+
+async function rescheduleVirtualInteractions(db,{limit=100}={}) {
+  const safeLimit=Math.min(100,Math.max(1,Number(limit)||100));
+  const {rows}=await db.query(`
+    SELECT vp.user_id,vp.interactions_per_day,vp.persona_key
+      FROM virtual_profiles vp JOIN users u ON u.id=vp.user_id
+     WHERE vp.status='active' AND vp.auto_interact_enabled=TRUE AND u.account_status='active' AND COALESCE(u.social_hidden,FALSE)=FALSE
+     ORDER BY vp.user_id LIMIT $1
+  `,[safeLimit]);
+  const now=new Date();
+  let updated=0;
+  for(const row of rows){
+    const idx=Number(String(row.persona_key||'').replace(/\D/g,''))||Number(row.user_id);
+    const initialHours=seededNumber(`interaction-reschedule-${idx}-${now.toISOString().slice(0,10)}`,1,12);
+    let target=new Date(now.getTime()+initialHours*3600000);
+    const clock=madridClock(target);
+    if(clock.hour<8) target=new Date(target.getTime()+(8-clock.hour+seededNumber(`ir-a-${idx}`,0,2))*3600000);
+    else if(clock.hour>=23) target=new Date(target.getTime()+((24-clock.hour)+8+seededNumber(`ir-b-${idx}`,0,2))*3600000);
+    await db.query(`UPDATE virtual_profiles SET next_auto_interact_at=$2,updated_at=NOW() WHERE user_id=$1`,[row.user_id,target]);
+    updated+=1;
+  }
+  return {profiles:updated};
+}
+
+async function virtualInteractionHistory(pool,{limit=24}={}) {
+  const lim=Math.min(100,Math.max(1,Number(limit)||24));
+  const {rows}=await pool.query(`
+    SELECT vil.id,vil.virtual_user_id,vu.username,vu.name,vu.avatar,vil.target_user_id,tu.username AS target_username,tu.name AS target_name,
+           vil.interaction_type,vil.post_id,vil.comment_id,vil.metadata,vil.created_at,c.text AS comment_text,p.text AS post_text
+      FROM virtual_interaction_log vil
+      JOIN users vu ON vu.id=vil.virtual_user_id
+      JOIN users tu ON tu.id=vil.target_user_id
+      LEFT JOIN comments c ON c.id=vil.comment_id
+      LEFT JOIN posts p ON p.id=vil.post_id
+     ORDER BY vil.id DESC LIMIT $1
+  `,[lim]);
+  return rows;
+}
+
+async function runVirtualInteractions(client,{force=false,limit=12}={}) {
+  const safeLimit=Math.min(30,Math.max(1,Number(limit)||12));
+  const clockNow=madridClock(new Date());
+  const due=await client.query(`
+    SELECT vp.*,u.username,u.name,u.location,u.headline,u.interests,
+           (SELECT COUNT(*)::int FROM virtual_interaction_log vil WHERE vil.virtual_user_id=vp.user_id AND vil.created_at>=CURRENT_DATE) AS interactions_today,
+           (SELECT MAX(vil.created_at) FROM virtual_interaction_log vil WHERE vil.virtual_user_id=vp.user_id) AS last_interaction_log_at
+      FROM virtual_profiles vp JOIN users u ON u.id=vp.user_id
+     WHERE vp.status='active' AND vp.auto_interact_enabled=TRUE AND u.account_status='active' AND COALESCE(u.social_hidden,FALSE)=FALSE
+       AND (SELECT COUNT(*) FROM virtual_interaction_log vil WHERE vil.virtual_user_id=vp.user_id AND vil.created_at>=CURRENT_DATE) < vp.interactions_per_day
+       AND ($1::boolean=TRUE OR vp.next_auto_interact_at IS NULL OR vp.next_auto_interact_at<=NOW())
+     ORDER BY COALESCE(vp.next_auto_interact_at,'epoch'::timestamptz),vp.user_id
+     LIMIT $2
+  `,[Boolean(force),safeLimit]);
+
+  let likes=0,comments=0,follows=0,scheduled=0,noTarget=0,quietRescheduled=0;
+  for(const row of due.rows){
+    const interactionSeq=Number((await client.query(`SELECT COUNT(*)::int AS count FROM virtual_interaction_log WHERE virtual_user_id=$1`,[row.user_id])).rows[0]?.count||0);
+
+    // En despliegues existentes evitamos una ráfaga inicial: los perfiles sin fecha
+    // se programan primero. El botón manual del admin sí puede forzar una prueba.
+    if(!force && !row.next_auto_interact_at){
+      const next=nextInteractionDate(row,interactionSeq,new Date());
+      await client.query(`UPDATE virtual_profiles SET next_auto_interact_at=$2,updated_at=NOW() WHERE user_id=$1`,[row.user_id,next]);
+      scheduled+=1;
+      continue;
+    }
+    if(!force && (clockNow.hour<8 || clockNow.hour>=23)){
+      const next=nextInteractionDate({...row,interactions_per_day:4},interactionSeq,new Date());
+      await client.query(`UPDATE virtual_profiles SET next_auto_interact_at=$2,updated_at=NOW() WHERE user_id=$1`,[row.user_id,next]);
+      quietRescheduled+=1;
+      continue;
+    }
+
+    const candidates=await client.query(`
+      SELECT p.id,p.user_id,p.text,p.created_at,u.username,u.name,u.location,u.interests,u.account_private,u.friend_gate_enabled,
+             EXISTS(SELECT 1 FROM likes l WHERE l.user_id=$1 AND l.post_id=p.id) AS already_liked,
+             EXISTS(SELECT 1 FROM comments c WHERE c.user_id=$1 AND c.post_id=p.id) AS already_commented,
+             EXISTS(SELECT 1 FROM follows f WHERE f.follower_id=$1 AND f.followed_id=u.id) AS already_following,
+             (SELECT COUNT(*)::int FROM virtual_interaction_log vt WHERE vt.target_user_id=u.id AND vt.created_at>=CURRENT_DATE) AS target_virtual_today
+        FROM posts p JOIN users u ON u.id=p.user_id
+       WHERE COALESCE(u.is_virtual,FALSE)=FALSE AND COALESCE(u.is_demo,FALSE)=FALSE
+         AND u.account_status='active' AND COALESCE(u.social_hidden,FALSE)=FALSE
+         AND COALESCE(u.account_private,FALSE)=FALSE AND COALESCE(u.friend_gate_enabled,FALSE)=FALSE
+         AND p.visibility='public' AND p.created_at>=NOW()-INTERVAL '10 days'
+         AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.blocker_id=$1 AND b.blocked_id=u.id) OR (b.blocker_id=u.id AND b.blocked_id=$1))
+         AND NOT EXISTS(SELECT 1 FROM mutes m WHERE (m.muter_id=$1 AND m.muted_id=u.id) OR (m.muter_id=u.id AND m.muted_id=$1))
+         AND NOT EXISTS(SELECT 1 FROM virtual_interaction_log vil WHERE vil.virtual_user_id=$1 AND vil.target_user_id=u.id AND vil.created_at>=NOW()-INTERVAL '36 hours')
+         AND (SELECT COUNT(*) FROM virtual_interaction_log vt WHERE vt.target_user_id=u.id AND vt.created_at>=CURRENT_DATE) < 3
+       ORDER BY p.created_at DESC,p.id DESC
+       LIMIT 60
+    `,[row.user_id]);
+
+    if(!candidates.rowCount){
+      const next=nextInteractionDate(row,interactionSeq+1,new Date());
+      await client.query(`UPDATE virtual_profiles SET next_auto_interact_at=$2,updated_at=NOW() WHERE user_id=$1`,[row.user_id,next]);
+      noTarget+=1;
+      continue;
+    }
+
+    const ranked=candidates.rows.map(target=>({target,score:targetAffinityScore(row,target)})).sort((a,b)=>b.score-a.score || Number(b.target.id)-Number(a.target.id));
+    const chosen=ranked[0];
+    const target=chosen.target;
+    const roll=seededNumber(`interaction-kind-${row.user_id}-${interactionSeq}-${target.id}`,0,99);
+    const preferred=roll<56?'like':roll<84?'comment':'follow';
+    const available=[];
+    if(!target.already_liked) available.push('like');
+    if(!target.already_commented) available.push('comment');
+    if(!target.already_following) available.push('follow');
+    if(!available.length){
+      const next=nextInteractionDate(row,interactionSeq+1,new Date());
+      await client.query(`UPDATE virtual_profiles SET next_auto_interact_at=$2,updated_at=NOW() WHERE user_id=$1`,[row.user_id,next]);
+      noTarget+=1;
+      continue;
+    }
+    const kind=available.includes(preferred)?preferred:available[seededNumber(`interaction-fallback-${row.user_id}-${interactionSeq}`,0,available.length-1)];
+    let commentId=null,textHash='',performed=false;
+
+    if(kind==='like'){
+      const inserted=await client.query(`INSERT INTO likes(user_id,post_id) VALUES($1,$2) ON CONFLICT DO NOTHING RETURNING user_id`,[row.user_id,target.id]);
+      if(inserted.rowCount){
+        await addVirtualInteractionNotification(client,{targetUserId:target.user_id,virtualUserId:row.user_id,type:'like',postId:target.id});
+        likes+=1;performed=true;
+      }
+    } else if(kind==='comment'){
+      const recent=await client.query(`SELECT text_hash FROM virtual_interaction_log WHERE virtual_user_id=$1 AND interaction_type='comment' AND created_at>=NOW()-INTERVAL '30 days' ORDER BY id DESC LIMIT 20`,[row.user_id]);
+      const picked=pickVirtualComment(row,target,{seq:interactionSeq,recentHashes:recent.rows.map(x=>x.text_hash).filter(Boolean)});
+      const inserted=await client.query(`INSERT INTO comments(post_id,user_id,text,created_at) VALUES($1,$2,$3,NOW()) RETURNING id`,[target.id,row.user_id,picked.text]);
+      commentId=Number(inserted.rows[0].id);textHash=picked.hash;
+      await addVirtualInteractionNotification(client,{targetUserId:target.user_id,virtualUserId:row.user_id,type:'comment',postId:target.id,text:picked.text});
+      comments+=1;performed=true;
+    } else {
+      const inserted=await client.query(`INSERT INTO follows(follower_id,followed_id,created_at) VALUES($1,$2,NOW()) ON CONFLICT DO NOTHING RETURNING follower_id`,[row.user_id,target.user_id]);
+      if(inserted.rowCount){
+        await addVirtualInteractionNotification(client,{targetUserId:target.user_id,virtualUserId:row.user_id,type:'follow'});
+        follows+=1;performed=true;
+      }
+    }
+
+    if(performed) await recordInteractionLog(client,{
+      virtualUserId:row.user_id,targetUserId:target.user_id,interactionType:kind,postId:kind==='follow'?null:target.id,commentId,textHash,
+      metadata:{forced:Boolean(force),affinity:chosen.score,target_username:target.username,source:'virtual-interaction-2'}
+    });
+    const next=nextInteractionDate(row,interactionSeq+1,new Date());
+    await client.query(`UPDATE virtual_profiles SET last_auto_interact_at=CASE WHEN $3::boolean THEN NOW() ELSE last_auto_interact_at END,next_auto_interact_at=$2,updated_at=NOW() WHERE user_id=$1`,[row.user_id,next,performed]);
+    await client.query(`UPDATE users SET last_seen_at=NOW() WHERE id=$1`,[row.user_id]);
+  }
+  return {profiles_processed:due.rows.length,likes,comments,follows,scheduled,no_target:noTarget,quiet_rescheduled:quietRescheduled};
+}
+
 async function createVirtualCommunity(client) {
   const existing=await client.query(`SELECT COUNT(*)::int AS count FROM users WHERE COALESCE(is_virtual,FALSE)=TRUE`);
   if(Number(existing.rows[0]?.count||0)>0){ const e=new Error('La comunidad virtual ya está creada.'); e.status=409; throw e; }
@@ -389,7 +636,8 @@ async function createVirtualCommunity(client) {
     }
   }
 
-  // Los anfitriones no generan follows, likes ni comentarios artificiales entre ellos.
+  // El seed inicial no genera relaciones ni métricas artificiales entre anfitriones.
+  // V1.12.34 solo permite interacción automática con usuarios reales y siempre desde perfiles identificados como virtuales.
   // Así los contadores de interacción solo crecen con acciones reales de visitantes.
   const virtualUsers=(await client.query(`SELECT id FROM users WHERE is_virtual=TRUE ORDER BY id`)).rows.map(r=>Number(r.id));
   return {profiles:virtualUsers.length,women:VIRTUAL_WOMEN,men:VIRTUAL_MEN,posts:created.length};
@@ -495,6 +743,7 @@ async function virtualCommunityStatus(pool) {
       COUNT(*) FILTER(WHERE vp.gender='woman')::int AS women,
       COUNT(*) FILTER(WHERE vp.gender='man')::int AS men,
       COUNT(*) FILTER(WHERE vp.status='active' AND vp.auto_post_enabled=TRUE)::int AS auto_enabled,
+      COUNT(*) FILTER(WHERE vp.status='active' AND vp.auto_interact_enabled=TRUE)::int AS auto_interact_enabled,
       (SELECT COUNT(*)::int FROM posts p JOIN users u ON u.id=p.user_id WHERE u.is_virtual=TRUE AND p.created_at>=CURRENT_DATE) AS posts_today,
       (SELECT COUNT(*)::int FROM virtual_profile_media vpm WHERE vpm.active=TRUE AND vpm.archived_at IS NULL) AS media_total,
       (SELECT COUNT(*)::int FROM virtual_profile_media_usage WHERE used_at>=CURRENT_DATE) AS media_uses_today,
@@ -503,10 +752,15 @@ async function virtualCommunityStatus(pool) {
       (SELECT COUNT(*)::int FROM virtual_activity_log WHERE created_at>=CURRENT_DATE AND activity_type='post-text') AS text_posts_today,
       (SELECT COUNT(*)::int FROM virtual_activity_log WHERE created_at>=CURRENT_DATE AND activity_type IN ('post-photo','post-photo-story')) AS photo_posts_today,
       (SELECT COUNT(*)::int FROM virtual_activity_log WHERE created_at>=CURRENT_DATE AND (story_id IS NOT NULL)) AS stories_today,
-      (SELECT COUNT(DISTINCT user_id)::int FROM virtual_activity_log WHERE created_at>=NOW()-INTERVAL '7 days') AS active_profiles_7d
+      (SELECT COUNT(DISTINCT user_id)::int FROM virtual_activity_log WHERE created_at>=NOW()-INTERVAL '7 days') AS active_profiles_7d,
+      (SELECT COUNT(*)::int FROM virtual_interaction_log WHERE created_at>=CURRENT_DATE) AS interaction_events_today,
+      (SELECT COUNT(*)::int FROM virtual_interaction_log WHERE created_at>=CURRENT_DATE AND interaction_type='like') AS virtual_likes_today,
+      (SELECT COUNT(*)::int FROM virtual_interaction_log WHERE created_at>=CURRENT_DATE AND interaction_type='comment') AS virtual_comments_today,
+      (SELECT COUNT(*)::int FROM virtual_interaction_log WHERE created_at>=CURRENT_DATE AND interaction_type='follow') AS virtual_follows_today,
+      (SELECT COUNT(DISTINCT virtual_user_id)::int FROM virtual_interaction_log WHERE created_at>=NOW()-INTERVAL '7 days') AS interacting_profiles_7d
     FROM virtual_profiles vp
   `);
-  return rows[0]||{total:0,active:0,paused:0,retired:0,women:0,men:0,posts_today:0,inbox_unread:0,auto_enabled:0,activity_events_today:0,text_posts_today:0,photo_posts_today:0,stories_today:0,active_profiles_7d:0};
+  return rows[0]||{total:0,active:0,paused:0,retired:0,women:0,men:0,posts_today:0,inbox_unread:0,auto_enabled:0,auto_interact_enabled:0,activity_events_today:0,text_posts_today:0,photo_posts_today:0,stories_today:0,active_profiles_7d:0,interaction_events_today:0,virtual_likes_today:0,virtual_comments_today:0,virtual_follows_today:0,interacting_profiles_7d:0};
 }
 
 async function listVirtualProfiles(pool,{limit=24,q=''}={}) {
@@ -514,8 +768,9 @@ async function listVirtualProfiles(pool,{limit=24,q=''}={}) {
   const pattern=`%${String(q||'').trim().slice(0,80)}%`;
   const {rows}=await pool.query(`
     SELECT u.id,u.username,u.name,u.avatar,u.location,u.headline,u.last_seen_at,
-           vp.gender,vp.age,vp.status,vp.auto_post_enabled,vp.reply_enabled,vp.posts_per_week,vp.tone,vp.last_auto_post_at,vp.next_auto_post_at,
+           vp.gender,vp.age,vp.status,vp.auto_post_enabled,vp.auto_interact_enabled,vp.reply_enabled,vp.posts_per_week,vp.interactions_per_day,vp.tone,vp.last_auto_post_at,vp.next_auto_post_at,vp.last_auto_interact_at,vp.next_auto_interact_at,
            (SELECT val.activity_type FROM virtual_activity_log val WHERE val.user_id=u.id ORDER BY val.id DESC LIMIT 1) AS last_activity_type,
+           (SELECT vil.interaction_type FROM virtual_interaction_log vil WHERE vil.virtual_user_id=u.id ORDER BY vil.id DESC LIMIT 1) AS last_interaction_type,
            (SELECT COUNT(*)::int FROM posts p WHERE p.user_id=u.id) AS posts_count,
            (SELECT COUNT(*)::int FROM virtual_profile_media vpm WHERE vpm.user_id=u.id AND vpm.active=TRUE AND vpm.archived_at IS NULL) AS media_count,
            (SELECT COUNT(*)::int FROM virtual_profile_media vpm WHERE vpm.user_id=u.id AND vpm.featured=TRUE AND vpm.archived_at IS NULL) AS featured_media_count
@@ -546,4 +801,4 @@ async function virtualInbox(pool,{limit=30}={}) {
   return rows;
 }
 
-module.exports={VIRTUAL_PROFILE_COUNT,VIRTUAL_WOMEN,VIRTUAL_MEN,personas,createVirtualCommunity,runVirtualActivity,rescheduleVirtualActivity,virtualActivityHistory,virtualCommunityStatus,listVirtualProfiles,virtualInbox};
+module.exports={VIRTUAL_PROFILE_COUNT,VIRTUAL_WOMEN,VIRTUAL_MEN,personas,createVirtualCommunity,runVirtualActivity,rescheduleVirtualActivity,virtualActivityHistory,runVirtualInteractions,rescheduleVirtualInteractions,virtualInteractionHistory,virtualCommunityStatus,listVirtualProfiles,virtualInbox};

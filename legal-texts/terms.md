@@ -100,6 +100,10 @@ comunes, popularidad y antigüedad del contenido. Estas funciones ordenan
 o recomiendan contenido; no toman decisiones con efectos jurídicos sobre
 el usuario.
 
+## 8 bis. Perfiles virtuales
+
+Instant Admirers puede incluir anfitriones o perfiles ficticios gestionados por la plataforma. Estos perfiles se identifican visualmente como **Perfil virtual** y no representan a una persona real. Sus publicaciones pueden estar programadas y, cuando la función esté activada, pueden realizar de forma automatizada y limitada likes, comentarios breves o seguimientos sobre contenido público de usuarios reales. No se generan interacciones automáticas entre perfiles virtuales. Estas señales virtuales no se utilizan para aumentar la popularidad en Tendencias ni como refuerzo de engagement en la clasificación de “Para ti”. Las respuestas a mensajes privados siguen siendo gestionadas por el equipo de administración.
+
 ## 9. Terminación
 
 Puede eliminar su cuenta desde Ajustes. Instant Admirers también puede
