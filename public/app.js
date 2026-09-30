@@ -1,4 +1,4 @@
-// V1.12.34 · Virtual Interaction 2.0 + Virtual Activity 2.0 + Virtual Profile Packs + Image System + Dynamic SEO + Light/Dark Theme + Bunny Media + Growth Engine
+// V1.12.35 · Social post previews + Virtual Interaction 2.0 + Virtual Activity 2.0 + Virtual Profile Packs + Image System + Dynamic SEO + Light/Dark Theme + Bunny Media + Growth Engine
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en','ciudades','guias',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','sitemap-core.xml','sitemap-landings.xml','login','register','logout','admin',
@@ -1289,6 +1289,7 @@ function appendPostItems(containerId, items) {
 
 function setupLazyMedia(root = document) {
   setupBunnyStreams(root);
+  void hydratePostSocialPreviews(root);
   const videos = [...root.querySelectorAll('video[data-lazy-video="1"]')].filter(v => !v.dataset.lazyObserved);
   if (!videos.length) return;
   if (!('IntersectionObserver' in window)) {
@@ -1582,7 +1583,7 @@ function postHtml(p) {
   const privacy = p.visibility === 'followers' ? ' · 👥' : '';
   const edited = p.edited_at ? ' · editado' : '';
   const encodedText = safeEncode(p.text || '');
-  return `<article class="card post ${p.repost_of_id ? 'is-repost' : ''}" data-post="${p.id}">
+  return `<article class="card post ${p.repost_of_id ? 'is-repost' : ''}" data-post="${p.id}" data-likes-count="${Number(p.likes_count||0)}" data-comments-count="${Number(p.comments_count||0)}">
     ${p.recommendation_reason ? `<div class="recommendation-label">✦ ${escapeHtml(p.recommendation_reason)}</div>` : ''}
     ${p.repost_of_id ? `<div class="repost-label">↻ ${escapeHtml(p.name)} republicó una publicación</div>` : ''}
     <div class="post-head">
@@ -1593,11 +1594,12 @@ function postHtml(p) {
     ${media}
     ${p.repost_of_id ? repostEmbed(p.repost) : ''}
     <div class="post-actions">
-      <button class="action ${p.liked ? 'liked' : ''}" onclick="likePost(${p.id})"><span>${p.liked ? '♥' : '♡'}</span><b>${p.likes_count}</b></button>
-      <button class="action" onclick="openComments(${p.id})"><span>◌</span><b>${p.comments_count}</b></button>
+      <button class="action ${p.liked ? 'liked' : ''}" onclick="likePost(${p.id})" title="${p.liked ? 'Quitar Me gusta' : 'Me gusta'}"><span>${p.liked ? '♥' : '♡'}</span><b>${p.likes_count}</b></button>
+      <button class="action" onclick="openComments(${p.id})" title="Comentarios"><span>◌</span><b>${p.comments_count}</b></button>
       <button class="action" onclick="sharePost(${p.id})" title="Compartir"><span>↗</span></button>
       <button class="action push ${p.saved ? 'saved' : ''}" onclick="savePost(${p.id})"><span>${p.saved ? '▰' : '▱'}</span></button>
     </div>
+    <div class="post-social-preview" data-post-social-preview="${p.id}" aria-live="polite"></div>
   </article>`;
 }
 
@@ -1785,8 +1787,104 @@ window.likePost = async (id) => {
       const icon=btn.querySelector('span'); if(icon) icon.textContent=d.liked?'♥':'♡';
       const count=btn.querySelector('b'); if(count) count.textContent=String(d.count ?? 0);
     });
+    document.querySelectorAll(`[data-post="${Number(id)}"]`).forEach(article => { article.dataset.likesCount=String(Number(d.count||0)); article.dataset.socialPreviewLoaded=''; });
+    await refreshPostSocialPreview(id);
   } catch (e) { toast(e.message, 'error'); }
   finally { buttons.forEach(b => b.disabled = false); }
+};
+
+
+function postSocialPreviewCommentHtml(c) {
+  return `<div class="post-preview-comment">
+    <button class="post-preview-person" onclick="openProfile('${escapeAttr(c.username)}')" title="Ver perfil de @${escapeAttr(c.username)}">
+      ${avatar(c,'small')}
+    </button>
+    <div class="post-preview-comment-body"><button class="post-preview-name" onclick="openProfile('${escapeAttr(c.username)}')"><b>${escapeHtml(c.name)} ${virtualBadge(c)}</b></button><span>${formatText(c.text)}</span></div>
+  </div>`;
+}
+
+function postSocialPreviewHtml(postId, data = {}, likesCount = 0, commentsCount = 0) {
+  const likers=Array.isArray(data.likes) ? data.likes : [];
+  const comments=Array.isArray(data.comments) ? data.comments : [];
+  const likeTotal=Math.max(0,Number(likesCount)||0);
+  const commentTotal=Math.max(0,Number(commentsCount)||0);
+  let likes='';
+  if (likeTotal > 0) {
+    const first=likers[0];
+    const avatars=likers.slice(0,2).map(u=>`<span class="post-like-avatar">${avatar(u,'small')}</span>`).join('');
+    let label='';
+    if (first) {
+      const extra=Math.max(0,likeTotal-1);
+      label=`Le gusta a <b>${escapeHtml(first.name||first.username)}</b>${extra ? ` y <b>${extra}</b> más` : ''}`;
+    } else {
+      label=likeTotal===1 ? '1 Me gusta' : `${likeTotal} Me gusta`;
+    }
+    likes=`<button class="post-like-summary" onclick="openPostLikes(${Number(postId)})" title="Ver quién indicó Me gusta">${avatars}<span>${label}</span></button>`;
+  }
+  const commentRows=comments.slice(-3).map(postSocialPreviewCommentHtml).join('');
+  const more=commentTotal>3
+    ? `<button class="post-comments-more" onclick="openComments(${Number(postId)})">Ver los ${commentTotal} comentarios</button>`
+    : (commentTotal>0 && comments.length===0 ? `<button class="post-comments-more" onclick="openComments(${Number(postId)})">Ver ${commentTotal===1?'el comentario':`los ${commentTotal} comentarios`}</button>` : '');
+  return `${likes}${(commentRows || more) ? `<div class="post-comments-preview">${commentRows}${more}</div>` : ''}`;
+}
+
+async function fetchPostSocialPreviews(ids = []) {
+  const clean=[...new Set(ids.map(Number).filter(Number.isSafeInteger))].slice(0,30);
+  if (!clean.length) return {};
+  const data=await api('/api/posts/social-preview?ids='+encodeURIComponent(clean.join(',')));
+  return data?.posts || {};
+}
+
+async function hydratePostSocialPreviews(root = document, force = false) {
+  const articles=[...(root?.querySelectorAll?.('.post[data-post]') || [])].filter(article => force || article.dataset.socialPreviewLoaded !== '1');
+  if (!articles.length) return;
+  const targets=articles.filter(article => Number(article.dataset.likesCount||0)>0 || Number(article.dataset.commentsCount||0)>0);
+  const targetSet=new Set(targets);
+  articles.forEach(article => {
+    if (!targetSet.has(article)) {
+      article.dataset.socialPreviewLoaded='1';
+      const box=article.querySelector('.post-social-preview');
+      if (box) box.innerHTML='';
+    }
+  });
+  if (!targets.length) return;
+  const ids=targets.map(article=>Number(article.dataset.post)).filter(Number.isSafeInteger);
+  try {
+    const previews=await fetchPostSocialPreviews(ids);
+    targets.forEach(article => {
+      if (!article.isConnected) return;
+      const id=Number(article.dataset.post);
+      const box=article.querySelector('.post-social-preview');
+      if (box) box.innerHTML=postSocialPreviewHtml(id,previews[String(id)]||previews[id]||{},Number(article.dataset.likesCount||0),Number(article.dataset.commentsCount||0));
+      article.dataset.socialPreviewLoaded='1';
+    });
+  } catch (_) {
+    targets.forEach(article => { article.dataset.socialPreviewLoaded=''; });
+  }
+}
+
+async function refreshPostSocialPreview(postId) {
+  const id=Number(postId);
+  const articles=[...document.querySelectorAll(`.post[data-post="${id}"]`)];
+  if (!articles.length || !Number.isSafeInteger(id)) return;
+  try {
+    const previews=await fetchPostSocialPreviews([id]);
+    articles.forEach(article => {
+      const box=article.querySelector('.post-social-preview');
+      if (box) box.innerHTML=postSocialPreviewHtml(id,previews[String(id)]||previews[id]||{},Number(article.dataset.likesCount||0),Number(article.dataset.commentsCount||0));
+      article.dataset.socialPreviewLoaded='1';
+    });
+  } catch (_) {
+    articles.forEach(article => { article.dataset.socialPreviewLoaded=''; });
+  }
+}
+
+window.openPostLikes = async (postId) => {
+  try {
+    const rows=await api(`/api/posts/${Number(postId)}/likes`);
+    modal(`<div class="modal-head"><h3>Me gusta</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
+      <div class="post-likes-list">${rows.length ? rows.map(u=>`<button class="post-like-person" onclick="closeModal();openProfile('${escapeAttr(u.username)}')">${avatar(u)}<span><b>${escapeHtml(u.name)} ${virtualBadge(u)}</b><small>@${escapeHtml(u.username)}</small></span></button>`).join('') : `<div class="empty compact-empty">Todavía no hay Me gusta.</div>`}</div>`);
+  } catch (e) { toast(e.message,'error'); }
 };
 
 window.savePost = async (id) => {
@@ -1830,14 +1928,32 @@ window.sendComment = async (postId) => {
   const input = $('#commentText'); const btn=$('#commentSendBtn'); const text = input?.value.trim(); if (!text || btn?.disabled) return;
   try {
     if(btn){btn.disabled=true;btn.textContent='Enviando…';} if(input) input.disabled=true;
-    await api(`/api/posts/${postId}/comments`, { method:'POST', body:JSON.stringify({ text }) });
+    const result=await api(`/api/posts/${postId}/comments`, { method:'POST', body:JSON.stringify({ text }) });
+    document.querySelectorAll(`[data-post="${Number(postId)}"]`).forEach(article => {
+      if(result?.count!==undefined) {
+        article.dataset.commentsCount=String(Number(result.count||0));
+        const count=article.querySelector('.post-actions .action:nth-child(2) b'); if(count) count.textContent=String(Number(result.count||0));
+      }
+      article.dataset.socialPreviewLoaded='';
+    });
+    await refreshPostSocialPreview(postId);
     await openComments(postId); await refreshMe(false);
   } catch (e) { toast(e.message, 'error'); }
   finally { if(btn?.isConnected){btn.disabled=false;btn.textContent='Enviar';} if(input?.isConnected) input.disabled=false; }
 };
 window.deleteComment = async (id, postId) => {
-  try { await api(`/api/comments/${id}`, { method:'DELETE' }); await openComments(postId); }
-  catch (e) { toast(e.message, 'error'); }
+  try {
+    const result=await api(`/api/comments/${id}`, { method:'DELETE' });
+    document.querySelectorAll(`[data-post="${Number(postId)}"]`).forEach(article => {
+      if(result?.count!==undefined) {
+        article.dataset.commentsCount=String(Number(result.count||0));
+        const count=article.querySelector('.post-actions .action:nth-child(2) b'); if(count) count.textContent=String(Number(result.count||0));
+      }
+      article.dataset.socialPreviewLoaded='';
+    });
+    await refreshPostSocialPreview(postId);
+    await openComments(postId);
+  } catch (e) { toast(e.message, 'error'); }
 };
 
 async function renderSearch() {
@@ -3368,14 +3484,14 @@ function virtualCommunityAdminHtml(data={}) {
   const interactionHtml=interactions.length ? interactions.slice(0,18).map(x=>`<div class="virtual-activity-row virtual-interaction-row"><img src="${escapeAttr(x.avatar||'/assets/brand/instant-admirers-mark.svg')}" alt=""><span><b>${escapeHtml(x.name||x.username||'Perfil virtual')} <small>@${escapeHtml(x.username||'')}</small></b><em>${interactionLabel(x.interaction_type)} → @${escapeHtml(x.target_username||'usuario')}</em><small>${escapeHtml(String(x.comment_text||x.post_text||'Interacción con contenido público').slice(0,105))}</small></span><time>${x.created_at?timeAgo(x.created_at):''}</time></div>`).join('') : '<div class="empty compact-empty">Todavía no hay interacciones automáticas registradas.</div>';
   const profilesHtml=profiles.length ? profiles.map(u=>`<article class="virtual-admin-profile ${escapeAttr(u.status||'active')}"><div class="virtual-admin-profile-main"><img src="${escapeAttr(u.avatar||'/assets/brand/instant-admirers-mark.svg')}" alt=""><div><b>${escapeHtml(u.name)} <span class="virtual-badge compact">✦ Virtual</span></b><small>@${escapeHtml(u.username)} · ${escapeHtml(u.location||'')} · ${Number(u.age||0)} años</small><span>${escapeHtml(u.headline||'')}</span></div></div><div class="virtual-admin-profile-meta"><span class="virtual-status ${escapeAttr(u.status||'active')}">${statusLabel(u.status)}</span><span class="${u.auto_post_enabled?'virtual-auto-on':'virtual-auto-off'}">Posts ${u.auto_post_enabled?'ON':'OFF'}</span><span class="${u.auto_interact_enabled?'virtual-auto-on':'virtual-auto-off'}">Interacción ${u.auto_interact_enabled?'ON':'OFF'}</span><span>${Number(u.posts_count||0)} posts</span><span>${Number(u.media_count||0)} fotos</span><label class="virtual-cadence"><span>Publicaciones</span><select onchange="setVirtualProfileCadence(${Number(u.id)},this.value)">${[1,2,3,4,5,6,7].map(n=>`<option value="${n}" ${Number(u.posts_per_week||0)===n?'selected':''}>${n===7?'Diaria':`${n}/semana`}</option>`).join('')}</select></label><label class="virtual-cadence"><span>Interacciones</span><select onchange="setVirtualProfileInteractionCadence(${Number(u.id)},this.value)">${[1,2,3,4].map(n=>`<option value="${n}" ${Number(u.interactions_per_day||2)===n?'selected':''}>${n}/día</option>`).join('')}</select></label><small>${u.next_auto_post_at?`Post ${timeAgo(u.next_auto_post_at)}`:'Sin post programado'}${u.next_auto_interact_at?` · Interacción ${timeAgo(u.next_auto_interact_at)}`:' · Sin interacción programada'}${u.last_interaction_type?` · Última int.: ${interactionLabel(u.last_interaction_type)}`:''}</small></div><div class="virtual-admin-profile-actions">${u.status!=='active'?`<button class="btn primary compact" onclick="setVirtualProfileStatus(${Number(u.id)},'active')">Activar</button>`:`<button class="btn ghost compact" onclick="setVirtualProfileStatus(${Number(u.id)},'paused')">Pausar</button>`}<button class="btn ghost compact" onclick="toggleVirtualProfileAuto(${Number(u.id)},${u.auto_post_enabled?'false':'true'})">Posts ${u.auto_post_enabled?'OFF':'ON'}</button><button class="btn ghost compact" onclick="toggleVirtualProfileInteractions(${Number(u.id)},${u.auto_interact_enabled?'false':'true'})">Interacción ${u.auto_interact_enabled?'OFF':'ON'}</button>${u.status!=='retired'?`<button class="btn ghost compact" onclick="setVirtualProfileStatus(${Number(u.id)},'retired')">Retirar</button>`:''}<label class="btn ghost compact virtual-media-upload">+ Foto<input type="file" accept="image/*" hidden onchange="uploadVirtualProfileMedia(${Number(u.id)},this.files?.[0],this,false)"></label><label class="btn ghost compact virtual-media-upload">Avatar<input type="file" accept="image/*" hidden onchange="uploadVirtualProfileMedia(${Number(u.id)},this.files?.[0],this,true)"></label><button class="btn ghost compact" onclick="openVirtualImageManager(${Number(u.id)})">Imágenes</button><button class="btn ghost compact" onclick="openProfile('${escapeAttr(u.username)}')">Ver perfil</button></div></article>`).join('') : '';
   return `<section class="card admin-section virtual-community-admin">
-    <div class="section-row"><div><h3>Comunidad virtual</h3><p>100 anfitriones ficticios identificados como virtuales. Actividad e interacción programadas con límites, historial y control individual.</p></div><span class="virtual-community-version">V1.12.34</span></div>
+    <div class="section-row"><div><h3>Comunidad virtual</h3><p>100 anfitriones ficticios identificados como virtuales. Actividad e interacción programadas con límites, historial y control individual.</p></div><span class="virtual-community-version">V1.12.35</span></div>
     ${total===0 ? `<div class="virtual-community-empty"><div>✦</div><b>La comunidad virtual todavía no está creada</b><p>Crea 50 perfiles de mujer y 50 de hombre, con ciudades, intereses, bios, contenido inicial y actividad programada. Todos se muestran con la etiqueta “Perfil virtual”.</p><button class="btn primary" onclick="seedVirtualCommunity()">Crear 100 perfiles virtuales</button></div>` : `
       <div class="virtual-community-metrics"><span><b>${total}</b> perfiles</span><span><b>${Number(st.active||0)}</b> activos</span><span><b>${Number(st.auto_enabled||0)}</b> posts Auto</span><span><b>${Number(st.auto_interact_enabled||0)}</b> interacción Auto</span><span><b>${Number(st.activity_events_today||0)}</b> actividad hoy</span><span><b>${Number(st.interaction_events_today||0)}</b> interacciones hoy</span><span><b>${Number(st.virtual_likes_today||0)}</b> likes</span><span><b>${Number(st.virtual_comments_today||0)}</b> comentarios</span><span><b>${Number(st.virtual_follows_today||0)}</b> follows</span><span><b>${Number(st.stories_today||0)}</b> Stories hoy</span><span><b>${Number(st.interacting_profiles_7d||0)}</b> interactuando 7d</span><span><b>${Number(st.media_total||0)}</b> imágenes activas</span><span class="${Number(st.inbox_unread||0)>0?'has-unread':''}"><b>${Number(st.inbox_unread||0)}</b> mensajes pendientes</span></div>
       <div class="virtual-community-actions"><button class="btn primary compact" onclick="runVirtualCommunityNow()">Generar actividad ahora</button><button class="btn primary compact" onclick="runVirtualInteractionsNow()">Generar interacciones ahora</button><button class="btn ghost compact" onclick="rescheduleVirtualCommunity()">Reprogramar posts</button><button class="btn ghost compact" onclick="rescheduleVirtualInteractionsNow()">Reprogramar interacciones</button><button class="btn ghost compact" onclick="syncVirtualImagePacks()">Sincronizar packs base</button><button class="btn ghost compact" onclick="go('feed')">Ver en Inicio</button><small>Interacción 2.0 actúa solo sobre usuarios reales y contenido público, con 1–4 acciones diarias por perfil, anti-ráfagas y afinidad por ciudad/intereses. Los mensajes privados siguen siendo manuales desde el buzón.</small></div>
       <details class="virtual-activity-history" open><summary>Interacción reciente</summary><div class="virtual-activity-list">${interactionHtml}</div></details>
       <details class="virtual-activity-history"><summary>Actividad reciente</summary><div class="virtual-activity-list">${activityHtml}</div></details>
       <div class="virtual-realistic-importer"><div class="virtual-realistic-importer-copy"><b>Importar packs fotográficos realistas</b><small>ZIP de hasta 100 MB · máximo 10 perfiles · exactamente 6 imágenes por perfil: avatar, portada y 4 publicaciones. El importador valida el manifest antes de subir nada.</small><a href="/virtual-pack-import-template.json" target="_blank" rel="noopener">Ver manifest de ejemplo</a></div><label class="btn primary compact">Seleccionar ZIP<input type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden onchange="importVirtualRealisticPacks(this)"></label></div>
-      <div class="virtual-inbox-block"><div class="section-row"><div><h4>Buzón de anfitriones</h4><p>Cuando una persona real escribe a un perfil virtual, aparece aquí para que administración responda desde ese personaje. V1.12.34 no automatiza mensajes privados.</p></div><span>${Number(st.inbox_unread||0)}</span></div><div class="virtual-inbox-list">${inboxHtml}</div></div>
+      <div class="virtual-inbox-block"><div class="section-row"><div><h4>Buzón de anfitriones</h4><p>Cuando una persona real escribe a un perfil virtual, aparece aquí para que administración responda desde ese personaje. V1.12.35 no automatiza mensajes privados.</p></div><span>${Number(st.inbox_unread||0)}</span></div><div class="virtual-inbox-list">${inboxHtml}</div></div>
       <details class="virtual-profile-manager" ${profiles.length && profiles.length<=12?'open':''}><summary>Gestionar los ${total} perfiles</summary><div class="virtual-profile-toolbar"><input id="virtualProfileSearch" placeholder="Buscar nombre, usuario, ciudad…" onkeydown="if(event.key==='Enter')searchVirtualProfiles()"><button class="btn ghost compact" onclick="searchVirtualProfiles()">Buscar</button><button class="btn ghost compact" onclick="resetVirtualProfiles()">Todos</button></div><div id="virtualProfileList" class="virtual-admin-profile-list">${profilesHtml}</div></details>
     `}
   </section>`;
@@ -3610,7 +3726,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.34</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.35</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>
