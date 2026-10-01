@@ -1,4 +1,4 @@
-// Instant Admirers V1.12.36 · Español / English
+// Instant Admirers V1.12.37 · Español / English
 (() => {
   const STORAGE_KEY = 'iaLanguage';
   const SUPPORTED = new Set(['es','en']);
@@ -75,6 +75,28 @@
   Object.assign(ES_EN,{
     'Imágenes':'Images','Biblioteca visual':'Visual library','Imágenes activas':'Active images','usos hoy':'uses today','Subir varias imágenes':'Upload multiple images','Seleccionar imágenes':'Select images','Nombre interno':'Internal name','Etiquetas: café, playa, cine…':'Tags: coffee, beach, cinema…','Texto alternativo':'Alt text','Guardar':'Save','Portada':'Cover','Destacar ★':'Feature ★','Quitar ★':'Remove ★','Archivar':'Archive','Restaurar':'Restore','Historial reciente':'Recent history','sin usar':'unused','Imagen actualizada':'Image updated','Avatar actualizado':'Avatar updated','Portada actualizada':'Cover updated','Imagen archivada':'Image archived','Imagen restaurada':'Image restored','Imagen eliminada de la biblioteca':'Image removed from library','Este perfil todavía no tiene imágenes en su biblioteca.':'This profile does not have images in its library yet.','Se guardarán en el pool del personaje. Puedes asignarlas como avatar o portada después.':'They will be saved in the character media pool. You can assign them as avatar or cover later.'
   });
+  Object.assign(ES_EN,{
+    'Lo que está pasando alrededor de tu perfil':'What is happening around your profile',
+    'Marcar todas como leídas':'Mark all as read',
+    'Estás al día':'You are all caught up',
+    'No tienes actividad nueva pendiente.':'You have no new activity pending.',
+    'Actividad nueva desde tu última revisión.':'New activity since your last review.',
+    'Hoy':'Today','Ayer':'Yesterday','Esta semana':'This week','Anteriores':'Earlier',
+    'Ver publicación':'View post','Ver comentario':'View comment','Ver perfil':'View profile','Abrir':'Open',
+    'ha indicado que le gusta tu publicación':'liked your post',
+    'han indicado que les gusta tu publicación':'liked your post',
+    'ha empezado a seguirte':'started following you',
+    'quiere seguir tu cuenta privada':'wants to follow your private account',
+    'ha aceptado tu solicitud de seguimiento':'accepted your follow request',
+    'ha comentado tu publicación':'commented on your post',
+    'quiere añadirte como amigo':'wants to add you as a friend',
+    'ha aceptado tu solicitud de amistad':'accepted your friend request',
+    'te ha enviado un mensaje':'sent you a message',
+    'te ha mencionado':'mentioned you',
+    'ha republicado tu publicación':'reposted your post',
+    'Perfil virtual':'Virtual profile','perfiles virtuales':'virtual profiles',
+    'Actividad de la publicación':'Post activity','Todavía no hay comentarios.':'No comments yet.'
+  });
   const EN_ES = Object.fromEntries(Object.entries(ES_EN).map(([es,en]) => [en,es]));
   const normalized = obj => {
     const map = new Map();
@@ -107,6 +129,11 @@
     if(direct) return lead+direct+trail;
     if(lang==='en') {
       let m;
+      if((m=body.match(/^Tienes (\d+) novedad(?:es)?$/))) return `${lead}You have ${m[1]} new ${Number(m[1])===1?'activity':'activities'}${trail}`;
+      if((m=body.match(/^(\d+) conexión(?:es)?$/))) return `${lead}${m[1]} ${Number(m[1])===1?'connection':'connections'}${trail}`;
+      if((m=body.match(/^(\d+) comentario(?:s)?$/))) return `${lead}${m[1]} ${Number(m[1])===1?'comment':'comments'}${trail}`;
+      if((m=body.match(/^(\d+) mensaje(?:s)?$/))) return `${lead}${m[1]} ${Number(m[1])===1?'message':'messages'}${trail}`;
+      if((m=body.match(/^(\d+) perfiles virtuales$/))) return `${lead}${m[1]} virtual profiles${trail}`;
       if((m=body.match(/^Le gusta a (.+) y (\d+) más$/))) return `${lead}Liked by ${m[1]} and ${m[2]} more${trail}`;
       if((m=body.match(/^Le gusta a (.+)$/))) return `${lead}Liked by ${m[1]}${trail}`;
       if((m=body.match(/^Ver los (\d+) comentarios$/))) return `${lead}View all ${m[1]} comments${trail}`;

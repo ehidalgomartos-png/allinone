@@ -1,4 +1,4 @@
-// V1.12.36 · Social post previews + Virtual Interaction 2.0 + Virtual Activity 2.0 + Virtual Profile Packs + Image System + Dynamic SEO + Light/Dark Theme + Bunny Media + Growth Engine
+// V1.12.37 · Centro de actividad 2.0 + Social email notifications + Social post previews + Virtual Interaction 2.0 + Virtual Activity 2.0
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en','ciudades','guias',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','sitemap-core.xml','sitemap-landings.xml','login','register','logout','admin',
@@ -1910,18 +1910,25 @@ window.deletePost = async (id) => {
   catch (e) { toast(e.message, 'error'); }
 };
 
-window.openComments = async (postId) => {
+window.openComments = async (postId, focusCommentId = 0) => {
   try {
     const rows = await api(`/api/posts/${postId}/comments`);
     modal(`<div class="modal-head"><h3>Comentarios</h3><button class="icon-btn" onclick="closeModal()">×</button></div>
       <div class="comments" id="commentList">${rows.length ? rows.map(commentHtml).join('') : `<div class="empty compact-empty">Sé la primera persona en comentar.</div>`}</div>
       <div class="comment-compose"><input id="commentText" maxlength="1000" placeholder="Escribe un comentario…" onkeydown="if(event.key==='Enter')sendComment(${postId})"><button id="commentSendBtn" class="btn primary compact" onclick="sendComment(${postId})">Enviar</button></div>`);
-    setTimeout(() => $('#commentText')?.focus(), 50);
+    setTimeout(() => {
+      const target=Number(focusCommentId)||0;
+      if(target){
+        const el=document.querySelector(`.modal .comment[data-comment-id="${target}"]`);
+        if(el){ el.classList.add('activity-comment-target'); el.scrollIntoView({behavior:'smooth',block:'center'}); return; }
+      }
+      $('#commentText')?.focus();
+    }, 50);
   } catch (e) { toast(e.message, 'error'); }
 };
 
 function commentHtml(c) {
-  return `<div class="comment">${avatar(c, 'small')}<div class="comment-bubble"><div><button class="inline-person" onclick="closeModal();openProfile('${escapeAttr(c.username)}')"><b>${escapeHtml(c.name)} ${virtualBadge(c)}</b> <span>@${escapeHtml(c.username)}</span></button></div><p>${formatText(c.text)}</p><small>${timeAgo(c.created_at)}</small></div>${c.own ? `<button class="icon-btn tiny-btn" onclick="deleteComment(${c.id},${c.post_id})">×</button>` : ''}</div>`;
+  return `<div class="comment" data-comment-id="${Number(c.id)||0}">${avatar(c, 'small')}<div class="comment-bubble"><div><button class="inline-person" onclick="closeModal();openProfile('${escapeAttr(c.username)}')"><b>${escapeHtml(c.name)} ${virtualBadge(c)}</b> <span>@${escapeHtml(c.username)}</span></button></div><p>${formatText(c.text)}</p><small>${timeAgo(c.created_at)}</small></div>${c.own ? `<button class="icon-btn tiny-btn" onclick="deleteComment(${c.id},${c.post_id})">×</button>` : ''}</div>`;
 }
 
 window.sendComment = async (postId) => {
@@ -2518,27 +2525,154 @@ window.saveProfile = async () => {
 async function renderNotifications() {
   const rows = await api('/api/notifications');
   const browserButton = ('Notification' in window && Notification.permission !== 'granted') ? `<button class="btn ghost compact browser-alert-btn" onclick="requestBrowserNotifications()">Activar avisos del navegador</button>` : '';
-  $('#main').innerHTML = `${pageHeader('Actividad','Lo que está pasando alrededor de tu perfil')}<div class="activity-tools">${browserButton}<button class="btn ghost compact" onclick="go('friends')">Amigos y solicitudes</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad${Number(state.me?.follow_requests_count||0)?` · ${state.me.follow_requests_count}`:''}</button></div><div class="card notification-list">${rows.length ? rows.map(notificationHtml).join('') : `<div class="empty"><div class="empty-icon">♡</div><h3>Aún no hay actividad</h3><p>Cuando alguien interactúe contigo, aparecerá aquí.</p></div>`}</div>`;
-  await api('/api/notifications/read', { method:'POST' });
-  state.me.unread_notifications = 0;
-  setTimeout(() => { if (state.view === 'notifications') layoutNavOnly(); }, 100);
+  const unread=rows.filter(n=>!n.read_at);
+  const grouped=groupActivityRows(rows);
+  const markAll=unread.length ? `<button class="btn ghost compact activity-mark-all" onclick="markNotificationsRead()">Marcar todas como leídas</button>` : '';
+  const sections=grouped.map(section=>`<section class="activity-section"><div class="activity-section-head"><h3>${escapeHtml(section.label)}</h3><span>${section.count}</span></div><div class="card notification-list">${section.items.map(notificationHtml).join('')}</div></section>`).join('');
+  $('#main').innerHTML = `${pageHeader('Actividad','Lo que está pasando alrededor de tu perfil')}${activitySummaryHtml(rows)}<div class="activity-tools">${browserButton}${markAll}<button class="btn ghost compact" onclick="go('friends')">Amigos y solicitudes</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad${Number(state.me?.follow_requests_count||0)?` · ${state.me.follow_requests_count}`:''}</button></div>${rows.length ? `<div class="activity-sections">${sections}</div>` : `<div class="card notification-list"><div class="empty"><div class="empty-icon">♡</div><h3>Aún no hay actividad</h3><p>Cuando alguien interactúe contigo, aparecerá aquí.</p></div></div>`}`;
 }
 
-function notificationHtml(n) {
-  let action = 'ha interactuado contigo';
-  let click = `openProfile('${escapeAttr(n.username || '')}')`;
-  if (n.type === 'follow') action = 'ha empezado a seguirte';
-  else if (n.type === 'follow_request') { action = 'quiere seguir tu cuenta privada'; click = `openPrivacySettings()`; }
-  else if (n.type === 'follow_accept') { action = 'ha aceptado tu solicitud de seguimiento'; }
-  else if (n.type === 'like') { action = 'ha indicado que le gusta tu publicación'; click = `openComments(${Number(n.post_id)})`; }
-  else if (n.type === 'comment') { action = 'ha comentado tu publicación'; click = `openComments(${Number(n.post_id)})`; }
-  else if (n.type === 'friend_request') { action = 'quiere añadirte como amigo'; click = `go('friends')`; }
-  else if (n.type === 'friend_accept') { action = 'ha aceptado tu solicitud de amistad'; }
-  else if (n.type === 'message') { action = 'te ha enviado un mensaje'; click = `go('messages')`; }
-  else if (n.type === 'mention') { action = 'te ha mencionado en una publicación o comentario'; click = n.post_id ? `openComments(${Number(n.post_id)})` : click; }
-  else if (n.type === 'repost') { action = 'ha republicado tu publicación'; click = n.post_id ? `openComments(${Number(n.post_id)})` : click; }
-  return `<button class="notification ${n.read_at ? '' : 'unread'}" onclick="${click}">${avatar(n,'small')}<span><b>${escapeHtml(n.name || n.username || 'Alguien')} ${virtualBadge(n)}</b> ${action}${n.type === 'comment' && n.text ? `<em>“${escapeHtml(n.text).slice(0,100)}”</em>` : ''}<small>${timeAgo(n.created_at)}</small></span></button>`;
+function activitySummaryHtml(rows=[]) {
+  const unread=rows.filter(n=>!n.read_at);
+  if(!unread.length) return `<div class="activity-summary is-clear"><div><span class="activity-summary-icon">✓</span><span><b>Estás al día</b><small>No tienes actividad nueva pendiente.</small></span></div></div>`;
+  const count=unread.length;
+  const likes=unread.filter(n=>n.type==='like').length;
+  const comments=unread.filter(n=>['comment','mention','repost'].includes(n.type)).length;
+  const connections=unread.filter(n=>['follow','follow_request','follow_accept','friend_request','friend_accept'].includes(n.type)).length;
+  const messages=unread.filter(n=>n.type==='message').length;
+  const pills=[];
+  if(likes) pills.push(`<span>♡ ${likes} ${likes===1?'Me gusta':'Me gusta'}</span>`);
+  if(comments) pills.push(`<span>◌ ${comments} ${comments===1?'comentario':'comentarios'}</span>`);
+  if(connections) pills.push(`<span>◎ ${connections} ${connections===1?'conexión':'conexiones'}</span>`);
+  if(messages) pills.push(`<span>✉ ${messages} ${messages===1?'mensaje':'mensajes'}</span>`);
+  return `<div class="activity-summary"><div class="activity-summary-main"><span class="activity-summary-icon">✦</span><span><b>Tienes ${count} ${count===1?'novedad':'novedades'}</b><small>Actividad nueva desde tu última revisión.</small></span></div><div class="activity-summary-pills">${pills.join('')}</div></div>`;
 }
+
+function activitySectionMeta(dateValue) {
+  const date=new Date(dateValue);
+  const now=new Date();
+  const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const day=new Date(date.getFullYear(),date.getMonth(),date.getDate());
+  const diff=Math.round((today-day)/86400000);
+  if(diff<=0) return {key:'today',label:'Hoy',order:0};
+  if(diff===1) return {key:'yesterday',label:'Ayer',order:1};
+  if(diff<7) return {key:'week',label:'Esta semana',order:2};
+  return {key:'older',label:'Anteriores',order:3};
+}
+
+function groupActivityRows(rows=[]) {
+  const buckets=new Map();
+  rows.forEach(row=>{
+    const meta=activitySectionMeta(row.created_at);
+    if(!buckets.has(meta.key)) buckets.set(meta.key,{...meta,rows:[]});
+    buckets.get(meta.key).rows.push(row);
+  });
+  return [...buckets.values()].sort((a,b)=>a.order-b.order).map(section=>{
+    const items=[];
+    const likeGroups=new Map();
+    section.rows.forEach(row=>{
+      const canGroup=row.type==='like' && Number(row.post_id)>0;
+      if(!canGroup){ items.push({kind:'single',rows:[row],row}); return; }
+      const key=`like:${Number(row.post_id)}`;
+      const existing=likeGroups.get(key);
+      if(existing) existing.rows.push(row);
+      else { const item={kind:'group',type:'like',post_id:Number(row.post_id),rows:[row]}; likeGroups.set(key,item); items.push(item); }
+    });
+    return {key:section.key,label:section.label,count:section.rows.length,items};
+  });
+}
+
+function activityTypeIcon(type='') {
+  return ({like:'♡',comment:'◌',mention:'@',repost:'↗',follow:'+',follow_request:'+',follow_accept:'✓',friend_request:'+',friend_accept:'✓',message:'✉'})[type] || '✦';
+}
+
+function activityAvatarStack(rows=[]) {
+  const people=rows.filter(r=>r?.actor_id).slice(0,3);
+  if(!people.length) return `<div class="activity-avatar-stack"><div class="avatar small"><span>✦</span></div></div>`;
+  return `<div class="activity-avatar-stack">${people.map(p=>avatar(p,'small')).join('')}</div>`;
+}
+
+function activityNames(rows=[]) {
+  const names=rows.map(r=>String(r.name||r.username||'Alguien')).filter(Boolean);
+  if(!names.length) return 'Alguien';
+  if(names.length===1) return escapeHtml(names[0]);
+  if(names.length===2) return `${escapeHtml(names[0])} y ${escapeHtml(names[1])}`;
+  return `${escapeHtml(names[0])}, ${escapeHtml(names[1])} y ${names.length-2} más`;
+}
+
+function notificationHtml(item) {
+  const rows=item.rows||[];
+  const n=item.row||rows[0]||{};
+  const ids=rows.map(r=>Number(r.id)).filter(Number.isSafeInteger);
+  const unread=rows.some(r=>!r.read_at);
+  const idsJson=JSON.stringify(ids);
+  const type=n.type||item.type||'';
+  const postId=Number(n.post_id||item.post_id||0);
+  const commentId=Number(n.comment_id||0);
+  const username=String(n.username||'');
+  const virtualCount=rows.filter(r=>r.is_virtual).length;
+  let copy='ha interactuado contigo';
+  let detail='';
+  if(type==='like') {
+    if(rows.length>1) copy=`han indicado que les gusta tu publicación`;
+    else copy='ha indicado que le gusta tu publicación';
+  } else if(type==='follow') copy='ha empezado a seguirte';
+  else if(type==='follow_request') copy='quiere seguir tu cuenta privada';
+  else if(type==='follow_accept') copy='ha aceptado tu solicitud de seguimiento';
+  else if(type==='comment') { copy='ha comentado tu publicación'; if(n.text) detail=`<em>“${escapeHtml(String(n.text)).slice(0,160)}”</em>`; }
+  else if(type==='friend_request') copy='quiere añadirte como amigo';
+  else if(type==='friend_accept') copy='ha aceptado tu solicitud de amistad';
+  else if(type==='message') copy='te ha enviado un mensaje';
+  else if(type==='mention') { copy='te ha mencionado'; if(n.text) detail=`<em>“${escapeHtml(String(n.text)).slice(0,160)}”</em>`; }
+  else if(type==='repost') copy='ha republicado tu publicación';
+  const names=activityNames(rows);
+  const virtualNote=virtualCount ? `<small class="activity-virtual-note">✦ ${virtualCount===1?'Perfil virtual':`${virtualCount} perfiles virtuales`}</small>` : '';
+  const targetLabel=type==='comment'&&commentId ? 'Ver comentario' : postId ? 'Ver publicación' : username ? 'Ver perfil' : 'Abrir';
+  return `<button class="notification activity-notification ${unread?'unread':''}" data-notification-ids="${escapeAttr(ids.join(','))}" onclick="openNotificationTarget(${escapeAttr(idsJson)},'${escapeAttr(type)}',${postId||0},${commentId||0},'${escapeAttr(username)}')"><span class="activity-actor-wrap">${activityAvatarStack(rows)}<i class="activity-type-icon">${activityTypeIcon(type)}</i></span><span class="activity-notification-copy"><span><b>${names}${rows.length===1?` ${virtualBadge(n)}`:''}</b> ${copy}</span>${detail}${virtualNote}<small>${timeAgo(n.created_at)} · <strong>${targetLabel}</strong></small></span>${unread?'<i class="activity-unread-dot" aria-label="Sin leer"></i>':''}</button>`;
+}
+
+window.markNotificationsRead = async (ids=null, rerender=true) => {
+  try {
+    const body=Array.isArray(ids)&&ids.length ? {ids:ids.map(Number).filter(Number.isSafeInteger)} : {};
+    const result=await api('/api/notifications/read',{method:'POST',body:JSON.stringify(body)});
+    state.me.unread_notifications=Number(result?.unread||0);
+    updateNavBadges();
+    if(Array.isArray(ids)&&ids.length){
+      const readSet=new Set(ids.map(Number));
+      document.querySelectorAll('.activity-notification[data-notification-ids]').forEach(el=>{
+        const own=String(el.dataset.notificationIds||'').split(',').map(Number).filter(Number.isSafeInteger);
+        if(own.length && own.every(id=>readSet.has(id))){ el.classList.remove('unread'); el.querySelector('.activity-unread-dot')?.remove(); }
+      });
+    }
+    if(rerender && state.view==='notifications') await renderNotifications();
+    return true;
+  } catch(e) { toast(e.message,'error'); return false; }
+};
+
+window.openNotificationTarget = async (ids,type,postId=0,commentId=0,username='') => {
+  await markNotificationsRead(Array.isArray(ids)?ids:[],false);
+  if(type==='follow_request') return openPrivacySettings();
+  if(type==='friend_request') return go('friends');
+  if(type==='message') return go('messages');
+  if(Number(postId)>0) return openActivityPost(Number(postId),Number(commentId)||0);
+  if(username) return openProfile(username);
+  if(state.view==='notifications') await renderNotifications();
+};
+
+window.openActivityPost = async (postId,commentId=0) => {
+  try {
+    const [post,comments]=await Promise.all([api(`/api/posts/${Number(postId)}`),api(`/api/posts/${Number(postId)}/comments`)]);
+    const target=Number(commentId)||0;
+    modal(`<div class="modal-head"><h3>Actividad de la publicación</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="activity-post-target">${postHtml(post)}<div class="activity-post-comments"><div class="section-row"><h3>Comentarios</h3><span>${comments.length}</span></div><div class="comments" id="activityCommentList">${comments.length?comments.map(commentHtml).join(''):`<div class="empty compact-empty">Todavía no hay comentarios.</div>`}</div></div></div>`);
+    const root=document.querySelector('.modal');
+    setupLazyMedia(root);
+    hydratePostSocialPreviews(root).catch(()=>{});
+    if(target) setTimeout(()=>{
+      const el=root?.querySelector(`.comment[data-comment-id="${target}"]`);
+      if(el){ el.classList.add('activity-comment-target'); el.scrollIntoView({behavior:'smooth',block:'center'}); }
+    },80);
+  } catch(e) { toast(e.message||'La publicación ya no está disponible','error'); }
+};
 
 function layoutNavOnly() {
   const desktop = $('#desktopNav');
@@ -3517,14 +3651,14 @@ function virtualCommunityAdminHtml(data={}) {
   const interactionHtml=interactions.length ? interactions.slice(0,18).map(x=>`<div class="virtual-activity-row virtual-interaction-row"><img src="${escapeAttr(x.avatar||'/assets/brand/instant-admirers-mark.svg')}" alt=""><span><b>${escapeHtml(x.name||x.username||'Perfil virtual')} <small>@${escapeHtml(x.username||'')}</small></b><em>${interactionLabel(x.interaction_type)} → @${escapeHtml(x.target_username||'usuario')}</em><small>${escapeHtml(String(x.comment_text||x.post_text||'Interacción con contenido público').slice(0,105))}</small></span><time>${x.created_at?timeAgo(x.created_at):''}</time></div>`).join('') : '<div class="empty compact-empty">Todavía no hay interacciones automáticas registradas.</div>';
   const profilesHtml=profiles.length ? profiles.map(u=>`<article class="virtual-admin-profile ${escapeAttr(u.status||'active')}"><div class="virtual-admin-profile-main"><img src="${escapeAttr(u.avatar||'/assets/brand/instant-admirers-mark.svg')}" alt=""><div><b>${escapeHtml(u.name)} <span class="virtual-badge compact">✦ Virtual</span></b><small>@${escapeHtml(u.username)} · ${escapeHtml(u.location||'')} · ${Number(u.age||0)} años</small><span>${escapeHtml(u.headline||'')}</span></div></div><div class="virtual-admin-profile-meta"><span class="virtual-status ${escapeAttr(u.status||'active')}">${statusLabel(u.status)}</span><span class="${u.auto_post_enabled?'virtual-auto-on':'virtual-auto-off'}">Posts ${u.auto_post_enabled?'ON':'OFF'}</span><span class="${u.auto_interact_enabled?'virtual-auto-on':'virtual-auto-off'}">Interacción ${u.auto_interact_enabled?'ON':'OFF'}</span><span>${Number(u.posts_count||0)} posts</span><span>${Number(u.media_count||0)} fotos</span><label class="virtual-cadence"><span>Publicaciones</span><select onchange="setVirtualProfileCadence(${Number(u.id)},this.value)">${[1,2,3,4,5,6,7].map(n=>`<option value="${n}" ${Number(u.posts_per_week||0)===n?'selected':''}>${n===7?'Diaria':`${n}/semana`}</option>`).join('')}</select></label><label class="virtual-cadence"><span>Interacciones</span><select onchange="setVirtualProfileInteractionCadence(${Number(u.id)},this.value)">${[1,2,3,4].map(n=>`<option value="${n}" ${Number(u.interactions_per_day||2)===n?'selected':''}>${n}/día</option>`).join('')}</select></label><small>${u.next_auto_post_at?`Post ${timeAgo(u.next_auto_post_at)}`:'Sin post programado'}${u.next_auto_interact_at?` · Interacción ${timeAgo(u.next_auto_interact_at)}`:' · Sin interacción programada'}${u.last_interaction_type?` · Última int.: ${interactionLabel(u.last_interaction_type)}`:''}</small></div><div class="virtual-admin-profile-actions">${u.status!=='active'?`<button class="btn primary compact" onclick="setVirtualProfileStatus(${Number(u.id)},'active')">Activar</button>`:`<button class="btn ghost compact" onclick="setVirtualProfileStatus(${Number(u.id)},'paused')">Pausar</button>`}<button class="btn ghost compact" onclick="toggleVirtualProfileAuto(${Number(u.id)},${u.auto_post_enabled?'false':'true'})">Posts ${u.auto_post_enabled?'OFF':'ON'}</button><button class="btn ghost compact" onclick="toggleVirtualProfileInteractions(${Number(u.id)},${u.auto_interact_enabled?'false':'true'})">Interacción ${u.auto_interact_enabled?'OFF':'ON'}</button>${u.status!=='retired'?`<button class="btn ghost compact" onclick="setVirtualProfileStatus(${Number(u.id)},'retired')">Retirar</button>`:''}<label class="btn ghost compact virtual-media-upload">+ Foto<input type="file" accept="image/*" hidden onchange="uploadVirtualProfileMedia(${Number(u.id)},this.files?.[0],this,false)"></label><label class="btn ghost compact virtual-media-upload">Avatar<input type="file" accept="image/*" hidden onchange="uploadVirtualProfileMedia(${Number(u.id)},this.files?.[0],this,true)"></label><button class="btn ghost compact" onclick="openVirtualImageManager(${Number(u.id)})">Imágenes</button><button class="btn ghost compact" onclick="openProfile('${escapeAttr(u.username)}')">Ver perfil</button></div></article>`).join('') : '';
   return `<section class="card admin-section virtual-community-admin">
-    <div class="section-row"><div><h3>Comunidad virtual</h3><p>100 anfitriones ficticios identificados como virtuales. Actividad e interacción programadas con límites, historial y control individual.</p></div><span class="virtual-community-version">V1.12.36</span></div>
+    <div class="section-row"><div><h3>Comunidad virtual</h3><p>100 anfitriones ficticios identificados como virtuales. Actividad e interacción programadas con límites, historial y control individual.</p></div><span class="virtual-community-version">V1.12.37</span></div>
     ${total===0 ? `<div class="virtual-community-empty"><div>✦</div><b>La comunidad virtual todavía no está creada</b><p>Crea 50 perfiles de mujer y 50 de hombre, con ciudades, intereses, bios, contenido inicial y actividad programada. Todos se muestran con la etiqueta “Perfil virtual”.</p><button class="btn primary" onclick="seedVirtualCommunity()">Crear 100 perfiles virtuales</button></div>` : `
       <div class="virtual-community-metrics"><span><b>${total}</b> perfiles</span><span><b>${Number(st.active||0)}</b> activos</span><span><b>${Number(st.auto_enabled||0)}</b> posts Auto</span><span><b>${Number(st.auto_interact_enabled||0)}</b> interacción Auto</span><span><b>${Number(st.activity_events_today||0)}</b> actividad hoy</span><span><b>${Number(st.interaction_events_today||0)}</b> interacciones hoy</span><span><b>${Number(st.virtual_likes_today||0)}</b> likes</span><span><b>${Number(st.virtual_comments_today||0)}</b> comentarios</span><span><b>${Number(st.virtual_follows_today||0)}</b> follows</span><span><b>${Number(st.stories_today||0)}</b> Stories hoy</span><span><b>${Number(st.interacting_profiles_7d||0)}</b> interactuando 7d</span><span><b>${Number(st.media_total||0)}</b> imágenes activas</span><span class="${Number(st.inbox_unread||0)>0?'has-unread':''}"><b>${Number(st.inbox_unread||0)}</b> mensajes pendientes</span></div>
       <div class="virtual-community-actions"><button class="btn primary compact" onclick="runVirtualCommunityNow()">Generar actividad ahora</button><button class="btn primary compact" onclick="runVirtualInteractionsNow()">Generar interacciones ahora</button><button class="btn ghost compact" onclick="rescheduleVirtualCommunity()">Reprogramar posts</button><button class="btn ghost compact" onclick="rescheduleVirtualInteractionsNow()">Reprogramar interacciones</button><button class="btn ghost compact" onclick="syncVirtualImagePacks()">Sincronizar packs base</button><button class="btn ghost compact" onclick="go('feed')">Ver en Inicio</button><small>Interacción 2.0 actúa solo sobre usuarios reales y contenido público, con 1–4 acciones diarias por perfil, anti-ráfagas y afinidad por ciudad/intereses. Los mensajes privados siguen siendo manuales desde el buzón.</small></div>
       <details class="virtual-activity-history" open><summary>Interacción reciente</summary><div class="virtual-activity-list">${interactionHtml}</div></details>
       <details class="virtual-activity-history"><summary>Actividad reciente</summary><div class="virtual-activity-list">${activityHtml}</div></details>
       <div class="virtual-realistic-importer"><div class="virtual-realistic-importer-copy"><b>Importar packs fotográficos realistas</b><small>ZIP de hasta 100 MB · máximo 10 perfiles · exactamente 6 imágenes por perfil: avatar, portada y 4 publicaciones. El importador valida el manifest antes de subir nada.</small><a href="/virtual-pack-import-template.json" target="_blank" rel="noopener">Ver manifest de ejemplo</a></div><label class="btn primary compact">Seleccionar ZIP<input type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden onchange="importVirtualRealisticPacks(this)"></label></div>
-      <div class="virtual-inbox-block"><div class="section-row"><div><h4>Buzón de anfitriones</h4><p>Cuando una persona real escribe a un perfil virtual, aparece aquí para que administración responda desde ese personaje. V1.12.36 no automatiza mensajes privados.</p></div><span>${Number(st.inbox_unread||0)}</span></div><div class="virtual-inbox-list">${inboxHtml}</div></div>
+      <div class="virtual-inbox-block"><div class="section-row"><div><h4>Buzón de anfitriones</h4><p>Cuando una persona real escribe a un perfil virtual, aparece aquí para que administración responda desde ese personaje. V1.12.37 no automatiza mensajes privados.</p></div><span>${Number(st.inbox_unread||0)}</span></div><div class="virtual-inbox-list">${inboxHtml}</div></div>
       <details class="virtual-profile-manager" ${profiles.length && profiles.length<=12?'open':''}><summary>Gestionar los ${total} perfiles</summary><div class="virtual-profile-toolbar"><input id="virtualProfileSearch" placeholder="Buscar nombre, usuario, ciudad…" onkeydown="if(event.key==='Enter')searchVirtualProfiles()"><button class="btn ghost compact" onclick="searchVirtualProfiles()">Buscar</button><button class="btn ghost compact" onclick="resetVirtualProfiles()">Todos</button></div><div id="virtualProfileList" class="virtual-admin-profile-list">${profilesHtml}</div></details>
     `}
   </section>`;
@@ -3759,7 +3893,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.36</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.37</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>

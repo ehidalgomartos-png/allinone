@@ -126,6 +126,7 @@ CREATE TABLE IF NOT EXISTS notifications (
   actor_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
   type VARCHAR(30) NOT NULL CHECK (type IN ('follow','like','comment','friend_request','friend_accept','message','mention','repost','follow_request','follow_accept')),
   post_id BIGINT REFERENCES posts(id) ON DELETE CASCADE,
+  comment_id BIGINT REFERENCES comments(id) ON DELETE SET NULL,
   text TEXT NOT NULL DEFAULT '',
   read_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -819,3 +820,9 @@ CREATE TABLE IF NOT EXISTS virtual_interaction_log (
 CREATE INDEX IF NOT EXISTS idx_virtual_interaction_log_virtual ON virtual_interaction_log(virtual_user_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_virtual_interaction_log_target ON virtual_interaction_log(target_user_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_virtual_interaction_log_type ON virtual_interaction_log(interaction_type,created_at DESC);
+
+
+-- V1.12.37: Centro de actividad 2.0. Permite abrir directamente el comentario
+-- que originó una notificación sin romper notificaciones históricas.
+ALTER TABLE notifications ADD COLUMN IF NOT EXISTS comment_id BIGINT REFERENCES comments(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_notifications_comment ON notifications(comment_id) WHERE comment_id IS NOT NULL;
