@@ -1,4 +1,4 @@
-// V1.12.37 · Centro de actividad 2.0 + Social email notifications + Social post previews + Virtual Interaction 2.0 + Virtual Activity 2.0
+// V1.12.37.1 · Activity Grouping Hotfix + Social email notifications + Social post previews + Virtual Interaction 2.0 + Virtual Activity 2.0
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en','ciudades','guias',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','sitemap-core.xml','sitemap-landings.xml','login','register','logout','admin',
@@ -2524,10 +2524,10 @@ window.saveProfile = async () => {
 
 async function renderNotifications() {
   const rows = await api('/api/notifications');
-  const browserButton = ('Notification' in window && Notification.permission !== 'granted') ? `<button class="btn ghost compact browser-alert-btn" onclick="requestBrowserNotifications()">Activar avisos del navegador</button>` : '';
+  const browserButton = ('Notification' in window && Notification.permission !== 'granted') ? `<button class="btn ghost compact browser-alert-btn" onclick="requestBrowserNotifications()">Avisos del navegador</button>` : '';
   const unread=rows.filter(n=>!n.read_at);
   const grouped=groupActivityRows(rows);
-  const markAll=unread.length ? `<button class="btn ghost compact activity-mark-all" onclick="markNotificationsRead()">Marcar todas como leídas</button>` : '';
+  const markAll=unread.length ? `<button class="btn ghost compact activity-mark-all" onclick="markNotificationsRead()">Marcar todo leído</button>` : '';
   const sections=grouped.map(section=>`<section class="activity-section"><div class="activity-section-head"><h3>${escapeHtml(section.label)}</h3><span>${section.count}</span></div><div class="card notification-list">${section.items.map(notificationHtml).join('')}</div></section>`).join('');
   $('#main').innerHTML = `${pageHeader('Actividad','Lo que está pasando alrededor de tu perfil')}${activitySummaryHtml(rows)}<div class="activity-tools">${browserButton}${markAll}<button class="btn ghost compact" onclick="go('friends')">Amigos y solicitudes</button><button class="btn ghost compact" onclick="openPrivacySettings()">Privacidad${Number(state.me?.follow_requests_count||0)?` · ${state.me.follow_requests_count}`:''}</button></div>${rows.length ? `<div class="activity-sections">${sections}</div>` : `<div class="card notification-list"><div class="empty"><div class="empty-icon">♡</div><h3>Aún no hay actividad</h3><p>Cuando alguien interactúe contigo, aparecerá aquí.</p></div></div>`}`;
 }
@@ -2569,14 +2569,57 @@ function groupActivityRows(rows=[]) {
   });
   return [...buckets.values()].sort((a,b)=>a.order-b.order).map(section=>{
     const items=[];
-    const likeGroups=new Map();
+    const handled=new Set();
+    const rowId=row=>Number(row?.id)||0;
+
+    // Hotfix 1.12.37.1: si una misma persona ha dado Me gusta a varias
+    // publicaciones, condensamos esas acciones en una sola línea.
+    const likesByActor=new Map();
+    section.rows.filter(row=>row.type==='like' && Number(row.actor_id)>0 && Number(row.post_id)>0).forEach(row=>{
+      const key=Number(row.actor_id);
+      if(!likesByActor.has(key)) likesByActor.set(key,[]);
+      likesByActor.get(key).push(row);
+    });
+    const actorLikeGroupById=new Map();
+    likesByActor.forEach(actorRows=>{
+      const postIds=[...new Set(actorRows.map(row=>Number(row.post_id)).filter(id=>id>0))];
+      if(postIds.length<2) return;
+      const item={kind:'like_actor_posts',type:'like',actor_id:Number(actorRows[0].actor_id),post_ids:postIds,rows:actorRows};
+      actorRows.forEach(row=>actorLikeGroupById.set(rowId(row),item));
+    });
+
+    // Los likes que no se han absorbido por persona siguen agrupándose por
+    // publicación cuando varias personas reaccionan al mismo post.
+    const likesByPost=new Map();
+    section.rows.filter(row=>row.type==='like' && Number(row.post_id)>0 && !actorLikeGroupById.has(rowId(row))).forEach(row=>{
+      const key=Number(row.post_id);
+      if(!likesByPost.has(key)) likesByPost.set(key,[]);
+      likesByPost.get(key).push(row);
+    });
+    const postLikeGroupById=new Map();
+    likesByPost.forEach(postRows=>{
+      if(postRows.length<2) return;
+      const item={kind:'like_post',type:'like',post_id:Number(postRows[0].post_id),rows:postRows};
+      postRows.forEach(row=>postLikeGroupById.set(rowId(row),item));
+    });
+
+    // Los follows simples sí se pueden condensar; las solicitudes se mantienen
+    // separadas porque cada una puede requerir una acción distinta.
+    const followRows=section.rows.filter(row=>row.type==='follow' && row.actor_id);
+    const followPeople=uniqueActivityActors(followRows);
+    const followGroup=followPeople.length>1 ? {kind:'follow_group',type:'follow',rows:followRows,people:followPeople} : null;
+    const followIds=new Set(followGroup ? followRows.map(rowId) : []);
+
     section.rows.forEach(row=>{
-      const canGroup=row.type==='like' && Number(row.post_id)>0;
-      if(!canGroup){ items.push({kind:'single',rows:[row],row}); return; }
-      const key=`like:${Number(row.post_id)}`;
-      const existing=likeGroups.get(key);
-      if(existing) existing.rows.push(row);
-      else { const item={kind:'group',type:'like',post_id:Number(row.post_id),rows:[row]}; likeGroups.set(key,item); items.push(item); }
+      const id=rowId(row);
+      if(handled.has(id)) return;
+      const actorLike=actorLikeGroupById.get(id);
+      if(actorLike){ actorLike.rows.forEach(r=>handled.add(rowId(r))); items.push(actorLike); return; }
+      const postLike=postLikeGroupById.get(id);
+      if(postLike){ postLike.rows.forEach(r=>handled.add(rowId(r))); items.push(postLike); return; }
+      if(followGroup && followIds.has(id)){ followGroup.rows.forEach(r=>handled.add(rowId(r))); items.push(followGroup); return; }
+      handled.add(id);
+      items.push({kind:'single',rows:[row],row});
     });
     return {key:section.key,label:section.label,count:section.rows.length,items};
   });
@@ -2586,14 +2629,28 @@ function activityTypeIcon(type='') {
   return ({like:'♡',comment:'◌',mention:'@',repost:'↗',follow:'+',follow_request:'+',follow_accept:'✓',friend_request:'+',friend_accept:'✓',message:'✉'})[type] || '✦';
 }
 
+function uniqueActivityActors(rows=[]) {
+  const seen=new Set();
+  const people=[];
+  rows.forEach(row=>{
+    if(!row?.actor_id && !row?.username) return;
+    const key=row?.actor_id ? `id:${Number(row.actor_id)}` : `u:${String(row.username).toLowerCase()}`;
+    if(seen.has(key)) return;
+    seen.add(key);
+    people.push(row);
+  });
+  return people;
+}
+
 function activityAvatarStack(rows=[]) {
-  const people=rows.filter(r=>r?.actor_id).slice(0,3);
+  const people=uniqueActivityActors(rows).slice(0,3);
   if(!people.length) return `<div class="activity-avatar-stack"><div class="avatar small"><span>✦</span></div></div>`;
   return `<div class="activity-avatar-stack">${people.map(p=>avatar(p,'small')).join('')}</div>`;
 }
 
 function activityNames(rows=[]) {
-  const names=rows.map(r=>String(r.name||r.username||'Alguien')).filter(Boolean);
+  const people=uniqueActivityActors(rows);
+  const names=people.map(r=>String(r.name||r.username||'Alguien')).filter(Boolean);
   if(!names.length) return 'Alguien';
   if(names.length===1) return escapeHtml(names[0]);
   if(names.length===2) return `${escapeHtml(names[0])} y ${escapeHtml(names[1])}`;
@@ -2610,11 +2667,27 @@ function notificationHtml(item) {
   const postId=Number(n.post_id||item.post_id||0);
   const commentId=Number(n.comment_id||0);
   const username=String(n.username||'');
-  const virtualCount=rows.filter(r=>r.is_virtual).length;
+  const people=uniqueActivityActors(rows);
+  const virtualCount=people.filter(r=>r.is_virtual).length;
   let copy='ha interactuado contigo';
   let detail='';
-  if(type==='like') {
-    if(rows.length>1) copy=`han indicado que les gusta tu publicación`;
+  let targetLabel=type==='comment'&&commentId ? 'Ver comentario' : postId ? 'Ver publicación' : username ? 'Ver perfil' : 'Abrir';
+  let click=`openNotificationTarget(${escapeAttr(idsJson)},'${escapeAttr(type)}',${postId||0},${commentId||0},'${escapeAttr(username)}')`;
+
+  if(item.kind==='like_actor_posts') {
+    const postIds=[...new Set((item.post_ids||rows.map(r=>r.post_id)).map(Number).filter(id=>id>0))];
+    const postCount=postIds.length;
+    copy=`ha indicado que le gustan ${postCount} de tus publicaciones`;
+    targetLabel='Ver publicaciones';
+    const actorNameEncoded=safeEncode(String(n.name||username||'Esta persona'));
+    click=`openActivityPostGroup(${escapeAttr(idsJson)},${escapeAttr(JSON.stringify(postIds))},'${escapeAttr(username)}','${escapeAttr(actorNameEncoded)}')`;
+  } else if(item.kind==='follow_group') {
+    copy='han empezado a seguirte';
+    targetLabel='Ver perfiles';
+    const actorPayload=people.map(p=>({username:p.username,name:p.name,avatar:p.avatar,is_virtual:Boolean(p.is_virtual)}));
+    click=`openActivityPeople(${escapeAttr(idsJson)},${escapeAttr(JSON.stringify(actorPayload))})`;
+  } else if(type==='like') {
+    if(people.length>1) copy=`han indicado que les gusta tu publicación`;
     else copy='ha indicado que le gusta tu publicación';
   } else if(type==='follow') copy='ha empezado a seguirte';
   else if(type==='follow_request') copy='quiere seguir tu cuenta privada';
@@ -2627,8 +2700,7 @@ function notificationHtml(item) {
   else if(type==='repost') copy='ha republicado tu publicación';
   const names=activityNames(rows);
   const virtualNote=virtualCount ? `<small class="activity-virtual-note">✦ ${virtualCount===1?'Perfil virtual':`${virtualCount} perfiles virtuales`}</small>` : '';
-  const targetLabel=type==='comment'&&commentId ? 'Ver comentario' : postId ? 'Ver publicación' : username ? 'Ver perfil' : 'Abrir';
-  return `<button class="notification activity-notification ${unread?'unread':''}" data-notification-ids="${escapeAttr(ids.join(','))}" onclick="openNotificationTarget(${escapeAttr(idsJson)},'${escapeAttr(type)}',${postId||0},${commentId||0},'${escapeAttr(username)}')"><span class="activity-actor-wrap">${activityAvatarStack(rows)}<i class="activity-type-icon">${activityTypeIcon(type)}</i></span><span class="activity-notification-copy"><span><b>${names}${rows.length===1?` ${virtualBadge(n)}`:''}</b> ${copy}</span>${detail}${virtualNote}<small>${timeAgo(n.created_at)} · <strong>${targetLabel}</strong></small></span>${unread?'<i class="activity-unread-dot" aria-label="Sin leer"></i>':''}</button>`;
+  return `<button class="notification activity-notification ${unread?'unread':''}" data-notification-ids="${escapeAttr(ids.join(','))}" onclick="${click}"><span class="activity-actor-wrap">${activityAvatarStack(rows)}<i class="activity-type-icon">${activityTypeIcon(type)}</i></span><span class="activity-notification-copy"><span><b>${names}${people.length===1&&rows.length===1?` ${virtualBadge(n)}`:''}</b> ${copy}</span>${detail}${virtualNote}<small>${timeAgo(n.created_at)} · <strong>${targetLabel}</strong></small></span>${unread?'<i class="activity-unread-dot" aria-label="Sin leer"></i>':''}</button>`;
 }
 
 window.markNotificationsRead = async (ids=null, rerender=true) => {
@@ -2657,6 +2729,37 @@ window.openNotificationTarget = async (ids,type,postId=0,commentId=0,username=''
   if(Number(postId)>0) return openActivityPost(Number(postId),Number(commentId)||0);
   if(username) return openProfile(username);
   if(state.view==='notifications') await renderNotifications();
+};
+
+window.openActivityPostGroup = async (ids,postIds,username='',nameEncoded='') => {
+  await markNotificationsRead(Array.isArray(ids)?ids:[],false);
+  const clean=[...new Set((Array.isArray(postIds)?postIds:[]).map(Number).filter(Number.isSafeInteger).filter(id=>id>0))].slice(0,20);
+  if(!clean.length) return;
+  const results=await Promise.allSettled(clean.map(id=>api(`/api/posts/${id}`)));
+  const posts=results.filter(r=>r.status==='fulfilled'&&r.value).map(r=>r.value);
+  if(!posts.length){ toast('Estas publicaciones ya no están disponibles','error'); if(state.view==='notifications') await renderNotifications(); return; }
+  const decodedName=(()=>{try{return decodeURIComponent(String(nameEncoded||''));}catch{return String(nameEncoded||'');}})();
+  const label=escapeHtml(String(decodedName||username||'Esta persona'));
+  const rows=posts.map(p=>{
+    const raw=String(p.text||'').trim();
+    const preview=raw ? escapeHtml(raw.slice(0,150)) : (p.media_type==='video'?'Publicación con vídeo':p.media_url?'Publicación con foto':'Publicación');
+    const mediaIcon=p.media_type==='video'?'▶':p.media_url?'▧':'✦';
+    return `<button class="activity-post-group-row" onclick="closeModal();openActivityPost(${Number(p.id)},0)"><span class="activity-post-group-icon">${mediaIcon}</span><span><b>${preview}</b><small>${timeAgo(p.created_at)} · ♡ ${Number(p.likes_count||0)} · ◌ ${Number(p.comments_count||0)}</small></span><i>›</i></button>`;
+  }).join('');
+  modal(`<div class="modal-head"><h3>Publicaciones con Me gusta</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="activity-group-modal"><p><b>${label}</b> ha indicado que le gustan ${posts.length} de tus publicaciones.</p><div class="activity-post-group-list">${rows}</div></div>`);
+};
+
+window.openActivityPeople = async (ids,people=[]) => {
+  await markNotificationsRead(Array.isArray(ids)?ids:[],false);
+  const clean=[]; const seen=new Set();
+  (Array.isArray(people)?people:[]).forEach(person=>{
+    const username=String(person?.username||'').trim();
+    if(!username || seen.has(username.toLowerCase())) return;
+    seen.add(username.toLowerCase()); clean.push(person);
+  });
+  if(!clean.length) return;
+  const rows=clean.map(person=>`<button class="activity-person-row" onclick="closeModal();openProfile('${escapeAttr(person.username)}')">${avatar(person)}<span><b>${escapeHtml(person.name||person.username)} ${virtualBadge(person)}</b><small>@${escapeHtml(person.username)}</small></span><i>›</i></button>`).join('');
+  modal(`<div class="modal-head"><h3>Nuevos seguidores</h3><button class="icon-btn" onclick="closeModal()">×</button></div><div class="activity-group-modal"><p>${clean.length===1?'Una persona ha':'Varias personas han'} empezado a seguirte.</p><div class="activity-people-list">${rows}</div></div>`);
 };
 
 window.openActivityPost = async (postId,commentId=0) => {
@@ -3651,14 +3754,14 @@ function virtualCommunityAdminHtml(data={}) {
   const interactionHtml=interactions.length ? interactions.slice(0,18).map(x=>`<div class="virtual-activity-row virtual-interaction-row"><img src="${escapeAttr(x.avatar||'/assets/brand/instant-admirers-mark.svg')}" alt=""><span><b>${escapeHtml(x.name||x.username||'Perfil virtual')} <small>@${escapeHtml(x.username||'')}</small></b><em>${interactionLabel(x.interaction_type)} → @${escapeHtml(x.target_username||'usuario')}</em><small>${escapeHtml(String(x.comment_text||x.post_text||'Interacción con contenido público').slice(0,105))}</small></span><time>${x.created_at?timeAgo(x.created_at):''}</time></div>`).join('') : '<div class="empty compact-empty">Todavía no hay interacciones automáticas registradas.</div>';
   const profilesHtml=profiles.length ? profiles.map(u=>`<article class="virtual-admin-profile ${escapeAttr(u.status||'active')}"><div class="virtual-admin-profile-main"><img src="${escapeAttr(u.avatar||'/assets/brand/instant-admirers-mark.svg')}" alt=""><div><b>${escapeHtml(u.name)} <span class="virtual-badge compact">✦ Virtual</span></b><small>@${escapeHtml(u.username)} · ${escapeHtml(u.location||'')} · ${Number(u.age||0)} años</small><span>${escapeHtml(u.headline||'')}</span></div></div><div class="virtual-admin-profile-meta"><span class="virtual-status ${escapeAttr(u.status||'active')}">${statusLabel(u.status)}</span><span class="${u.auto_post_enabled?'virtual-auto-on':'virtual-auto-off'}">Posts ${u.auto_post_enabled?'ON':'OFF'}</span><span class="${u.auto_interact_enabled?'virtual-auto-on':'virtual-auto-off'}">Interacción ${u.auto_interact_enabled?'ON':'OFF'}</span><span>${Number(u.posts_count||0)} posts</span><span>${Number(u.media_count||0)} fotos</span><label class="virtual-cadence"><span>Publicaciones</span><select onchange="setVirtualProfileCadence(${Number(u.id)},this.value)">${[1,2,3,4,5,6,7].map(n=>`<option value="${n}" ${Number(u.posts_per_week||0)===n?'selected':''}>${n===7?'Diaria':`${n}/semana`}</option>`).join('')}</select></label><label class="virtual-cadence"><span>Interacciones</span><select onchange="setVirtualProfileInteractionCadence(${Number(u.id)},this.value)">${[1,2,3,4].map(n=>`<option value="${n}" ${Number(u.interactions_per_day||2)===n?'selected':''}>${n}/día</option>`).join('')}</select></label><small>${u.next_auto_post_at?`Post ${timeAgo(u.next_auto_post_at)}`:'Sin post programado'}${u.next_auto_interact_at?` · Interacción ${timeAgo(u.next_auto_interact_at)}`:' · Sin interacción programada'}${u.last_interaction_type?` · Última int.: ${interactionLabel(u.last_interaction_type)}`:''}</small></div><div class="virtual-admin-profile-actions">${u.status!=='active'?`<button class="btn primary compact" onclick="setVirtualProfileStatus(${Number(u.id)},'active')">Activar</button>`:`<button class="btn ghost compact" onclick="setVirtualProfileStatus(${Number(u.id)},'paused')">Pausar</button>`}<button class="btn ghost compact" onclick="toggleVirtualProfileAuto(${Number(u.id)},${u.auto_post_enabled?'false':'true'})">Posts ${u.auto_post_enabled?'OFF':'ON'}</button><button class="btn ghost compact" onclick="toggleVirtualProfileInteractions(${Number(u.id)},${u.auto_interact_enabled?'false':'true'})">Interacción ${u.auto_interact_enabled?'OFF':'ON'}</button>${u.status!=='retired'?`<button class="btn ghost compact" onclick="setVirtualProfileStatus(${Number(u.id)},'retired')">Retirar</button>`:''}<label class="btn ghost compact virtual-media-upload">+ Foto<input type="file" accept="image/*" hidden onchange="uploadVirtualProfileMedia(${Number(u.id)},this.files?.[0],this,false)"></label><label class="btn ghost compact virtual-media-upload">Avatar<input type="file" accept="image/*" hidden onchange="uploadVirtualProfileMedia(${Number(u.id)},this.files?.[0],this,true)"></label><button class="btn ghost compact" onclick="openVirtualImageManager(${Number(u.id)})">Imágenes</button><button class="btn ghost compact" onclick="openProfile('${escapeAttr(u.username)}')">Ver perfil</button></div></article>`).join('') : '';
   return `<section class="card admin-section virtual-community-admin">
-    <div class="section-row"><div><h3>Comunidad virtual</h3><p>100 anfitriones ficticios identificados como virtuales. Actividad e interacción programadas con límites, historial y control individual.</p></div><span class="virtual-community-version">V1.12.37</span></div>
+    <div class="section-row"><div><h3>Comunidad virtual</h3><p>100 anfitriones ficticios identificados como virtuales. Actividad e interacción programadas con límites, historial y control individual.</p></div><span class="virtual-community-version">V1.12.37.1</span></div>
     ${total===0 ? `<div class="virtual-community-empty"><div>✦</div><b>La comunidad virtual todavía no está creada</b><p>Crea 50 perfiles de mujer y 50 de hombre, con ciudades, intereses, bios, contenido inicial y actividad programada. Todos se muestran con la etiqueta “Perfil virtual”.</p><button class="btn primary" onclick="seedVirtualCommunity()">Crear 100 perfiles virtuales</button></div>` : `
       <div class="virtual-community-metrics"><span><b>${total}</b> perfiles</span><span><b>${Number(st.active||0)}</b> activos</span><span><b>${Number(st.auto_enabled||0)}</b> posts Auto</span><span><b>${Number(st.auto_interact_enabled||0)}</b> interacción Auto</span><span><b>${Number(st.activity_events_today||0)}</b> actividad hoy</span><span><b>${Number(st.interaction_events_today||0)}</b> interacciones hoy</span><span><b>${Number(st.virtual_likes_today||0)}</b> likes</span><span><b>${Number(st.virtual_comments_today||0)}</b> comentarios</span><span><b>${Number(st.virtual_follows_today||0)}</b> follows</span><span><b>${Number(st.stories_today||0)}</b> Stories hoy</span><span><b>${Number(st.interacting_profiles_7d||0)}</b> interactuando 7d</span><span><b>${Number(st.media_total||0)}</b> imágenes activas</span><span class="${Number(st.inbox_unread||0)>0?'has-unread':''}"><b>${Number(st.inbox_unread||0)}</b> mensajes pendientes</span></div>
       <div class="virtual-community-actions"><button class="btn primary compact" onclick="runVirtualCommunityNow()">Generar actividad ahora</button><button class="btn primary compact" onclick="runVirtualInteractionsNow()">Generar interacciones ahora</button><button class="btn ghost compact" onclick="rescheduleVirtualCommunity()">Reprogramar posts</button><button class="btn ghost compact" onclick="rescheduleVirtualInteractionsNow()">Reprogramar interacciones</button><button class="btn ghost compact" onclick="syncVirtualImagePacks()">Sincronizar packs base</button><button class="btn ghost compact" onclick="go('feed')">Ver en Inicio</button><small>Interacción 2.0 actúa solo sobre usuarios reales y contenido público, con 1–4 acciones diarias por perfil, anti-ráfagas y afinidad por ciudad/intereses. Los mensajes privados siguen siendo manuales desde el buzón.</small></div>
       <details class="virtual-activity-history" open><summary>Interacción reciente</summary><div class="virtual-activity-list">${interactionHtml}</div></details>
       <details class="virtual-activity-history"><summary>Actividad reciente</summary><div class="virtual-activity-list">${activityHtml}</div></details>
       <div class="virtual-realistic-importer"><div class="virtual-realistic-importer-copy"><b>Importar packs fotográficos realistas</b><small>ZIP de hasta 100 MB · máximo 10 perfiles · exactamente 6 imágenes por perfil: avatar, portada y 4 publicaciones. El importador valida el manifest antes de subir nada.</small><a href="/virtual-pack-import-template.json" target="_blank" rel="noopener">Ver manifest de ejemplo</a></div><label class="btn primary compact">Seleccionar ZIP<input type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden onchange="importVirtualRealisticPacks(this)"></label></div>
-      <div class="virtual-inbox-block"><div class="section-row"><div><h4>Buzón de anfitriones</h4><p>Cuando una persona real escribe a un perfil virtual, aparece aquí para que administración responda desde ese personaje. V1.12.37 no automatiza mensajes privados.</p></div><span>${Number(st.inbox_unread||0)}</span></div><div class="virtual-inbox-list">${inboxHtml}</div></div>
+      <div class="virtual-inbox-block"><div class="section-row"><div><h4>Buzón de anfitriones</h4><p>Cuando una persona real escribe a un perfil virtual, aparece aquí para que administración responda desde ese personaje. V1.12.37.1 no automatiza mensajes privados.</p></div><span>${Number(st.inbox_unread||0)}</span></div><div class="virtual-inbox-list">${inboxHtml}</div></div>
       <details class="virtual-profile-manager" ${profiles.length && profiles.length<=12?'open':''}><summary>Gestionar los ${total} perfiles</summary><div class="virtual-profile-toolbar"><input id="virtualProfileSearch" placeholder="Buscar nombre, usuario, ciudad…" onkeydown="if(event.key==='Enter')searchVirtualProfiles()"><button class="btn ghost compact" onclick="searchVirtualProfiles()">Buscar</button><button class="btn ghost compact" onclick="resetVirtualProfiles()">Todos</button></div><div id="virtualProfileList" class="virtual-admin-profile-list">${profilesHtml}</div></details>
     `}
   </section>`;
@@ -3893,7 +3996,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.37</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.37.1</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>
