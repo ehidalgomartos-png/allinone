@@ -1,5 +1,6 @@
 # Guía del ZIP masivo — V1.12.40
 
+> **V1.12.40.1:** corregida la resolución de carpetas por username. Se admiten indistintamente carpetas `001`–`100` o el username exacto (`lucia.vidal.01`, etc.).
 El objetivo es subir **un único ZIP** con las fotos de los **100 perfiles virtuales**.
 
 ## Estructura recomendada
