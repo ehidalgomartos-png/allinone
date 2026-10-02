@@ -3887,10 +3887,10 @@ function virtualCommunityAdminHtml(data={}) {
   const massActive=massImports.find(x=>['uploaded','validating','staging','ready','committing','rolling_back','cancelling'].includes(String(x.status||'')));
   const massHistoryHtml=massImports.length?massImports.map(x=>`<button class="virtual-mass-history-row ${escapeAttr(x.status||'')}" onclick="openVirtualMassImport(${Number(x.id)})"><span><b>#${Number(x.id)} · ${escapeHtml(x.archive_name||'ZIP')}</b><small>${massStatusLabel(x.status)} · ${Number(x.total_profiles||0)} perfiles · ${Number(x.total_images||0)} fotos</small></span><em>${Number(x.progress_percent||0)}%</em><time>${x.created_at?timeAgo(x.created_at):''}</time></button>`).join(''):'<div class="empty compact-empty">Aún no hay importaciones masivas.</div>';
   return `<section class="card admin-section virtual-community-admin">
-    <div class="section-row"><div><h3>Comunidad virtual</h3><p>100 anfitriones ficticios identificados como virtuales. Actividad e interacción programadas con límites, historial y control individual.</p></div><span class="virtual-community-version">V1.12.41</span></div>
+    <div class="section-row"><div><h3>Comunidad virtual</h3><p>100 anfitriones ficticios identificados como virtuales. Actividad e interacción programadas con límites, historial y control individual.</p></div><span class="virtual-community-version">V1.12.42</span></div>
     ${total===0 ? `<div class="virtual-community-empty"><div>✦</div><b>La comunidad virtual todavía no está creada</b><p>Crea 50 perfiles de mujer y 50 de hombre, con ciudades, intereses, bios, contenido inicial y actividad programada. Todos se muestran con la etiqueta “Perfil virtual”.</p><button class="btn primary" onclick="seedVirtualCommunity()">Crear 100 perfiles virtuales</button></div>` : `
       <div class="virtual-community-metrics"><span><b>${total}</b> perfiles</span><span><b>${Number(st.active||0)}</b> activos</span><span><b>${Number(st.auto_enabled||0)}</b> posts Auto</span><span><b>${Number(st.auto_interact_enabled||0)}</b> interacción Auto</span><span><b>${Number(st.activity_events_today||0)}</b> actividad hoy</span><span><b>${Number(st.interaction_events_today||0)}</b> interacciones hoy</span><span><b>${Number(st.virtual_likes_today||0)}</b> likes</span><span><b>${Number(st.virtual_comments_today||0)}</b> comentarios</span><span><b>${Number(st.virtual_follows_today||0)}</b> follows</span><span><b>${Number(st.stories_today||0)}</b> Stories hoy</span><span><b>${Number(st.interacting_profiles_7d||0)}</b> interactuando 7d</span><span><b>${Number(st.media_total||0)}</b> imágenes activas</span><span class="${Number(st.inbox_unread||0)>0?'has-unread':''}"><b>${Number(st.inbox_unread||0)}</b> mensajes pendientes</span></div>
-      <div class="virtual-community-actions"><button class="btn primary compact" onclick="runVirtualCommunityNow()">Generar actividad ahora</button><button class="btn primary compact" onclick="runVirtualInteractionsNow()">Generar interacciones ahora</button><button class="btn ghost compact" onclick="rescheduleVirtualCommunity()">Reprogramar posts</button><button class="btn ghost compact" onclick="rescheduleVirtualInteractionsNow()">Reprogramar interacciones</button><button class="btn ghost compact" onclick="syncVirtualImagePacks()">Sincronizar packs base</button><button class="btn ghost compact" onclick="go('feed')">Ver en Inicio</button><small>Interacción 2.0 actúa solo sobre usuarios reales y contenido público, con 1–4 acciones diarias por perfil, anti-ráfagas y afinidad por ciudad/intereses. Los mensajes privados siguen siendo manuales desde el buzón.</small></div>
+      <div class="virtual-community-actions"><button class="btn primary compact" onclick="runVirtualCommunityNow()">Generar actividad ahora</button><button class="btn primary compact" onclick="runVirtualInteractionsNow()">Generar interacciones ahora</button><button class="btn ghost compact" onclick="rescheduleVirtualCommunity()">Reprogramar posts</button><button class="btn ghost compact" onclick="rescheduleVirtualInteractionsNow()">Reprogramar interacciones</button><button class="btn ghost compact virtual-quality-launch" onclick="openVirtualQualityCenter()">🩺 Centro de calidad</button><button class="btn ghost compact" onclick="syncVirtualImagePacks()">Sincronizar packs base</button><button class="btn ghost compact" onclick="go('feed')">Ver en Inicio</button><small>Interacción 2.0 actúa solo sobre usuarios reales y contenido público, con 1–4 acciones diarias por perfil, anti-ráfagas y afinidad por ciudad/intereses. Los mensajes privados siguen siendo manuales desde el buzón.</small></div>
       <details class="virtual-activity-history" open><summary>Interacción reciente</summary><div class="virtual-activity-list">${interactionHtml}</div></details>
       <details class="virtual-activity-history"><summary>Actividad reciente</summary><div class="virtual-activity-list">${activityHtml}</div></details>
       <div class="virtual-mass-importer">
@@ -3898,7 +3898,7 @@ function virtualCommunityAdminHtml(data={}) {
         ${massActive?`<button class="virtual-mass-active" onclick="openVirtualMassImport(${Number(massActive.id)})"><span><b>Importación #${Number(massActive.id)}</b><small>${massStatusLabel(massActive.status)} · ${escapeHtml(massActive.progress_message||'')}</small></span><strong>${Number(massActive.progress_percent||0)}%</strong></button>`:''}
         <details class="virtual-mass-history" ${massActive?'open':''}><summary>Historial y rollback</summary><div>${massHistoryHtml}</div></details>
       </div>
-      <div class="virtual-inbox-block"><div class="section-row"><div><h4>Buzón de anfitriones</h4><p>Cuando una persona real escribe a un perfil virtual, aparece aquí para que administración responda desde ese personaje. V1.12.41 no automatiza mensajes privados.</p></div><span>${Number(st.inbox_unread||0)}</span></div><div class="virtual-inbox-list">${inboxHtml}</div></div>
+      <div class="virtual-inbox-block"><div class="section-row"><div><h4>Buzón de anfitriones</h4><p>Cuando una persona real escribe a un perfil virtual, aparece aquí para que administración responda desde ese personaje. V1.12.42 no automatiza mensajes privados.</p></div><span>${Number(st.inbox_unread||0)}</span></div><div class="virtual-inbox-list">${inboxHtml}</div></div>
       <details class="virtual-profile-manager" ${profiles.length && profiles.length<=12?'open':''}><summary>Gestionar los ${total} perfiles</summary><div class="virtual-profile-toolbar"><input id="virtualProfileSearch" placeholder="Buscar nombre, usuario, ciudad…" onkeydown="if(event.key==='Enter')searchVirtualProfiles()"><button class="btn ghost compact" onclick="searchVirtualProfiles()">Buscar</button><button class="btn ghost compact" onclick="resetVirtualProfiles()">Todos</button></div><div id="virtualProfileList" class="virtual-admin-profile-list">${profilesHtml}</div></details>
     `}
   </section>`;
@@ -3942,6 +3942,58 @@ window.syncVirtualImagePacks=async()=>{
     toast(`Packs listos: ${Number(r.profiles||0)} perfiles · ${Number(r.images||0)} imágenes`);
     await renderAdmin();
   }catch(e){toast(e.message,'error');}
+};
+
+
+function virtualQualityStatusLabel(status='ok'){
+  return ({critical:'Crítico',warning:'Revisar',ok:'Correcto'})[String(status||'ok')]||'Correcto';
+}
+function virtualQualityIssueIcon(severity='warning'){
+  return severity==='critical'?'⛔':severity==='warning'?'⚠':'ℹ';
+}
+function virtualQualityProfileCard(p={}){
+  const issues=Array.isArray(p.issues)?p.issues:[];
+  const visible=issues.slice(0,4),remaining=Math.max(0,issues.length-visible.length);
+  const issueHtml=visible.length?visible.map(x=>`<span class="virtual-quality-issue ${escapeAttr(x.severity||'warning')}" title="${escapeAttr(x.detail||'')}">${virtualQualityIssueIcon(x.severity)} ${escapeHtml(x.title||x.code||'Incidencia')}${Number(x.count||0)>1?` · ${Number(x.count)}`:''}</span>`).join(''):'<span class="virtual-quality-clean">✓ Sin incidencias visuales</span>';
+  return `<article class="virtual-quality-profile ${escapeAttr(p.quality_status||'ok')}" data-quality-status="${escapeAttr(p.quality_status||'ok')}" data-quality-search="${escapeAttr(`${p.name||''} ${p.username||''} ${p.location||''}`.toLowerCase())}">
+    <div class="virtual-quality-profile-main"><img src="${escapeAttr(p.avatar||'/assets/brand/instant-admirers-mark.svg')}" alt=""><span><b>${escapeHtml(p.name||p.username||'Perfil virtual')}</b><small>@${escapeHtml(p.username||'')} · ${escapeHtml(p.location||'')}</small><em>${virtualQualityStatusLabel(p.quality_status)} · ${Number(p.quality_score||0)}/100</em></span></div>
+    <div class="virtual-quality-profile-metrics"><span><b>${Number(p.active_images||0)}</b> activas</span><span><b>${Number(p.post_images||0)}</b> posts</span><span><b>${Number(p.duplicate_groups||0)}</b> duplicados</span><span><b>${Number(p.broken_refs||0)}</b> rotas</span><span><b>${Number(p.archived_refs||0)}</b> archivadas usadas</span></div>
+    <div class="virtual-quality-issues">${issueHtml}${remaining?`<span class="virtual-quality-more">+${remaining} más</span>`:''}</div>
+    <div class="virtual-quality-actions"><button class="btn primary compact" onclick="openVirtualImageManager(${Number(p.id)})">Gestión visual</button><button class="btn ghost compact" onclick="openProfile('${escapeAttr(p.username||'')}')">Ver perfil</button></div>
+  </article>`;
+}
+function virtualQualityFilteredProfiles(){
+  const data=state.virtualQualityData||{};
+  const profiles=Array.isArray(data.profiles)?data.profiles:[];
+  const filter=String($('#virtualQualityFilter')?.value||state.virtualQualityFilter||'all');
+  const q=String($('#virtualQualitySearch')?.value||state.virtualQualitySearch||'').trim().toLowerCase();
+  state.virtualQualityFilter=filter;state.virtualQualitySearch=q;
+  return profiles.filter(p=>(filter==='all'||String(p.quality_status)===filter)&&(!q||`${p.name||''} ${p.username||''} ${p.location||''}`.toLowerCase().includes(q)));
+}
+window.renderVirtualQualityRows=()=>{
+  const box=$('#virtualQualityList');if(!box)return;
+  const rows=virtualQualityFilteredProfiles();
+  box.innerHTML=rows.length?rows.map(virtualQualityProfileCard).join(''):'<div class="empty compact-empty">No hay perfiles con este filtro.</div>';
+  const count=$('#virtualQualityVisibleCount');if(count)count.textContent=`${rows.length} perfil${rows.length===1?'':'es'}`;
+};
+function virtualQualityCenterHtml(data={}){
+  const s=data.summary||{};
+  const profiles=Array.isArray(data.profiles)?data.profiles:[];
+  return `<div class="modal-head virtual-quality-head"><div><h3>Centro de Calidad · Perfiles virtuales</h3><small class="muted">V1.12.42 · diagnóstico global de fotos, referencias y duplicados · ${Number(data.scan_ms||0)} ms</small></div><div class="virtual-quality-head-actions"><button class="btn ghost compact" onclick="downloadVirtualQualityReport()">Descargar diagnóstico</button><button class="btn ghost compact" onclick="refreshVirtualQualityCenter()">↻ Reanalizar</button><button class="icon-btn" onclick="closeModal()">×</button></div></div>
+    <div class="virtual-quality-summary"><span class="ok"><b>${Number(s.healthy_profiles||0)}</b> correctos</span><span class="warning"><b>${Number(s.warning_profiles||0)}</b> revisar</span><span class="critical"><b>${Number(s.critical_profiles||0)}</b> críticos</span><span><b>${Number(s.active_images||0)}</b> imágenes activas</span><span><b>${Number(s.duplicate_groups||0)}</b> grupos duplicados</span><span><b>${Number(s.low_resolution_images||0)}</b> baja resolución</span><span><b>${Number(s.archived_refs||0)}</b> refs. archivadas</span><span class="${Number(s.broken_refs||0)?'critical':''}"><b>${Number(s.broken_refs||0)}</b> refs. rotas</span></div>
+    <div class="virtual-quality-explainer"><b>Semáforo automático</b><span><i class="dot critical"></i> Crítico: puede romper avatar, portada o contenido. <i class="dot warning"></i> Revisar: calidad, variedad o duplicados. <i class="dot ok"></i> Correcto: sin incidencias que requieran acción.</span></div>
+    <div class="virtual-quality-toolbar"><select id="virtualQualityFilter" onchange="renderVirtualQualityRows()"><option value="all">Todos</option><option value="critical">Solo críticos</option><option value="warning">Solo revisar</option><option value="ok">Solo correctos</option></select><input id="virtualQualitySearch" placeholder="Buscar nombre, @usuario o ciudad…" oninput="renderVirtualQualityRows()"><span id="virtualQualityVisibleCount">${profiles.length} perfiles</span></div>
+    <div id="virtualQualityList" class="virtual-quality-list">${profiles.length?profiles.map(virtualQualityProfileCard).join(''):'<div class="empty compact-empty">No hay perfiles virtuales.</div>'}</div>`;
+}
+window.openVirtualQualityCenter=async()=>{
+  try{toast('Analizando calidad de los 100 perfiles…');const d=await api('/api/admin/virtual-community/quality',{timeout:120000});state.virtualQualityData=d;state.virtualQualityFilter='all';state.virtualQualitySearch='';modal(virtualQualityCenterHtml(d));}catch(e){toast(e.message,'error');}
+};
+window.refreshVirtualQualityCenter=async()=>{
+  try{const btn=$('.virtual-quality-head-actions button:nth-child(2)');if(btn){btn.disabled=true;btn.textContent='Analizando…';}const d=await api('/api/admin/virtual-community/quality',{timeout:120000});state.virtualQualityData=d;modal(virtualQualityCenterHtml(d));toast('Diagnóstico actualizado');}catch(e){toast(e.message,'error');}
+};
+window.downloadVirtualQualityReport=()=>{
+  const d=state.virtualQualityData;if(!d)return;
+  const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`instant-admirers-calidad-${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
 
 function virtualRealisticImportReportHtml(data={}){
@@ -4286,7 +4338,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.41</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.42</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>

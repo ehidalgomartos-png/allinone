@@ -335,7 +335,7 @@ async function ensureStagedMedia(db,{jobId,user,image,buffer,adminId,archiveName
   `,[Number(user.id),image.sha256]);
   if(existing.rowCount) return {mediaId:Number(existing.rows[0].id),reused:true};
   const uploaded=await uploadMediaBuffer(buffer,{mimeType:image.mime_type,originalName:path.posix.basename(image.file).slice(0,255),userId:Number(user.id),privateDelivery:true});
-  const meta={virtual:true,synthetic:true,uploaded_by_admin:Number(adminId),image_system:'1.12.41',mass_virtual_import:true,mass_import_job_id:Number(jobId),mass_import_stage:'staged',mass_import_sha256:image.sha256,realistic_pack:true,realistic_sha256:image.sha256,source_archive:String(archiveName||'').slice(0,180),username:user.username,kind:image.kind};
+  const meta={virtual:true,synthetic:true,uploaded_by_admin:Number(adminId),image_system:'1.12.42',mass_virtual_import:true,mass_import_job_id:Number(jobId),mass_import_stage:'staged',mass_import_sha256:image.sha256,realistic_pack:true,realistic_sha256:image.sha256,source_archive:String(archiveName||'').slice(0,180),username:user.username,kind:image.kind};
   const inserted=await db.query(`
     INSERT INTO media(user_id,mime_type,original_name,size_bytes,data,provider,provider_id,secure_url,resource_type,delivery_type,width,height,duration_seconds,format,migrated_at,provider_status,provider_meta)
     VALUES($1,$2,$3,$4,NULL,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),$14,$15::jsonb) RETURNING id
