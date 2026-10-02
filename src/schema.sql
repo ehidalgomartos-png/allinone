@@ -985,6 +985,25 @@ CREATE INDEX IF NOT EXISTS idx_virtual_quality_scans_created ON virtual_quality_
 CREATE INDEX IF NOT EXISTS idx_virtual_quality_scans_source_created ON virtual_quality_scans(source,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_virtual_quality_scans_status_created ON virtual_quality_scans(status,created_at DESC);
 
+
+-- V1.12.44: salud operativa de la comunidad virtual.
+-- Escaneo de solo lectura de scheduler, actividad, interacciones, buzón y coherencia de perfiles.
+CREATE TABLE IF NOT EXISTS virtual_community_health_scans (
+  id BIGSERIAL PRIMARY KEY,
+  source VARCHAR(16) NOT NULL DEFAULT 'automatic' CHECK (source IN ('automatic','manual')),
+  admin_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'completed' CHECK (status IN ('completed','failed')),
+  summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+  issue_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
+  changes JSONB NOT NULL DEFAULT '{"new":[],"resolved":[]}'::jsonb,
+  scan_ms INTEGER NOT NULL DEFAULT 0,
+  error_message TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_virtual_health_scans_created ON virtual_community_health_scans(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_virtual_health_scans_source_created ON virtual_community_health_scans(source,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_virtual_health_scans_status_created ON virtual_community_health_scans(status,created_at DESC);
+
 CREATE TABLE IF NOT EXISTS virtual_media_import_refs (
   id BIGSERIAL PRIMARY KEY,
   job_id BIGINT NOT NULL REFERENCES virtual_media_import_jobs(id) ON DELETE CASCADE,
