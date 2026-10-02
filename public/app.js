@@ -3871,6 +3871,8 @@ function virtualCommunityAdminHtml(data={}) {
   const inbox=Array.isArray(data?.inbox)?data.inbox:[];
   const activity=Array.isArray(data?.recent_activity)?data.recent_activity:[];
   const interactions=Array.isArray(data?.recent_interactions)?data.recent_interactions:[];
+  const massImports=Array.isArray(data?.mass_imports)?data.mass_imports:[];
+  const massImportMaxZipMb=Math.max(100,Number(data?.mass_import_max_zip_mb||900));
   const total=Number(st.total||0);
   const statusLabel=x=>x==='active'?'Activo':x==='paused'?'Pausado':'Retirado';
   const activityLabel=x=>({
@@ -3881,15 +3883,22 @@ function virtualCommunityAdminHtml(data={}) {
   const activityHtml=activity.length ? activity.slice(0,18).map(x=>`<div class="virtual-activity-row"><img src="${escapeAttr(x.avatar||'/assets/brand/instant-admirers-mark.svg')}" alt=""><span><b>${escapeHtml(x.name||x.username||'Perfil virtual')} <small>@${escapeHtml(x.username||'')}</small></b><em>${activityLabel(x.activity_type)}</em><small>${escapeHtml(String(x.text||'').slice(0,105))||'Actividad visual'}</small></span><time>${x.created_at?timeAgo(x.created_at):''}</time></div>`).join('') : '<div class="empty compact-empty">La actividad 2.0 empezará a registrar eventos cuando se genere la próxima publicación o Story.</div>';
   const interactionHtml=interactions.length ? interactions.slice(0,18).map(x=>`<div class="virtual-activity-row virtual-interaction-row"><img src="${escapeAttr(x.avatar||'/assets/brand/instant-admirers-mark.svg')}" alt=""><span><b>${escapeHtml(x.name||x.username||'Perfil virtual')} <small>@${escapeHtml(x.username||'')}</small></b><em>${interactionLabel(x.interaction_type)} → @${escapeHtml(x.target_username||'usuario')}</em><small>${escapeHtml(String(x.comment_text||x.post_text||'Interacción con contenido público').slice(0,105))}</small></span><time>${x.created_at?timeAgo(x.created_at):''}</time></div>`).join('') : '<div class="empty compact-empty">Todavía no hay interacciones automáticas registradas.</div>';
   const profilesHtml=profiles.length ? profiles.map(u=>`<article class="virtual-admin-profile ${escapeAttr(u.status||'active')}"><div class="virtual-admin-profile-main"><img src="${escapeAttr(u.avatar||'/assets/brand/instant-admirers-mark.svg')}" alt=""><div><b>${escapeHtml(u.name)} <span class="virtual-badge compact">✦ Virtual</span></b><small>@${escapeHtml(u.username)} · ${escapeHtml(u.location||'')} · ${Number(u.age||0)} años</small><span>${escapeHtml(u.headline||'')}</span></div></div><div class="virtual-admin-profile-meta"><span class="virtual-status ${escapeAttr(u.status||'active')}">${statusLabel(u.status)}</span><span class="${u.auto_post_enabled?'virtual-auto-on':'virtual-auto-off'}">Posts ${u.auto_post_enabled?'ON':'OFF'}</span><span class="${u.auto_interact_enabled?'virtual-auto-on':'virtual-auto-off'}">Interacción ${u.auto_interact_enabled?'ON':'OFF'}</span><span>${Number(u.posts_count||0)} posts</span><span>${Number(u.media_count||0)} fotos</span><label class="virtual-cadence"><span>Publicaciones</span><select onchange="setVirtualProfileCadence(${Number(u.id)},this.value)">${[1,2,3,4,5,6,7].map(n=>`<option value="${n}" ${Number(u.posts_per_week||0)===n?'selected':''}>${n===7?'Diaria':`${n}/semana`}</option>`).join('')}</select></label><label class="virtual-cadence"><span>Interacciones</span><select onchange="setVirtualProfileInteractionCadence(${Number(u.id)},this.value)">${[1,2,3,4].map(n=>`<option value="${n}" ${Number(u.interactions_per_day||2)===n?'selected':''}>${n}/día</option>`).join('')}</select></label><small>${u.next_auto_post_at?`Post ${timeAgo(u.next_auto_post_at)}`:'Sin post programado'}${u.next_auto_interact_at?` · Interacción ${timeAgo(u.next_auto_interact_at)}`:' · Sin interacción programada'}${u.last_interaction_type?` · Última int.: ${interactionLabel(u.last_interaction_type)}`:''}</small></div><div class="virtual-admin-profile-actions">${u.status!=='active'?`<button class="btn primary compact" onclick="setVirtualProfileStatus(${Number(u.id)},'active')">Activar</button>`:`<button class="btn ghost compact" onclick="setVirtualProfileStatus(${Number(u.id)},'paused')">Pausar</button>`}<button class="btn ghost compact" onclick="toggleVirtualProfileAuto(${Number(u.id)},${u.auto_post_enabled?'false':'true'})">Posts ${u.auto_post_enabled?'OFF':'ON'}</button><button class="btn ghost compact" onclick="toggleVirtualProfileInteractions(${Number(u.id)},${u.auto_interact_enabled?'false':'true'})">Interacción ${u.auto_interact_enabled?'OFF':'ON'}</button>${u.status!=='retired'?`<button class="btn ghost compact" onclick="setVirtualProfileStatus(${Number(u.id)},'retired')">Retirar</button>`:''}<label class="btn ghost compact virtual-media-upload">+ Foto<input type="file" accept="image/*" hidden onchange="uploadVirtualProfileMedia(${Number(u.id)},this.files?.[0],this,false)"></label><label class="btn ghost compact virtual-media-upload">Avatar<input type="file" accept="image/*" hidden onchange="uploadVirtualProfileMedia(${Number(u.id)},this.files?.[0],this,true)"></label><button class="btn ghost compact" onclick="openVirtualImageManager(${Number(u.id)})">Imágenes</button><button class="btn ghost compact" onclick="openProfile('${escapeAttr(u.username)}')">Ver perfil</button></div></article>`).join('') : '';
+  const massStatusLabel=x=>({uploaded:'Subido',validating:'Validando',staging:'Preparando preview',ready:'Listo para confirmar',committing:'Aplicando',completed:'Completado',failed:'Error',cancelling:'Limpiando staging',cancelled:'Cancelado',rolling_back:'Restaurando',rolled_back:'Rollback hecho'}[String(x||'')]||String(x||''));
+  const massActive=massImports.find(x=>['uploaded','validating','staging','ready','committing','rolling_back','cancelling'].includes(String(x.status||'')));
+  const massHistoryHtml=massImports.length?massImports.map(x=>`<button class="virtual-mass-history-row ${escapeAttr(x.status||'')}" onclick="openVirtualMassImport(${Number(x.id)})"><span><b>#${Number(x.id)} · ${escapeHtml(x.archive_name||'ZIP')}</b><small>${massStatusLabel(x.status)} · ${Number(x.total_profiles||0)} perfiles · ${Number(x.total_images||0)} fotos</small></span><em>${Number(x.progress_percent||0)}%</em><time>${x.created_at?timeAgo(x.created_at):''}</time></button>`).join(''):'<div class="empty compact-empty">Aún no hay importaciones masivas.</div>';
   return `<section class="card admin-section virtual-community-admin">
-    <div class="section-row"><div><h3>Comunidad virtual</h3><p>100 anfitriones ficticios identificados como virtuales. Actividad e interacción programadas con límites, historial y control individual.</p></div><span class="virtual-community-version">V1.12.39.1</span></div>
+    <div class="section-row"><div><h3>Comunidad virtual</h3><p>100 anfitriones ficticios identificados como virtuales. Actividad e interacción programadas con límites, historial y control individual.</p></div><span class="virtual-community-version">V1.12.40</span></div>
     ${total===0 ? `<div class="virtual-community-empty"><div>✦</div><b>La comunidad virtual todavía no está creada</b><p>Crea 50 perfiles de mujer y 50 de hombre, con ciudades, intereses, bios, contenido inicial y actividad programada. Todos se muestran con la etiqueta “Perfil virtual”.</p><button class="btn primary" onclick="seedVirtualCommunity()">Crear 100 perfiles virtuales</button></div>` : `
       <div class="virtual-community-metrics"><span><b>${total}</b> perfiles</span><span><b>${Number(st.active||0)}</b> activos</span><span><b>${Number(st.auto_enabled||0)}</b> posts Auto</span><span><b>${Number(st.auto_interact_enabled||0)}</b> interacción Auto</span><span><b>${Number(st.activity_events_today||0)}</b> actividad hoy</span><span><b>${Number(st.interaction_events_today||0)}</b> interacciones hoy</span><span><b>${Number(st.virtual_likes_today||0)}</b> likes</span><span><b>${Number(st.virtual_comments_today||0)}</b> comentarios</span><span><b>${Number(st.virtual_follows_today||0)}</b> follows</span><span><b>${Number(st.stories_today||0)}</b> Stories hoy</span><span><b>${Number(st.interacting_profiles_7d||0)}</b> interactuando 7d</span><span><b>${Number(st.media_total||0)}</b> imágenes activas</span><span class="${Number(st.inbox_unread||0)>0?'has-unread':''}"><b>${Number(st.inbox_unread||0)}</b> mensajes pendientes</span></div>
       <div class="virtual-community-actions"><button class="btn primary compact" onclick="runVirtualCommunityNow()">Generar actividad ahora</button><button class="btn primary compact" onclick="runVirtualInteractionsNow()">Generar interacciones ahora</button><button class="btn ghost compact" onclick="rescheduleVirtualCommunity()">Reprogramar posts</button><button class="btn ghost compact" onclick="rescheduleVirtualInteractionsNow()">Reprogramar interacciones</button><button class="btn ghost compact" onclick="syncVirtualImagePacks()">Sincronizar packs base</button><button class="btn ghost compact" onclick="go('feed')">Ver en Inicio</button><small>Interacción 2.0 actúa solo sobre usuarios reales y contenido público, con 1–4 acciones diarias por perfil, anti-ráfagas y afinidad por ciudad/intereses. Los mensajes privados siguen siendo manuales desde el buzón.</small></div>
       <details class="virtual-activity-history" open><summary>Interacción reciente</summary><div class="virtual-activity-list">${interactionHtml}</div></details>
       <details class="virtual-activity-history"><summary>Actividad reciente</summary><div class="virtual-activity-list">${activityHtml}</div></details>
-      <div class="virtual-realistic-importer"><div class="virtual-realistic-importer-copy"><b>Importar packs fotográficos realistas</b><small>ZIP de hasta 100 MB · máximo 10 perfiles · exactamente 6 imágenes por perfil: avatar, portada y 4 publicaciones. El importador valida el manifest antes de subir nada.</small><a href="/virtual-pack-import-template.json" target="_blank" rel="noopener">Ver manifest de ejemplo</a></div><label class="btn primary compact">Seleccionar ZIP<input type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden onchange="importVirtualRealisticPacks(this)"></label></div>
-      <div class="virtual-inbox-block"><div class="section-row"><div><h4>Buzón de anfitriones</h4><p>Cuando una persona real escribe a un perfil virtual, aparece aquí para que administración responda desde ese personaje. V1.12.39.1 no automatiza mensajes privados.</p></div><span>${Number(st.inbox_unread||0)}</span></div><div class="virtual-inbox-list">${inboxHtml}</div></div>
+      <div class="virtual-mass-importer">
+        <div class="virtual-mass-importer-head"><div><b>Importación masiva · 100 perfiles</b><small>Un solo ZIP con carpetas 001–100 o con el username de cada perfil. JPG/PNG/WEBP · mínimo 3 y máximo 30 fotos por perfil · ZIP hasta ${massImportMaxZipMb} MB. La primera foto será avatar y la segunda portada si no están nombradas.</small><span>Primero valida y prepara un preview. <strong>No sustituye ni retira ninguna foto actual hasta que pulses Confirmar.</strong></span></div><label class="btn primary compact ${massActive?'disabled':''}">${massActive?'Hay una importación activa':'Subir ZIP masivo'}<input type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden ${massActive?'disabled':''} onchange="uploadVirtualMassZip(this)"></label></div>
+        ${massActive?`<button class="virtual-mass-active" onclick="openVirtualMassImport(${Number(massActive.id)})"><span><b>Importación #${Number(massActive.id)}</b><small>${massStatusLabel(massActive.status)} · ${escapeHtml(massActive.progress_message||'')}</small></span><strong>${Number(massActive.progress_percent||0)}%</strong></button>`:''}
+        <details class="virtual-mass-history" ${massActive?'open':''}><summary>Historial y rollback</summary><div>${massHistoryHtml}</div></details>
+      </div>
+      <div class="virtual-inbox-block"><div class="section-row"><div><h4>Buzón de anfitriones</h4><p>Cuando una persona real escribe a un perfil virtual, aparece aquí para que administración responda desde ese personaje. V1.12.40 no automatiza mensajes privados.</p></div><span>${Number(st.inbox_unread||0)}</span></div><div class="virtual-inbox-list">${inboxHtml}</div></div>
       <details class="virtual-profile-manager" ${profiles.length && profiles.length<=12?'open':''}><summary>Gestionar los ${total} perfiles</summary><div class="virtual-profile-toolbar"><input id="virtualProfileSearch" placeholder="Buscar nombre, usuario, ciudad…" onkeydown="if(event.key==='Enter')searchVirtualProfiles()"><button class="btn ghost compact" onclick="searchVirtualProfiles()">Buscar</button><button class="btn ghost compact" onclick="resetVirtualProfiles()">Todos</button></div><div id="virtualProfileList" class="virtual-admin-profile-list">${profilesHtml}</div></details>
     `}
   </section>`;
@@ -3957,6 +3966,121 @@ window.importVirtualRealisticPacks=async(input)=>{
     toast(d?.report?.partial?'Importación parcial: revisa las incidencias':'Packs realistas importados');
   }catch(e){toast(e.message,'error');}
   finally{if(input)input.value='';}
+};
+
+
+function virtualMassStatusLabel(status=''){
+  return ({uploaded:'ZIP recibido',validating:'Validando todas las fotos',staging:'Subiendo a staging',ready:'Preview listo',committing:'Aplicando reemplazo',completed:'Importación completada',failed:'Importación detenida',cancelling:'Limpiando staging',cancelled:'Importación cancelada',rolling_back:'Restaurando snapshot',rolled_back:'Rollback completado'})[String(status)]||String(status||'');
+}
+
+function virtualMassProgressHtml(job={}){
+  const pct=Math.max(0,Math.min(100,Number(job.progress_percent||0)));
+  const canCancel=['ready','failed'].includes(String(job.status||''));
+  return `<div class="modal-head"><div><h3>Importación masiva #${Number(job.id||0)}</h3><small class="muted">${escapeHtml(job.archive_name||'ZIP de perfiles virtuales')}</small></div><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <div class="virtual-mass-progress-card"><div class="virtual-mass-progress-top"><b id="virtualMassProgressStatus">${escapeHtml(virtualMassStatusLabel(job.status))}</b><strong id="virtualMassProgressPct">${pct}%</strong></div><div class="virtual-mass-progress-track"><i id="virtualMassProgressBar" style="width:${pct}%"></i></div><p id="virtualMassProgressMessage">${escapeHtml(job.progress_message||'Preparando…')}</p><small id="virtualMassProgressCount">${Number(job.processed_images||0)} / ${Number(job.total_images||0)||'—'} fotos</small></div>
+    ${job.error_message?`<div class="virtual-mass-error"><b>No se ha sustituido ninguna foto</b><p>${escapeHtml(job.error_message)}</p></div>`:''}
+    <div class="virtual-mass-safety"><b>Protección activa</b><span>Durante validación y staging las fotos actuales siguen intactas. El reemplazo solo se ejecuta desde el preview.</span></div>
+    <div class="modal-actions">${canCancel&&job.id?`<button class="btn ghost" onclick="cancelVirtualMassImport(${Number(job.id)})">Cancelar y limpiar staging</button>`:''}<button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`;
+}
+
+function virtualMassPreviewHtml(job={}){
+  const profiles=Array.isArray(job.profiles)?job.profiles:[];
+  const summary=job.summary||{};const warnings=Array.isArray(summary.warnings)?summary.warnings:[];
+  const cards=profiles.map(p=>`<article class="virtual-mass-preview-profile"><div class="virtual-mass-preview-title"><b>@${escapeHtml(p.username||'perfil')}</b><span>${Number(p.image_count||0)} fotos${Number(p.reused||0)?` · ${Number(p.reused)} reutilizadas`:''}</span></div><div class="virtual-mass-preview-images">${(p.preview||[]).map(x=>`<figure class="${escapeAttr(x.kind||'post')}">${x.url?`<img src="${escapeAttr(x.url)}" alt="${escapeAttr(x.kind||'foto')}" loading="lazy">`:'<span>Sin preview</span>'}<figcaption>${escapeHtml(x.kind==='avatar'?'Avatar':x.kind==='cover'?'Portada':'Post')}</figcaption></figure>`).join('')}</div></article>`).join('');
+  return `<div class="modal-head"><div><h3>Preview · importación #${Number(job.id||0)}</h3><small class="muted">${escapeHtml(job.archive_name||'ZIP')} · ${Number(job.total_profiles||0)} perfiles · ${Number(job.total_images||0)} fotos</small></div><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <div class="virtual-mass-ready-note"><b>✓ ZIP validado al completo</b><span>Las fotos nuevas ya están en staging. Las fotos actuales todavía no se han tocado.</span></div>
+    ${warnings.length?`<details class="virtual-mass-warnings"><summary>${warnings.length} aviso(s) de asignación automática</summary>${warnings.slice(0,30).map(w=>`<p>${escapeHtml(w)}</p>`).join('')}${warnings.length>30?`<p>… y ${warnings.length-30} avisos más.</p>`:''}</details>`:''}
+    <div class="virtual-mass-preview-grid">${cards}</div>
+    <div class="virtual-mass-commit-note"><b>Al confirmar</b><span>Se activarán las nuevas fotos para los 100 perfiles en una sola transacción. Las antiguas se retirarán del pool activo y se conservarán como snapshot de rollback; no se borrarán físicamente mientras ese rollback esté disponible.</span></div>
+    <div class="modal-actions sticky-actions"><button class="btn ghost" onclick="cancelVirtualMassImport(${Number(job.id)})">Cancelar y limpiar staging</button><button class="btn primary" onclick="confirmVirtualMassImport(${Number(job.id)})">Confirmar reemplazo de los 100 perfiles</button></div>`;
+}
+
+function virtualMassCompletedHtml(job={}){
+  const completed=String(job.status)==='completed';
+  const rolled=String(job.status)==='rolled_back';
+  const rollbackAvailable=completed && job.rollback_available!==false;
+  return `<div class="modal-head"><div><h3>Importación masiva #${Number(job.id||0)}</h3><small class="muted">${escapeHtml(job.archive_name||'ZIP')}</small></div><button class="icon-btn" onclick="closeModal()">×</button></div>
+    <div class="virtual-import-report-metrics"><span><b>${Number(job.total_profiles||0)}</b> perfiles</span><span><b>${Number(job.total_images||0)}</b> fotos nuevas</span><span><b>${Number(job.old_images_archived||0)}</b> antiguas retiradas</span><span><b>${Number(job.refs_relinked||0)}</b> referencias reenlazadas</span></div>
+    <div class="${rolled?'virtual-mass-ready-note':'success-note'}"><b>${rolled?'↩ Rollback completado':'✓ Reemplazo completado'}</b><span>${rolled?'Se ha restaurado el snapshot anterior.':'Las nuevas fotos están activas. Las anteriores permanecen archivadas como respaldo para rollback.'}</span></div>
+    ${completed&&!rollbackAvailable?`<div class="virtual-mass-warnings"><p>Rollback no disponible: ${escapeHtml(job.rollback_block_reason||'existe una importación posterior activa o aplicada.')}</p></div>`:''}
+    <div class="modal-actions">${rollbackAvailable?`<button class="btn danger" onclick="rollbackVirtualMassImport(${Number(job.id)})">Hacer rollback</button>`:''}<button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`;
+}
+
+function updateVirtualMassProgress(job={}){
+  const pct=Math.max(0,Math.min(100,Number(job.progress_percent||0)));
+  const bar=$('#virtualMassProgressBar'),pctEl=$('#virtualMassProgressPct'),status=$('#virtualMassProgressStatus'),message=$('#virtualMassProgressMessage'),count=$('#virtualMassProgressCount');
+  if(bar)bar.style.width=`${pct}%`;if(pctEl)pctEl.textContent=`${pct}%`;if(status)status.textContent=virtualMassStatusLabel(job.status);if(message)message.textContent=job.progress_message||'';if(count)count.textContent=`${Number(job.processed_images||0)} / ${Number(job.total_images||0)||'—'} fotos`;
+}
+
+async function pollVirtualMassImportJob(jobId){
+  let loops=0;
+  while(loops<2400){
+    loops+=1;
+    const job=await api(`/api/admin/virtual-community/mass-imports/${Number(jobId)}`,{timeout:90000});
+    updateVirtualMassProgress(job);
+    if(job.status==='ready'){modal(virtualMassPreviewHtml(job));state.virtualCommunityData=await api('/api/admin/virtual-community?limit=100');return job;}
+    if(['failed','cancelled'].includes(String(job.status))){modal(virtualMassProgressHtml(job));state.virtualCommunityData=await api('/api/admin/virtual-community?limit=100');return job;}
+    if(['completed','rolled_back'].includes(String(job.status))){modal(virtualMassCompletedHtml(job));state.virtualCommunityData=await api('/api/admin/virtual-community?limit=100');return job;}
+    await new Promise(resolve=>setTimeout(resolve,1500));
+  }
+  throw new Error('La importación sigue en proceso. Puedes cerrar esta ventana y volver a abrirla desde Historial.');
+}
+
+window.uploadVirtualMassZip=(input)=>{
+  const file=input?.files?.[0];if(!file)return;
+  if(!String(file.name||'').toLowerCase().endsWith('.zip')){toast('Selecciona un archivo ZIP.','error');input.value='';return;}
+  const maxZipMb=Math.max(100,Number(state.virtualCommunityData?.mass_import_max_zip_mb||900));
+  if(Number(file.size||0)>maxZipMb*1024*1024){toast(`El ZIP supera ${maxZipMb} MB. Reduce el tamaño de las fotos antes de importarlo.`,'error');input.value='';return;}
+  if(!confirm(`Subir ${file.name} para validar los 100 perfiles? Todavía no se sustituirá ninguna foto.`)){input.value='';return;}
+  modal(`<div class="modal-head"><div><h3>Subiendo ZIP masivo</h3><small class="muted">${escapeHtml(file.name)}</small></div><button class="icon-btn" onclick="closeModal()">×</button></div><div class="virtual-mass-progress-card"><div class="virtual-mass-progress-top"><b>Subiendo archivo</b><strong id="virtualMassUploadPct">0%</strong></div><div class="virtual-mass-progress-track"><i id="virtualMassUploadBar" style="width:0%"></i></div><p>El archivo se guarda temporalmente. Después comenzará la validación completa.</p></div><div class="virtual-mass-safety"><b>Sin cambios todavía</b><span>Las imágenes actuales de los perfiles no se tocan durante esta fase.</span></div>`);
+  const fd=new FormData();fd.append('file',file);
+  const xhr=new XMLHttpRequest();xhr.open('POST','/api/admin/virtual-community/mass-imports');
+  if(state.token)xhr.setRequestHeader('Authorization','Bearer '+state.token);
+  xhr.upload.onprogress=e=>{if(!e.lengthComputable)return;const pct=Math.round((e.loaded/e.total)*100);const b=$('#virtualMassUploadBar'),p=$('#virtualMassUploadPct');if(b)b.style.width=`${pct}%`;if(p)p.textContent=`${pct}%`;};
+  xhr.onerror=()=>{toast('No se pudo subir el ZIP.','error');input.value='';};
+  xhr.onload=async()=>{
+    input.value='';let d={};try{d=JSON.parse(xhr.responseText||'{}');}catch(_){d={};}
+    if(xhr.status<200||xhr.status>=300){toast(d.error||'No se pudo iniciar la importación','error');if(d.job_id)openVirtualMassImport(d.job_id);return;}
+    toast(`ZIP recibido · importación #${Number(d.job_id)}`);
+    modal(virtualMassProgressHtml({id:d.job_id,archive_name:file.name,status:'uploaded',phase:'upload',progress_percent:0,progress_message:'Comenzando validación…'}));
+    try{await pollVirtualMassImportJob(d.job_id);}catch(e){toast(e.message,'error');}
+  };
+  xhr.send(fd);
+};
+
+window.openVirtualMassImport=async(jobId)=>{
+  try{
+    const job=await api(`/api/admin/virtual-community/mass-imports/${Number(jobId)}`);
+    if(job.status==='ready')return modal(virtualMassPreviewHtml(job));
+    if(['completed','rolled_back'].includes(String(job.status)))return modal(virtualMassCompletedHtml(job));
+    modal(virtualMassProgressHtml(job));
+    if(['uploaded','validating','staging','committing','rolling_back','cancelling'].includes(String(job.status)))void pollVirtualMassImportJob(jobId).catch(e=>toast(e.message,'error'));
+  }catch(e){toast(e.message,'error');}
+};
+
+window.confirmVirtualMassImport=async(jobId)=>{
+  if(!confirm('Confirmar el reemplazo de las fotos de los 100 perfiles? El sistema creará el snapshot y aplicará el cambio de forma atómica.'))return;
+  try{
+    toast('Aplicando reemplazo seguro…');
+    const r=await api(`/api/admin/virtual-community/mass-imports/${Number(jobId)}/commit`,{method:'POST',body:'{}',timeout:240000});
+    toast(`Importación completada: ${Number(r.profiles||0)} perfiles · ${Number(r.images||0)} fotos`);
+    const job=await api(`/api/admin/virtual-community/mass-imports/${Number(jobId)}`);modal(virtualMassCompletedHtml(job));await renderAdmin();
+  }catch(e){toast(e.message,'error');}
+};
+
+window.rollbackVirtualMassImport=async(jobId)=>{
+  if(!confirm('Hacer rollback de esta importación? Se restaurarán avatar, portada, pool de imágenes y referencias históricas guardadas en el snapshot.'))return;
+  try{
+    toast('Restaurando snapshot…');
+    const r=await api(`/api/admin/virtual-community/mass-imports/${Number(jobId)}/rollback`,{method:'POST',body:'{}',timeout:240000});
+    toast(`Rollback completado · ${Number(r.profiles||0)} perfiles restaurados`);
+    const job=await api(`/api/admin/virtual-community/mass-imports/${Number(jobId)}`);modal(virtualMassCompletedHtml(job));await renderAdmin();
+  }catch(e){toast(e.message,'error');}
+};
+
+window.cancelVirtualMassImport=async(jobId)=>{
+  if(!confirm('Cancelar esta importación y limpiar las fotos nuevas que solo están en staging? Las fotos actuales no se modificarán.'))return;
+  try{await api(`/api/admin/virtual-community/mass-imports/${Number(jobId)}`,{method:'DELETE',timeout:240000});toast('Importación cancelada y staging limpiado');closeModal();await renderAdmin();}catch(e){toast(e.message,'error');}
 };
 
 window.setVirtualProfileStatus=async(userId,status)=>{
@@ -4124,7 +4248,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.39.1</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.40</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>

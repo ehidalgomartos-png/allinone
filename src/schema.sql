@@ -867,3 +867,98 @@ CREATE INDEX IF NOT EXISTS idx_virtual_interaction_log_type ON virtual_interacti
 -- que originó una notificación sin romper notificaciones históricas.
 ALTER TABLE notifications ADD COLUMN IF NOT EXISTS comment_id BIGINT REFERENCES comments(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_notifications_comment ON notifications(comment_id) WHERE comment_id IS NOT NULL;
+
+-- V1.12.40: importación masiva segura de imágenes para los 100 perfiles virtuales.
+-- El ZIP se valida y se sube a staging antes de tocar el pool activo. El commit
+-- crea un snapshot completo que permite rollback sin depender del ZIP original.
+CREATE TABLE IF NOT EXISTS virtual_media_import_jobs (
+  id BIGSERIAL PRIMARY KEY,
+  admin_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  archive_name VARCHAR(180) NOT NULL DEFAULT '',
+  archive_sha256 VARCHAR(64) NOT NULL DEFAULT '',
+  archive_bytes BIGINT NOT NULL DEFAULT 0,
+  temp_path TEXT NOT NULL DEFAULT '',
+  status VARCHAR(24) NOT NULL DEFAULT 'uploaded',
+  phase VARCHAR(24) NOT NULL DEFAULT 'upload',
+  total_profiles INTEGER NOT NULL DEFAULT 0,
+  total_images INTEGER NOT NULL DEFAULT 0,
+  processed_images INTEGER NOT NULL DEFAULT 0,
+  progress_percent INTEGER NOT NULL DEFAULT 0,
+  progress_message VARCHAR(500) NOT NULL DEFAULT '',
+  error_message TEXT NOT NULL DEFAULT '',
+  summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+  old_images_archived INTEGER NOT NULL DEFAULT 0,
+  refs_relinked INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ready_at TIMESTAMPTZ,
+  committed_at TIMESTAMPTZ,
+  rolled_back_at TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_virtual_media_import_jobs_created ON virtual_media_import_jobs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_virtual_media_import_jobs_status ON virtual_media_import_jobs(status,updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS virtual_media_import_items (
+  id BIGSERIAL PRIMARY KEY,
+  job_id BIGINT NOT NULL REFERENCES virtual_media_import_jobs(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  username VARCHAR(30) NOT NULL DEFAULT '',
+  source_path TEXT NOT NULL,
+  kind VARCHAR(20) NOT NULL CHECK (kind IN ('avatar','cover','post')),
+  sort_order INTEGER NOT NULL DEFAULT 100,
+  featured BOOLEAN NOT NULL DEFAULT FALSE,
+  size_bytes BIGINT NOT NULL DEFAULT 0,
+  mime_type VARCHAR(100) NOT NULL DEFAULT '',
+  sha256 VARCHAR(64) NOT NULL DEFAULT '',
+  media_id BIGINT REFERENCES media(id) ON DELETE SET NULL,
+  reused BOOLEAN NOT NULL DEFAULT FALSE,
+  status VARCHAR(20) NOT NULL DEFAULT 'pending',
+  error_message TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(job_id,user_id,source_path)
+);
+CREATE INDEX IF NOT EXISTS idx_virtual_media_import_items_job ON virtual_media_import_items(job_id,user_id,sort_order,id);
+CREATE INDEX IF NOT EXISTS idx_virtual_media_import_items_media ON virtual_media_import_items(media_id);
+
+CREATE TABLE IF NOT EXISTS virtual_media_import_profile_snapshots (
+  job_id BIGINT NOT NULL REFERENCES virtual_media_import_jobs(id) ON DELETE CASCADE,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  avatar TEXT,
+  cover TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY(job_id,user_id)
+);
+
+CREATE TABLE IF NOT EXISTS virtual_media_import_pool_snapshots (
+  id BIGSERIAL PRIMARY KEY,
+  job_id BIGINT NOT NULL REFERENCES virtual_media_import_jobs(id) ON DELETE CASCADE,
+  pool_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  media_id BIGINT NOT NULL,
+  label VARCHAR(120) NOT NULL DEFAULT '',
+  kind VARCHAR(20) NOT NULL DEFAULT 'post',
+  tags JSONB NOT NULL DEFAULT '[]'::jsonb,
+  alt_text TEXT NOT NULL DEFAULT '',
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  featured BOOLEAN NOT NULL DEFAULT FALSE,
+  sort_order INTEGER NOT NULL DEFAULT 100,
+  times_used INTEGER NOT NULL DEFAULT 0,
+  last_used_at TIMESTAMPTZ,
+  archived_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ,
+  UNIQUE(job_id,pool_id)
+);
+CREATE INDEX IF NOT EXISTS idx_virtual_media_import_pool_snapshots_job ON virtual_media_import_pool_snapshots(job_id,user_id);
+
+CREATE TABLE IF NOT EXISTS virtual_media_import_refs (
+  id BIGSERIAL PRIMARY KEY,
+  job_id BIGINT NOT NULL REFERENCES virtual_media_import_jobs(id) ON DELETE CASCADE,
+  ref_type VARCHAR(12) NOT NULL CHECK (ref_type IN ('post','story')),
+  ref_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  old_media_id BIGINT NOT NULL,
+  new_media_id BIGINT NOT NULL,
+  UNIQUE(job_id,ref_type,ref_id)
+);
+CREATE INDEX IF NOT EXISTS idx_virtual_media_import_refs_job ON virtual_media_import_refs(job_id,user_id);

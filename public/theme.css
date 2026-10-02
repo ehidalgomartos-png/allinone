@@ -447,3 +447,10 @@ html[data-theme="light"] .discover-signal.online{background:#eef9f3!important;co
 html[data-theme="light"] .discover-signal.location{background:#eef5ff!important;color:#4c72a5!important;border-color:#d5e5fb!important}
 html[data-theme="light"] .discover-dismiss{color:#8c93a1!important}
 html[data-theme="light"] .discover-dismiss:hover{background:#f0f2f6!important;color:#4f5665!important}
+
+/* V1.12.40 · importador masivo en tema claro */
+html[data-theme="light"] .virtual-mass-importer{background:linear-gradient(120deg,rgba(255,45,154,.045),rgba(124,60,255,.065),#fff)!important;border-color:rgba(101,70,199,.2)!important}
+html[data-theme="light"] .virtual-mass-active,html[data-theme="light"] .virtual-mass-progress-card,html[data-theme="light"] .virtual-mass-preview-profile{background:#f7f8fb!important}
+html[data-theme="light"] .virtual-mass-history-row:hover{background:#f1eefb!important}
+html[data-theme="light"] .virtual-mass-preview-images figure{background:#edf0f5!important}
+html[data-theme="light"] .virtual-mass-preview-title b,html[data-theme="light"] .virtual-mass-progress-top b{color:#202431!important}
