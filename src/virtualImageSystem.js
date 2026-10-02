@@ -30,7 +30,10 @@ async function listVirtualProfileMedia(db,userId,{includeArchived=true}={}) {
   const {rows}=await db.query(`
     SELECT vpm.id,vpm.user_id,vpm.media_id,vpm.label,vpm.kind,vpm.tags,vpm.alt_text,vpm.active,vpm.featured,
            vpm.sort_order,vpm.times_used,vpm.last_used_at,vpm.archived_at,vpm.created_at,vpm.updated_at,
-           m.mime_type,m.original_name,m.provider,m.provider_id,m.secure_url,m.provider_status,m.width,m.height,m.format,
+           m.mime_type,m.original_name,m.size_bytes,m.provider,m.provider_id,m.secure_url,m.provider_status,m.width,m.height,m.format,m.provider_meta,
+           COALESCE(NULLIF(m.provider_meta->>'visual_sha256',''),NULLIF(m.provider_meta->>'mass_import_sha256',''),NULLIF(m.provider_meta->>'realistic_sha256',''),'') AS sha256,
+           (SELECT COUNT(*)::int FROM posts p WHERE p.user_id=vpm.user_id AND p.media_id=vpm.media_id) AS post_refs,
+           (SELECT COUNT(*)::int FROM stories s WHERE s.user_id=vpm.user_id AND s.media_id=vpm.media_id) AS story_refs,
            COALESCE((
              SELECT jsonb_agg(jsonb_build_object('usage_type',hist.usage_type,'post_id',hist.post_id,'story_id',hist.story_id,'used_at',hist.used_at) ORDER BY hist.used_at DESC)
                FROM (SELECT usage_type,post_id,story_id,used_at FROM virtual_profile_media_usage vpu WHERE vpu.virtual_profile_media_id=vpm.id ORDER BY used_at DESC LIMIT 8) hist

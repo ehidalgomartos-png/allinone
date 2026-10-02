@@ -229,17 +229,17 @@ function seoProfileServerHtml(profile, posts=[], counts={}) {
 <meta property="og:title" content="${seoEscapeHtml(title)}"><meta property="og:description" content="${seoEscapeHtml(description)}"><meta property="og:url" content="${seoEscapeHtml(canonical)}"><meta property="og:image" content="${seoEscapeHtml(shareImage)}">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${seoEscapeHtml(title)}"><meta name="twitter:description" content="${seoEscapeHtml(description)}"><meta name="twitter:image" content="${seoEscapeHtml(shareImage)}">
 <script type="application/ld+json">${seoProfileJsonLd(profile,counts)}</script>
-<script src="/theme.js?v=1.12.40.1"></script>
-<link rel="stylesheet" href="/styles.css?v=1.12.40.1">
+<script src="/theme.js?v=1.12.41"></script>
+<link rel="stylesheet" href="/styles.css?v=1.12.41">
 <style>.seo-profile-prerender{max-width:760px;margin:0 auto;padding:26px 16px 110px;color:#f7f7fb;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.seo-profile-brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:#fff;font-size:24px;font-weight:800;margin-bottom:18px}.seo-profile-brand img{width:38px;height:38px}.seo-profile-card{overflow:hidden;border:1px solid #2b2d3c;border-radius:22px;background:#141620}.seo-profile-cover{height:190px;background:#222532}.seo-profile-cover img{width:100%;height:100%;object-fit:cover}.seo-profile-body{padding:0 22px 22px}.seo-profile-avatar{width:104px;height:104px;border-radius:50%;margin-top:-54px;border:5px solid #141620;background:#242736;overflow:hidden;display:grid;place-items:center;font-size:28px;font-weight:800}.seo-profile-avatar img{width:100%;height:100%;object-fit:cover}.seo-profile-body h1{font-size:30px;margin:12px 0 2px}.seo-handle{color:#9da3b4}.seo-headline{font-weight:700;margin:15px 0 6px}.seo-bio{color:#d4d7e3;line-height:1.55;white-space:pre-wrap}.seo-virtual-notice{display:flex;gap:8px;align-items:flex-start;margin:14px 0;padding:12px 14px;border:1px solid #7147b8;border-radius:13px;background:rgba(124,60,255,.12);color:#e8dcff;line-height:1.45}.seo-virtual-notice b{white-space:nowrap;color:#ff74c7}.seo-cta{display:inline-flex;margin-top:16px;padding:12px 17px;border-radius:12px;text-decoration:none;color:#fff;font-weight:800;background:linear-gradient(135deg,#ff2aa1,#7c3cff)}.seo-profile-posts{margin-top:20px}.seo-profile-posts h2{font-size:21px}.seo-profile-post{border:1px solid #292c3b;background:#12141d;border-radius:16px;padding:16px;margin:12px 0}.seo-profile-post p{line-height:1.55;white-space:pre-wrap}.seo-media-lock{margin-top:12px;border:1px dashed #555a70;border-radius:12px;padding:18px;color:#c7cad7;text-align:center}.seo-empty{color:#aeb3c3}.seo-profile-prerender-noscript{display:block}</style>
-<link rel="stylesheet" href="/theme.css?v=1.12.40.1">
+<link rel="stylesheet" href="/theme.css?v=1.12.41">
 </head><body>
 <div id="app"><main class="seo-profile-prerender">
 <a class="seo-profile-brand" href="/"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a>
 <section class="seo-profile-card">${cover?`<div class="seo-profile-cover"><img src="${seoEscapeHtml(cover)}" alt="Cabecera de ${seoEscapeHtml(profile.name||profile.username)}"></div>`:'<div class="seo-profile-cover"></div>'}<div class="seo-profile-body"><div class="seo-profile-avatar">${avatar?`<img src="${seoEscapeHtml(avatar)}" alt="${seoEscapeHtml(profile.name||profile.username)}">`:`${seoEscapeHtml(String(profile.name||profile.username||'?').slice(0,1).toUpperCase())}`}</div><h1>${seoEscapeHtml(profile.name||profile.username)}</h1><div class="seo-handle">@${seoEscapeHtml(profile.username)}</div>${profile.is_virtual?'<div class="seo-virtual-notice"><b>✦ Perfil virtual</b><span>Personaje ficticio y anfitrión gestionado por Instant Admirers. No representa a una persona real.</span></div>':''}${profile.headline?`<div class="seo-headline">${seoEscapeHtml(seoPlainText(profile.headline,180))}</div>`:''}${profile.bio?`<p class="seo-bio">${seoEscapeHtml(seoPlainText(profile.bio,700))}</p>`:''}<a class="seo-cta" href="${seoEscapeHtml(registerUrl)}">Crear cuenta para ver todo el contenido</a></div></section>
 <section class="seo-profile-posts"><h2>Publicaciones públicas de ${seoEscapeHtml(profile.name||profile.username)}</h2>${postHtml}</section>
 </main></div><div id="modal-root"></div>
-<script src="/i18n.js?v=1.12.40.1"></script><script src="/socket.io/socket.io.js"></script><script src="/vendor/hls/hls.min.js?v=1.12.40.1"></script><script src="/app.js?v=1.12.40.1"></script>
+<script src="/i18n.js?v=1.12.41"></script><script src="/socket.io/socket.io.js"></script><script src="/vendor/hls/hls.min.js?v=1.12.41"></script><script src="/app.js?v=1.12.41"></script>
 </body></html>`;
 }
 function seoProfilesHubHtml(profiles=[]) {
@@ -250,7 +250,7 @@ function seoProfilesHubHtml(profiles=[]) {
     const desc=seoPlainText(p.headline || p.bio || `Perfil de @${p.username} en Instant Admirers.`,150);
     return `<a class="hub-card" href="/${encodeURIComponent(p.username)}">${avatar?`<img src="${seoEscapeHtml(avatar)}" alt="${seoEscapeHtml(p.name||p.username)}" loading="lazy">`:''}<span>@${seoEscapeHtml(p.username)}</span><b>${seoEscapeHtml(p.name||p.username)}</b>${p.is_virtual?'<em class="hub-virtual-badge">✦ Perfil virtual</em>':''}<p>${seoEscapeHtml(desc)}</p></a>`;
   }).join('');
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0b12"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1"><title>${title}</title><meta name="description" content="${description}"><link rel="canonical" href="${APP_URL}/perfiles/"><link rel="icon" href="/favicon.ico" sizes="any"><script src="/theme.js?v=1.12.40.1"></script><link rel="stylesheet" href="/seo.css?v=1.12.40.1"><link rel="stylesheet" href="/theme.css?v=1.12.40.1"><style>.hub-card img{width:58px;height:58px;object-fit:cover;border-radius:50%;margin-bottom:10px}.hub-virtual-badge{display:inline-flex;width:max-content;margin:7px 0 1px;padding:4px 8px;border-radius:999px;background:rgba(124,60,255,.12);border:1px solid rgba(124,60,255,.35);color:#9a5dff;font-size:12px;font-style:normal;font-weight:800}</style><script type="application/ld+json">${JSON.stringify({'@context':'https://schema.org','@type':'CollectionPage',name:title,description,url:`${APP_URL}/perfiles/`,isPartOf:{'@type':'WebSite',name:'Instant Admirers',url:`${APP_URL}/`}}).replace(/</g,'\\u003c')}</script></head><body><header class="site-header"><div class="nav-wrap"><a class="brand" href="/" aria-label="Instant Admirers"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a><nav aria-label="Navegación principal"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/perfiles/">Perfiles</a><a href="/?auth=login">Entrar</a><a class="nav-cta" href="/?auth=register&utm_source=seo&utm_medium=organic&utm_campaign=public-profiles">Crear cuenta</a></nav></div></header><main><section class="hero"><div class="hero-inner"><div class="breadcrumbs"><a href="/">Inicio</a><span>›</span><span>Perfiles</span></div><p class="eyebrow">Perfiles de Instant Admirers</p><h1>Tu próxima conexión puede estar aquí</h1><p class="hero-lead hub-intro">Descubre perfiles públicos y anfitriones virtuales identificados de Instant Admirers.</p></div></section><section class="hub-grid">${cards || '<div class="hub-card"><b>Muy pronto</b><p>Nuevos perfiles por descubrir.</p></div>'}</section></main><footer class="site-footer"><div class="footer-wrap"><div><b>Instant Admirers</b><p>Comunidad 18+ para conectar, compartir y descubrir perfiles e intereses.</p></div><div class="footer-links"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/privacy/">Privacidad</a><a href="/terms/">Términos</a></div></div></footer></body></html>`;
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0b12"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1"><title>${title}</title><meta name="description" content="${description}"><link rel="canonical" href="${APP_URL}/perfiles/"><link rel="icon" href="/favicon.ico" sizes="any"><script src="/theme.js?v=1.12.41"></script><link rel="stylesheet" href="/seo.css?v=1.12.41"><link rel="stylesheet" href="/theme.css?v=1.12.41"><style>.hub-card img{width:58px;height:58px;object-fit:cover;border-radius:50%;margin-bottom:10px}.hub-virtual-badge{display:inline-flex;width:max-content;margin:7px 0 1px;padding:4px 8px;border-radius:999px;background:rgba(124,60,255,.12);border:1px solid rgba(124,60,255,.35);color:#9a5dff;font-size:12px;font-style:normal;font-weight:800}</style><script type="application/ld+json">${JSON.stringify({'@context':'https://schema.org','@type':'CollectionPage',name:title,description,url:`${APP_URL}/perfiles/`,isPartOf:{'@type':'WebSite',name:'Instant Admirers',url:`${APP_URL}/`}}).replace(/</g,'\\u003c')}</script></head><body><header class="site-header"><div class="nav-wrap"><a class="brand" href="/" aria-label="Instant Admirers"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a><nav aria-label="Navegación principal"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/perfiles/">Perfiles</a><a href="/?auth=login">Entrar</a><a class="nav-cta" href="/?auth=register&utm_source=seo&utm_medium=organic&utm_campaign=public-profiles">Crear cuenta</a></nav></div></header><main><section class="hero"><div class="hero-inner"><div class="breadcrumbs"><a href="/">Inicio</a><span>›</span><span>Perfiles</span></div><p class="eyebrow">Perfiles de Instant Admirers</p><h1>Tu próxima conexión puede estar aquí</h1><p class="hero-lead hub-intro">Descubre perfiles públicos y anfitriones virtuales identificados de Instant Admirers.</p></div></section><section class="hub-grid">${cards || '<div class="hub-card"><b>Muy pronto</b><p>Nuevos perfiles por descubrir.</p></div>'}</section></main><footer class="site-footer"><div class="footer-wrap"><div><b>Instant Admirers</b><p>Comunidad 18+ para conectar, compartir y descubrir perfiles e intereses.</p></div><div class="footer-links"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/privacy/">Privacidad</a><a href="/terms/">Términos</a></div></div></footer></body></html>`;
 }
 
 function tokenDigest(raw='') { return crypto.createHash('sha256').update(String(raw)).digest('hex'); }
@@ -867,7 +867,7 @@ const virtualPackUpload = multer({
   }
 });
 
-// V1.12.40.1 · ZIP masivo en disco temporal. Evita cargar cientos de MB en RAM.
+// V1.12.41 · ZIP masivo en disco temporal. Evita cargar cientos de MB en RAM.
 const VIRTUAL_MASS_IMPORT_TMP = path.join(os.tmpdir(),'instant-admirers-mass-import');
 fs.mkdirSync(VIRTUAL_MASS_IMPORT_TMP,{recursive:true});
 const requestedVirtualMassZipMb = Number(process.env.MAX_VIRTUAL_MASS_ZIP_MB || 900);
@@ -1427,6 +1427,7 @@ async function cleanupMediaIfUnused(mediaId) {
        AND NOT EXISTS (SELECT 1 FROM posts p WHERE p.media_id=m.id)
        AND NOT EXISTS (SELECT 1 FROM stories s WHERE s.media_id=m.id)
        AND NOT EXISTS (SELECT 1 FROM messages msg WHERE msg.media_id=m.id)
+       AND NOT EXISTS (SELECT 1 FROM virtual_profile_media vpm WHERE vpm.media_id=m.id)
        AND NOT EXISTS (SELECT 1 FROM users u WHERE u.avatar=$2 OR u.cover=$2)
   `, [mediaId, localUrl]);
   const item = rows[0];
@@ -1934,7 +1935,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.12.40.1', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default','growth-public-teaser-profile','growth-teaser-media-lock','growth-teaser-signup-attribution','public-teaser-desktop-layout-fix','feed-full-image-fit','full-image-viewer','protected-image-lightbox','friend-gate-chat-lock','conversation-reply-continuity','chat-video-processing-refresh','chat-scroll-containment','chat-bottom-autoscroll','mobile-chat-composer-layout','mobile-chat-composer-viewport-fix','mobile-chat-active-header-compaction','direct-public-profile','direct-profile-media-lock','direct-profile-referral-attribution','public-profile-preview-control','seo-public-profiles','dynamic-profile-meta','profilepage-structured-data','profile-sitemap','public-profiles-hub','seo-profile-privacy-noindex','seo-navigation-cache-safety','visitor-theme-switcher','light-theme','dark-theme','theme-preference-persistence','light-theme-contrast-fix','light-sent-message-contrast-fix','sent-message-delete','message-delete-realtime','virtual-community','virtual-host-profiles','virtual-daily-activity','virtual-admin-inbox','virtual-admin-reply','virtual-profile-media-pools','virtual-profile-disclosure','virtual-profile-seo','virtual-profile-sitemap','virtual-profile-public-hub','virtual-profile-seo-disclosure','virtual-profile-dynamic-meta','profile-seo-hydration-preservation','virtual-profile-image-library','virtual-profile-image-tags','virtual-profile-image-usage-history','virtual-profile-image-auto-selection','virtual-profile-image-admin','virtual-profile-image-batch-upload','virtual-profile-image-pilot','virtual-profile-base-packs','virtual-profile-pack-auto-sync','virtual-profile-pack-status','virtual-realistic-pack-importer','virtual-mass-media-import','virtual-mass-zip-staging','virtual-mass-auto-assignment','virtual-mass-username-folder-fix','virtual-mass-preview','virtual-mass-progress','virtual-mass-history','virtual-mass-atomic-commit','virtual-mass-rollback','virtual-pack-zip-validation','virtual-pack-manifest-v1','virtual-pack-safe-replacement','virtual-pack-import-history','virtual-image-admin-preview-fix','virtual-profile-retire-fix','virtual-profile-cover-display-fix','virtual-profile-retire-transaction-fix','virtual-profile-cover-runtime-resolver','virtual-profile-cover-clean-avatar-fallback','virtual-profile-retire-failsafe','virtual-historical-post-media-relink','virtual-historical-story-media-relink','virtual-activity-2','virtual-activity-smart-schedule','virtual-activity-content-variety','virtual-activity-history','virtual-activity-weekend-mode','virtual-activity-text-photo-mix','virtual-interaction-2','virtual-interaction-smart-targeting','virtual-interaction-rate-limits','virtual-interaction-history','virtual-like-comment-follow','virtual-interaction-no-private-dm','virtual-interaction-ranking-safety','post-comment-previews','post-like-people','post-social-preview-batch','social-email-notifications','email-like-alerts','email-comment-alerts','email-connection-alerts','email-notification-preferences','virtual-interaction-email-alerts','activity-center-2','activity-grouped-likes','activity-unread-actions','activity-direct-targets','notification-comment-targets','virtual-notification-realtime','activity-person-like-grouping','activity-follower-grouping','activity-mobile-tools-scroll','activity-visual-polish','activity-count-labels','post-like-summary-spacing-fix','smart-email-digests','smart-email-inactive-recovery','social-email-online-suppression','social-email-rate-guard','smart-email-test','discover-2','discover-person-modes','discover-profile-rotation','discover-profile-dismissals','discover-location-mode','discover-content-diversity','discover-real-engagement-ranking','discover-adaptive-real-balance','discover-sidebar-dedupe','discover-carousel-controls','discover-mobile-density'] });
+  res.json({ ok: true, version: '1.12.41', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default','growth-public-teaser-profile','growth-teaser-media-lock','growth-teaser-signup-attribution','public-teaser-desktop-layout-fix','feed-full-image-fit','full-image-viewer','protected-image-lightbox','friend-gate-chat-lock','conversation-reply-continuity','chat-video-processing-refresh','chat-scroll-containment','chat-bottom-autoscroll','mobile-chat-composer-layout','mobile-chat-composer-viewport-fix','mobile-chat-active-header-compaction','direct-public-profile','direct-profile-media-lock','direct-profile-referral-attribution','public-profile-preview-control','seo-public-profiles','dynamic-profile-meta','profilepage-structured-data','profile-sitemap','public-profiles-hub','seo-profile-privacy-noindex','seo-navigation-cache-safety','visitor-theme-switcher','light-theme','dark-theme','theme-preference-persistence','light-theme-contrast-fix','light-sent-message-contrast-fix','sent-message-delete','message-delete-realtime','virtual-community','virtual-host-profiles','virtual-daily-activity','virtual-admin-inbox','virtual-admin-reply','virtual-profile-media-pools','virtual-profile-disclosure','virtual-profile-seo','virtual-profile-sitemap','virtual-profile-public-hub','virtual-profile-seo-disclosure','virtual-profile-dynamic-meta','profile-seo-hydration-preservation','virtual-profile-image-library','virtual-profile-image-tags','virtual-profile-image-usage-history','virtual-profile-image-auto-selection','virtual-profile-image-admin','virtual-profile-image-batch-upload','virtual-profile-image-pilot','virtual-profile-base-packs','virtual-profile-pack-auto-sync','virtual-profile-pack-status','virtual-realistic-pack-importer','virtual-mass-media-import','virtual-mass-zip-staging','virtual-mass-auto-assignment','virtual-mass-username-folder-fix','virtual-mass-preview','virtual-mass-progress','virtual-mass-history','virtual-mass-atomic-commit','virtual-mass-rollback','virtual-visual-manager-2','virtual-visual-single-replace','virtual-visual-post-reorder','virtual-visual-duplicate-detection','virtual-visual-change-history','virtual-visual-last-change-rollback','virtual-pack-zip-validation','virtual-pack-manifest-v1','virtual-pack-safe-replacement','virtual-pack-import-history','virtual-image-admin-preview-fix','virtual-profile-retire-fix','virtual-profile-cover-display-fix','virtual-profile-retire-transaction-fix','virtual-profile-cover-runtime-resolver','virtual-profile-cover-clean-avatar-fallback','virtual-profile-retire-failsafe','virtual-historical-post-media-relink','virtual-historical-story-media-relink','virtual-activity-2','virtual-activity-smart-schedule','virtual-activity-content-variety','virtual-activity-history','virtual-activity-weekend-mode','virtual-activity-text-photo-mix','virtual-interaction-2','virtual-interaction-smart-targeting','virtual-interaction-rate-limits','virtual-interaction-history','virtual-like-comment-follow','virtual-interaction-no-private-dm','virtual-interaction-ranking-safety','post-comment-previews','post-like-people','post-social-preview-batch','social-email-notifications','email-like-alerts','email-comment-alerts','email-connection-alerts','email-notification-preferences','virtual-interaction-email-alerts','activity-center-2','activity-grouped-likes','activity-unread-actions','activity-direct-targets','notification-comment-targets','virtual-notification-realtime','activity-person-like-grouping','activity-follower-grouping','activity-mobile-tools-scroll','activity-visual-polish','activity-count-labels','post-like-summary-spacing-fix','smart-email-digests','smart-email-inactive-recovery','social-email-online-suppression','social-email-rate-guard','smart-email-test','discover-2','discover-person-modes','discover-profile-rotation','discover-profile-dismissals','discover-location-mode','discover-content-diversity','discover-real-engagement-ranking','discover-adaptive-real-balance','discover-sidebar-dedupe','discover-carousel-controls','discover-mobile-density'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -4872,7 +4873,7 @@ app.get('/api/admin/virtual-community/realistic-pack-imports', auth, adminOnly, 
 }));
 
 
-// V1.12.40.1 · Importación masiva segura + resolución de carpetas por username.
+// V1.12.41 · Importación masiva segura + resolución de carpetas por username.
 // 1) upload -> 2) validación íntegra -> 3) staging remoto -> 4) preview -> 5) commit atómico.
 app.post('/api/admin/virtual-community/mass-imports', auth, adminOnly, virtualMassUpload.single('file'), asyncRoute(async (req,res) => {
   if(!req.file) return res.status(400).json({error:'Selecciona un ZIP con las fotos de los 100 perfiles.',code:'VIRTUAL_MASS_FILE_REQUIRED'});
@@ -5036,91 +5037,391 @@ app.patch('/api/admin/virtual-profiles/:userId', auth, adminOnly, asyncRoute(asy
   }
 }));
 
+function virtualPoolSnapshot(row={}) {
+  return {
+    id:Number(row.id||0),user_id:Number(row.user_id||0),media_id:Number(row.media_id||0),
+    label:String(row.label||''),kind:String(row.kind||'post'),tags:Array.isArray(row.tags)?row.tags:normalizeVirtualImageTags(row.tags||[]),
+    alt_text:String(row.alt_text||''),active:Boolean(row.active),featured:Boolean(row.featured),sort_order:Number(row.sort_order||0),
+    times_used:Number(row.times_used||0),last_used_at:row.last_used_at||null,archived_at:row.archived_at||null,
+    created_at:row.created_at||null,updated_at:row.updated_at||null
+  };
+}
+
+async function logVirtualVisualAction(client,{adminId,userId,actionType,poolId=null,mediaId=null,before={},after={},reversible=true}) {
+  const {rows}=await client.query(`
+    INSERT INTO virtual_visual_actions(admin_id,user_id,action_type,pool_id,media_id,before_state,after_state,reversible,status,created_at)
+    VALUES($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8,'applied',NOW()) RETURNING id
+  `,[Number(adminId),Number(userId),String(actionType||'change').slice(0,32),poolId?Number(poolId):null,mediaId?Number(mediaId):null,JSON.stringify(before||{}),JSON.stringify(after||{}),Boolean(reversible)]);
+  return Number(rows[0]?.id||0);
+}
+
+async function createVirtualManagerMedia({userId,file,adminId,sha256}) {
+  const meta={virtual:true,synthetic:true,uploaded_by_admin:Number(adminId),image_system:'1.12.41',visual_manager:true,visual_sha256:String(sha256||'')};
+  if(imageUploadConfigured()){
+    const uploaded=await uploadMediaBuffer(file.buffer,{mimeType:file.mimetype,originalName:file.originalname,userId,privateDelivery:true});
+    const inserted=await pool.query(`
+      INSERT INTO media(user_id,mime_type,original_name,size_bytes,data,provider,provider_id,secure_url,resource_type,delivery_type,width,height,duration_seconds,format,migrated_at,provider_status,provider_meta)
+      VALUES($1,$2,$3,$4,NULL,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),$14,$15::jsonb) RETURNING id
+    `,[userId,file.mimetype,file.originalname,uploaded.sizeBytes||file.size,uploaded.provider,uploaded.providerId,uploaded.secureUrl,uploaded.resourceType,uploaded.deliveryType||'',uploaded.width,uploaded.height,uploaded.durationSeconds,uploaded.format,uploaded.providerStatus||'ready',JSON.stringify(meta)]);
+    return {mediaId:Number(inserted.rows[0].id),sha256:String(sha256||'')};
+  }
+  const inserted=await pool.query(`
+    INSERT INTO media(user_id,mime_type,original_name,size_bytes,data,provider,provider_status,provider_meta,resource_type)
+    VALUES($1,$2,$3,$4,$5,'postgresql','ready',$6::jsonb,'image') RETURNING id
+  `,[userId,file.mimetype,file.originalname,file.size,file.buffer,JSON.stringify(meta)]);
+  return {mediaId:Number(inserted.rows[0].id),sha256:String(sha256||'')};
+}
+
+async function virtualHashDuplicate(userId,sha256,{excludePoolId=0}={}) {
+  if(!sha256) return null;
+  const {rows}=await pool.query(`
+    SELECT vpm.id,vpm.media_id,vpm.label
+      FROM virtual_profile_media vpm JOIN media m ON m.id=vpm.media_id
+     WHERE vpm.user_id=$1 AND vpm.active=TRUE AND vpm.archived_at IS NULL
+       AND vpm.id<>$2
+       AND COALESCE(NULLIF(m.provider_meta->>'visual_sha256',''),NULLIF(m.provider_meta->>'mass_import_sha256',''),NULLIF(m.provider_meta->>'realistic_sha256',''),'')=$3
+     ORDER BY vpm.id LIMIT 1
+  `,[Number(userId),Number(excludePoolId||0),String(sha256)]);
+  return rows[0]||null;
+}
+
+async function virtualVisualManagerPayload(userId,adminId) {
+  const found=await pool.query(`
+    SELECT u.id,u.username,u.name,u.avatar,u.cover,u.location,u.headline,vp.status
+      FROM users u LEFT JOIN virtual_profiles vp ON vp.user_id=u.id
+     WHERE u.id=$1 AND u.is_virtual=TRUE LIMIT 1
+  `,[Number(userId)]);
+  if(!found.rowCount) return null;
+  const profile=found.rows[0];
+  const rawItems=await listVirtualProfileMedia(pool,userId,{includeArchived:true});
+  const hashes=[...new Set(rawItems.map(x=>String(x.sha256||'')).filter(Boolean))];
+  const duplicateMap=new Map();
+  if(hashes.length){
+    const dups=await pool.query(`
+      WITH active_media AS (
+        SELECT vpm.id,vpm.user_id,vpm.media_id,u.username,
+               COALESCE(NULLIF(m.provider_meta->>'visual_sha256',''),NULLIF(m.provider_meta->>'mass_import_sha256',''),NULLIF(m.provider_meta->>'realistic_sha256',''),'') AS sha256
+          FROM virtual_profile_media vpm
+          JOIN media m ON m.id=vpm.media_id
+          JOIN users u ON u.id=vpm.user_id
+         WHERE u.is_virtual=TRUE AND vpm.active=TRUE AND vpm.archived_at IS NULL
+      )
+      SELECT sha256,COUNT(*)::int AS copies,COUNT(DISTINCT user_id)::int AS profiles,
+             jsonb_agg(jsonb_build_object('pool_id',id,'user_id',user_id,'username',username,'media_id',media_id) ORDER BY user_id,id) AS matches
+        FROM active_media
+       WHERE sha256=ANY($1::text[]) AND sha256<>''
+       GROUP BY sha256 HAVING COUNT(*)>1
+    `,[hashes]);
+    for(const row of dups.rows) duplicateMap.set(String(row.sha256),{copies:Number(row.copies||0),profiles:Number(row.profiles||0),matches:Array.isArray(row.matches)?row.matches:[]});
+  }
+  const avatarId=mediaIdFromStoredUrl(profile.avatar),coverId=mediaIdFromStoredUrl(profile.cover);
+  const items=rawItems.map(row=>{
+    const dup=duplicateMap.get(String(row.sha256||''));
+    return {...row,
+      id:Number(row.id),media_id:Number(row.media_id),post_refs:Number(row.post_refs||0),story_refs:Number(row.story_refs||0),
+      preview_url:adminMediaPreviewUrl(row.media_id,adminId),
+      is_current_avatar:Number(row.media_id)===Number(avatarId),is_current_cover:Number(row.media_id)===Number(coverId),
+      duplicate_count:dup?Math.max(0,Number(dup.copies)-1):0,duplicate_profiles:dup?Number(dup.profiles):0,duplicate_matches:dup?.matches||[]
+    };
+  });
+  const {rows:actions}=await pool.query(`
+    SELECT a.id,a.action_type,a.pool_id,a.media_id,a.reversible,a.status,a.created_at,a.reverted_at,
+           COALESCE(ad.username,'') AS admin_username,COALESCE(rv.username,'') AS reverted_by_username
+      FROM virtual_visual_actions a
+      LEFT JOIN users ad ON ad.id=a.admin_id LEFT JOIN users rv ON rv.id=a.reverted_by
+     WHERE a.user_id=$1 ORDER BY a.id DESC LIMIT 30
+  `,[Number(userId)]);
+  const latestApplied=(await pool.query(`
+    SELECT a.id,a.action_type,a.pool_id,a.media_id,a.reversible,a.status,a.created_at,a.reverted_at,
+           COALESCE(ad.username,'') AS admin_username
+      FROM virtual_visual_actions a LEFT JOIN users ad ON ad.id=a.admin_id
+     WHERE a.user_id=$1 AND a.status='applied' ORDER BY a.id DESC LIMIT 1
+  `,[Number(userId)])).rows[0]||null;
+  return {
+    profile:{...profile,id:Number(profile.id)},items,actions,
+    last_action:latestApplied,
+    summary:{
+      total:items.length,active:items.filter(x=>x.active&&!x.archived_at).length,archived:items.filter(x=>!x.active||x.archived_at).length,
+      post_images:items.filter(x=>x.active&&!x.archived_at&&x.kind==='post').length,
+      duplicate_images:items.filter(x=>x.active&&!x.archived_at&&Number(x.duplicate_count||0)>0).length,
+      post_refs:items.reduce((n,x)=>n+Number(x.post_refs||0),0),story_refs:items.reduce((n,x)=>n+Number(x.story_refs||0),0)
+    }
+  };
+}
+
+async function restoreVirtualPoolSnapshot(client,snap={}) {
+  if(!snap?.id) return 0;
+  const q=await client.query(`
+    UPDATE virtual_profile_media
+       SET label=$3,kind=$4,tags=$5::jsonb,alt_text=$6,active=$7,featured=$8,sort_order=$9,times_used=$10,
+           last_used_at=$11,archived_at=$12,updated_at=NOW()
+     WHERE id=$1 AND user_id=$2
+  `,[Number(snap.id),Number(snap.user_id),String(snap.label||''),safeVirtualImageKind(snap.kind||'post'),JSON.stringify(normalizeVirtualImageTags(snap.tags||[])),String(snap.alt_text||''),Boolean(snap.active),Boolean(snap.featured),Number(snap.sort_order||0),Number(snap.times_used||0),snap.last_used_at||null,snap.archived_at||null]);
+  return q.rowCount||0;
+}
+
+app.get('/api/admin/virtual-profiles/:userId/media', auth, adminOnly, asyncRoute(async (req,res) => {
+  const userId=Number(req.params.userId);
+  if(!Number.isSafeInteger(userId)||userId<=0) return res.status(400).json({error:'Perfil virtual inválido'});
+  const payload=await virtualVisualManagerPayload(userId,req.user.id);
+  if(!payload) return res.status(404).json({error:'Perfil virtual no encontrado'});
+  res.json(payload);
+}));
+
 app.post('/api/admin/virtual-profiles/:userId/media', auth, adminOnly, upload.single('file'), asyncRoute(async (req,res) => {
   const userId=Number(req.params.userId);
   if(!Number.isSafeInteger(userId)||userId<=0) return res.status(400).json({error:'Perfil virtual inválido'});
   if(!req.file) return res.status(400).json({error:'Falta una imagen'});
   if(!String(req.file.mimetype||'').startsWith('image/')) return res.status(400).json({error:'Solo se admiten imágenes en el pool del perfil virtual'});
   if(Number(req.file.size||0)>MAX_IMAGE_UPLOAD_BYTES) return res.status(413).json({error:'La imagen supera el límite de 10 MB'});
-  const target=await pool.query(`SELECT id,username,name FROM users WHERE id=$1 AND is_virtual=TRUE`,[userId]);
+  const target=await pool.query(`SELECT id,username,name,avatar,cover FROM users WHERE id=$1 AND is_virtual=TRUE`,[userId]);
   if(!target.rowCount) return res.status(404).json({error:'Perfil virtual no encontrado'});
+  const sha256=crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+  const duplicate=await virtualHashDuplicate(userId,sha256);
+  if(duplicate) return res.status(409).json({error:`Esta foto ya existe en el perfil (${duplicate.label||`imagen #${duplicate.id}`}).`,code:'VIRTUAL_VISUAL_DUPLICATE'});
   const kind=safeVirtualImageKind(req.body?.kind||((String(req.body?.use_as_avatar||'').toLowerCase()==='true')?'avatar':((String(req.body?.use_as_cover||'').toLowerCase()==='true')?'cover':'post')));
   const tags=normalizeVirtualImageTags(req.body?.tags||[]);
   const label=String(req.body?.label||req.file.originalname||'Foto').trim().slice(0,120);
   const altText=String(req.body?.alt_text||`${target.rows[0].name} · ${label}`).trim().slice(0,300);
   const featured=String(req.body?.featured||'').toLowerCase()==='true';
-  let mediaId;
-  if(imageUploadConfigured()){
-    const uploaded=await uploadMediaBuffer(req.file.buffer,{mimeType:req.file.mimetype,originalName:req.file.originalname,userId,privateDelivery:true});
-    const inserted=await pool.query(`INSERT INTO media(user_id,mime_type,original_name,size_bytes,data,provider,provider_id,secure_url,resource_type,delivery_type,width,height,duration_seconds,format,migrated_at,provider_status,provider_meta) VALUES($1,$2,$3,$4,NULL,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),$14,$15::jsonb) RETURNING id`,[userId,req.file.mimetype,req.file.originalname,uploaded.sizeBytes||req.file.size,uploaded.provider,uploaded.providerId,uploaded.secureUrl,uploaded.resourceType,uploaded.deliveryType||'',uploaded.width,uploaded.height,uploaded.durationSeconds,uploaded.format,uploaded.providerStatus||'ready',JSON.stringify({virtual:true,uploaded_by_admin:req.user.id,image_system:'1.12.30'})]);
-    mediaId=Number(inserted.rows[0].id);
-  }else{
-    const inserted=await pool.query(`INSERT INTO media(user_id,mime_type,original_name,size_bytes,data,provider,provider_status,provider_meta,resource_type) VALUES($1,$2,$3,$4,$5,'postgresql','ready',$6::jsonb,'image') RETURNING id`,[userId,req.file.mimetype,req.file.originalname,req.file.size,req.file.buffer,JSON.stringify({virtual:true,uploaded_by_admin:req.user.id,image_system:'1.12.30'})]);
-    mediaId=Number(inserted.rows[0].id);
+  let mediaId=0;
+  try{
+    mediaId=(await createVirtualManagerMedia({userId,file:req.file,adminId:req.user.id,sha256})).mediaId;
+    const result=await withTransaction(async client=>{
+      const currentUser=(await client.query(`SELECT id,avatar,cover FROM users WHERE id=$1 AND is_virtual=TRUE FOR UPDATE`,[userId])).rows[0];
+      if(!currentUser) throw Object.assign(new Error('Perfil virtual no encontrado'),{status:404});
+      let sortOrder=kind==='avatar'?0:kind==='cover'?1:100;
+      if(kind==='post'){
+        const seq=await client.query(`SELECT COALESCE(MAX(sort_order),0)::int AS max_order FROM virtual_profile_media WHERE user_id=$1 AND kind='post' AND active=TRUE AND archived_at IS NULL`,[userId]);
+        sortOrder=Math.max(10,Number(seq.rows[0]?.max_order||0)+10);
+      }
+      const pooled=await client.query(`
+        INSERT INTO virtual_profile_media(user_id,media_id,label,kind,tags,alt_text,active,featured,sort_order,updated_at)
+        VALUES($1,$2,$3,$4,$5::jsonb,$6,TRUE,$7,$8,NOW()) RETURNING *
+      `,[userId,mediaId,label,kind,JSON.stringify(tags),altText,featured,sortOrder]);
+      const useAvatar=kind==='avatar'||String(req.body?.use_as_avatar||'').toLowerCase()==='true';
+      const useCover=kind==='cover'||String(req.body?.use_as_cover||'').toLowerCase()==='true';
+      if(useAvatar) await client.query(`UPDATE users SET avatar=$2 WHERE id=$1`,[userId,`/media/${mediaId}`]);
+      if(useCover) await client.query(`UPDATE users SET cover=$2 WHERE id=$1`,[userId,`/media/${mediaId}`]);
+      const before={avatar:currentUser.avatar,cover:currentUser.cover};
+      const after={pool:virtualPoolSnapshot(pooled.rows[0]),avatar:useAvatar?`/media/${mediaId}`:currentUser.avatar,cover:useCover?`/media/${mediaId}`:currentUser.cover};
+      const actionId=await logVirtualVisualAction(client,{adminId:req.user.id,userId,actionType:'upload',poolId:pooled.rows[0].id,mediaId,before,after,reversible:true});
+      return {poolItem:pooled.rows[0],actionId};
+    });
+    await pool.query(`INSERT INTO moderation_actions(admin_id,action,target_user_id,note) VALUES($1,'virtual_visual_upload',$2,$3)`,[req.user.id,userId,JSON.stringify({media_id:mediaId,pool_id:result.poolItem.id,kind,sha256}).slice(0,1000)]).catch(()=>{});
+    io.to('admins').emit('virtual-community:update',{type:'visual-upload',user_id:userId});
+    res.json({ok:true,media_id:mediaId,pool_item:result.poolItem,action_id:result.actionId});
+  }catch(err){
+    if(mediaId) await cleanupMediaIfUnused(mediaId).catch(()=>{});
+    throw err;
   }
-  const pooled=await pool.query(`
-    INSERT INTO virtual_profile_media(user_id,media_id,label,kind,tags,alt_text,active,featured,sort_order,updated_at)
-    VALUES($1,$2,$3,$4,$5::jsonb,$6,TRUE,$7,100,NOW())
-    ON CONFLICT(user_id,media_id) DO UPDATE SET label=EXCLUDED.label,kind=EXCLUDED.kind,tags=EXCLUDED.tags,alt_text=EXCLUDED.alt_text,active=TRUE,featured=EXCLUDED.featured,archived_at=NULL,updated_at=NOW()
-    RETURNING *
-  `,[userId,mediaId,label,kind,JSON.stringify(tags),altText,featured]);
-  if(kind==='avatar'||String(req.body?.use_as_avatar||'').toLowerCase()==='true') await pool.query(`UPDATE users SET avatar=$2 WHERE id=$1`,[userId,`/media/${mediaId}`]);
-  if(kind==='cover'||String(req.body?.use_as_cover||'').toLowerCase()==='true') await pool.query(`UPDATE users SET cover=$2 WHERE id=$1`,[userId,`/media/${mediaId}`]);
-  await pool.query(`INSERT INTO moderation_actions(admin_id,action,target_user_id,note) VALUES($1,'virtual_image_upload',$2,$3)`,[req.user.id,userId,JSON.stringify({media_id:mediaId,kind,tags,label}).slice(0,1000)]);
-  res.json({ok:true,media_id:mediaId,pool_item:pooled.rows[0]});
+}));
+
+app.post('/api/admin/virtual-profiles/:userId/media/reorder', auth, adminOnly, asyncRoute(async (req,res) => {
+  const userId=Number(req.params.userId);
+  const poolIds=Array.isArray(req.body?.pool_ids)?req.body.pool_ids.map(Number).filter(Number.isSafeInteger):[];
+  if(!Number.isSafeInteger(userId)||userId<=0||!poolIds.length) return res.status(400).json({error:'Orden de imágenes no válido'});
+  if(new Set(poolIds).size!==poolIds.length) return res.status(400).json({error:'El orden contiene imágenes repetidas'});
+  const result=await withTransaction(async client=>{
+    const rows=(await client.query(`SELECT * FROM virtual_profile_media WHERE user_id=$1 AND kind='post' AND active=TRUE AND archived_at IS NULL ORDER BY sort_order,id FOR UPDATE`,[userId])).rows;
+    const currentIds=rows.map(x=>Number(x.id));
+    if(currentIds.length!==poolIds.length||currentIds.some(id=>!poolIds.includes(id))) throw Object.assign(new Error('La secuencia cambió. Recarga el editor antes de reordenar.'),{status:409});
+    const before={orders:rows.map(x=>({id:Number(x.id),sort_order:Number(x.sort_order||0)}))};
+    for(let i=0;i<poolIds.length;i++) await client.query(`UPDATE virtual_profile_media SET sort_order=$3,updated_at=NOW() WHERE id=$1 AND user_id=$2`,[poolIds[i],userId,10+(i*10)]);
+    const after={orders:poolIds.map((id,i)=>({id,sort_order:10+(i*10)}))};
+    const actionId=await logVirtualVisualAction(client,{adminId:req.user.id,userId,actionType:'reorder_posts',before,after,reversible:true});
+    return {actionId};
+  });
+  io.to('admins').emit('virtual-community:update',{type:'visual-reorder',user_id:userId});
+  res.json({ok:true,action_id:result.actionId});
+}));
+
+app.post('/api/admin/virtual-profiles/:userId/media/:poolId/replace', auth, adminOnly, upload.single('file'), asyncRoute(async (req,res) => {
+  const userId=Number(req.params.userId),poolId=Number(req.params.poolId);
+  if(!Number.isSafeInteger(userId)||!Number.isSafeInteger(poolId)||userId<=0||poolId<=0) return res.status(400).json({error:'Imagen virtual inválida'});
+  if(!req.file||!String(req.file.mimetype||'').startsWith('image/')) return res.status(400).json({error:'Selecciona una imagen válida'});
+  if(Number(req.file.size||0)>MAX_IMAGE_UPLOAD_BYTES) return res.status(413).json({error:'La imagen supera el límite de 10 MB'});
+  const sha256=crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+  const oldCheck=await pool.query(`
+    SELECT vpm.*,m.provider_meta,u.name,u.username
+      FROM virtual_profile_media vpm JOIN media m ON m.id=vpm.media_id JOIN users u ON u.id=vpm.user_id
+     WHERE vpm.id=$1 AND vpm.user_id=$2 AND u.is_virtual=TRUE LIMIT 1
+  `,[poolId,userId]);
+  if(!oldCheck.rowCount) return res.status(404).json({error:'Imagen no encontrada'});
+  const oldHash=String(oldCheck.rows[0].provider_meta?.visual_sha256||oldCheck.rows[0].provider_meta?.mass_import_sha256||oldCheck.rows[0].provider_meta?.realistic_sha256||'');
+  if(oldHash&&oldHash===sha256) return res.status(409).json({error:'La nueva imagen es exactamente igual a la actual.',code:'VIRTUAL_VISUAL_SAME_IMAGE'});
+  const duplicate=await virtualHashDuplicate(userId,sha256,{excludePoolId:poolId});
+  if(duplicate) return res.status(409).json({error:`La nueva foto ya existe en este perfil (${duplicate.label||`imagen #${duplicate.id}`}).`,code:'VIRTUAL_VISUAL_DUPLICATE'});
+  const relinkHistory=String(req.body?.relink_history??'true').toLowerCase()!=='false';
+  const archiveOld=String(req.body?.archive_old??'true').toLowerCase()!=='false';
+  let mediaId=0;
+  try{
+    mediaId=(await createVirtualManagerMedia({userId,file:req.file,adminId:req.user.id,sha256})).mediaId;
+    const result=await withTransaction(async client=>{
+      const old=(await client.query(`SELECT vpm.*,u.avatar,u.cover FROM virtual_profile_media vpm JOIN users u ON u.id=vpm.user_id WHERE vpm.id=$1 AND vpm.user_id=$2 AND u.is_virtual=TRUE FOR UPDATE`,[poolId,userId])).rows[0];
+      if(!old) throw Object.assign(new Error('Imagen no encontrada'),{status:404});
+      const posts=(await client.query(`SELECT id FROM posts WHERE user_id=$1 AND media_id=$2 ORDER BY id FOR UPDATE`,[userId,Number(old.media_id)])).rows.map(x=>Number(x.id));
+      const stories=(await client.query(`SELECT id FROM stories WHERE user_id=$1 AND media_id=$2 ORDER BY id FOR UPDATE`,[userId,Number(old.media_id)])).rows.map(x=>Number(x.id));
+      const before={pool:virtualPoolSnapshot(old),avatar:old.avatar,cover:old.cover,post_ids:posts,story_ids:stories};
+      const label=String(req.body?.label||old.label||req.file.originalname||'Foto').trim().slice(0,120);
+      const altText=String(req.body?.alt_text||old.alt_text||`${oldCheck.rows[0].name} · ${label}`).trim().slice(0,300);
+      const inserted=await client.query(`
+        INSERT INTO virtual_profile_media(user_id,media_id,label,kind,tags,alt_text,active,featured,sort_order,times_used,last_used_at,updated_at)
+        VALUES($1,$2,$3,$4,$5::jsonb,$6,TRUE,$7,$8,$9,$10,NOW()) RETURNING *
+      `,[userId,mediaId,label,safeVirtualImageKind(old.kind),JSON.stringify(normalizeVirtualImageTags(old.tags||[])),altText,Boolean(old.featured),Number(old.sort_order||100),Number(old.times_used||0),old.last_used_at||null]);
+      const newPool=inserted.rows[0];
+      const oldUrl=`/media/${Number(old.media_id)}`,newUrl=`/media/${mediaId}`;
+      let avatar=old.avatar,cover=old.cover;
+      if(String(old.avatar||'')===oldUrl){avatar=newUrl;await client.query(`UPDATE users SET avatar=$2 WHERE id=$1`,[userId,newUrl]);}
+      if(String(old.cover||'')===oldUrl){cover=newUrl;await client.query(`UPDATE users SET cover=$2 WHERE id=$1`,[userId,newUrl]);}
+      let postRefs=0,storyRefs=0;
+      if(relinkHistory&&posts.length){const q=await client.query(`UPDATE posts SET media_id=$2 WHERE user_id=$1 AND id=ANY($3::bigint[]) AND media_id=$4`,[userId,mediaId,posts,Number(old.media_id)]);postRefs=q.rowCount||0;}
+      if(relinkHistory&&stories.length){const q=await client.query(`UPDATE stories SET media_id=$2 WHERE user_id=$1 AND id=ANY($3::bigint[]) AND media_id=$4`,[userId,mediaId,stories,Number(old.media_id)]);storyRefs=q.rowCount||0;}
+      if(relinkHistory&&(posts.length||stories.length)){
+        await client.query(`
+          UPDATE virtual_profile_media_usage
+             SET virtual_profile_media_id=$3
+           WHERE user_id=$1 AND virtual_profile_media_id=$2
+             AND ((post_id IS NOT NULL AND post_id=ANY($4::bigint[])) OR (story_id IS NOT NULL AND story_id=ANY($5::bigint[])))
+        `,[userId,poolId,Number(newPool.id),posts,stories]);
+      }
+      if(archiveOld) await client.query(`UPDATE virtual_profile_media SET active=FALSE,archived_at=COALESCE(archived_at,NOW()),updated_at=NOW() WHERE id=$1 AND user_id=$2`,[poolId,userId]);
+      const after={new_pool:virtualPoolSnapshot(newPool),new_pool_id:Number(newPool.id),new_media_id:mediaId,old_pool_id:poolId,old_media_id:Number(old.media_id),avatar,cover,relink_history:relinkHistory,post_refs:postRefs,story_refs:storyRefs,old_archived:archiveOld};
+      const actionId=await logVirtualVisualAction(client,{adminId:req.user.id,userId,actionType:'replace',poolId,mediaId,before,after,reversible:true});
+      return {actionId,newPoolId:Number(newPool.id),postRefs,storyRefs};
+    });
+    await pool.query(`INSERT INTO moderation_actions(admin_id,action,target_user_id,note) VALUES($1,'virtual_visual_replace',$2,$3)`,[req.user.id,userId,JSON.stringify({pool_id:poolId,new_media_id:mediaId,sha256,relink_history:relinkHistory,post_refs:result.postRefs,story_refs:result.storyRefs}).slice(0,1000)]).catch(()=>{});
+    io.to('admins').emit('virtual-community:update',{type:'visual-replace',user_id:userId});
+    res.json({ok:true,action_id:result.actionId,new_pool_id:result.newPoolId,media_id:mediaId,post_refs:result.postRefs,story_refs:result.storyRefs});
+  }catch(err){
+    if(mediaId) await cleanupMediaIfUnused(mediaId).catch(()=>{});
+    throw err;
+  }
 }));
 
 app.patch('/api/admin/virtual-profiles/:userId/media/:poolId', auth, adminOnly, asyncRoute(async (req,res) => {
   const userId=Number(req.params.userId),poolId=Number(req.params.poolId);
   if(!Number.isSafeInteger(userId)||!Number.isSafeInteger(poolId)||userId<=0||poolId<=0) return res.status(400).json({error:'Imagen virtual inválida'});
-  const current=await pool.query(`SELECT * FROM virtual_profile_media WHERE id=$1 AND user_id=$2`,[poolId,userId]);
-  if(!current.rowCount) return res.status(404).json({error:'Imagen no encontrada'});
-  const row=current.rows[0];
-  const kind=req.body?.kind===undefined?row.kind:safeVirtualImageKind(req.body.kind);
-  const tags=req.body?.tags===undefined?(Array.isArray(row.tags)?row.tags:[]):normalizeVirtualImageTags(req.body.tags);
-  const label=req.body?.label===undefined?row.label:String(req.body.label||'').trim().slice(0,120);
-  const altText=req.body?.alt_text===undefined?row.alt_text:String(req.body.alt_text||'').trim().slice(0,300);
-  const featured=req.body?.featured===undefined?Boolean(row.featured):Boolean(req.body.featured);
-  const active=req.body?.active===undefined?Boolean(row.active):Boolean(req.body.active);
-  const sortOrder=req.body?.sort_order===undefined?Number(row.sort_order||100):Math.max(0,Math.min(10000,Number(req.body.sort_order)||0));
-  const {rows}=await pool.query(`UPDATE virtual_profile_media SET label=$3,kind=$4,tags=$5::jsonb,alt_text=$6,featured=$7,active=$8,sort_order=$9,archived_at=CASE WHEN $8 THEN NULL ELSE archived_at END,updated_at=NOW() WHERE id=$1 AND user_id=$2 RETURNING *`,[poolId,userId,label,kind,JSON.stringify(tags),altText,featured,active,sortOrder]);
-  res.json({ok:true,item:rows[0]});
+  const result=await withTransaction(async client=>{
+    const current=await client.query(`SELECT * FROM virtual_profile_media WHERE id=$1 AND user_id=$2 FOR UPDATE`,[poolId,userId]);
+    if(!current.rowCount) throw Object.assign(new Error('Imagen no encontrada'),{status:404});
+    const row=current.rows[0],before=virtualPoolSnapshot(row);
+    const kind=req.body?.kind===undefined?row.kind:safeVirtualImageKind(req.body.kind);
+    const tags=req.body?.tags===undefined?(Array.isArray(row.tags)?row.tags:[]):normalizeVirtualImageTags(req.body.tags);
+    const label=req.body?.label===undefined?row.label:String(req.body.label||'').trim().slice(0,120);
+    const altText=req.body?.alt_text===undefined?row.alt_text:String(req.body.alt_text||'').trim().slice(0,300);
+    const featured=req.body?.featured===undefined?Boolean(row.featured):Boolean(req.body.featured);
+    const active=req.body?.active===undefined?Boolean(row.active):Boolean(req.body.active);
+    const sortOrder=req.body?.sort_order===undefined?Number(row.sort_order||100):Math.max(0,Math.min(10000,Number(req.body.sort_order)||0));
+    const {rows}=await client.query(`UPDATE virtual_profile_media SET label=$3,kind=$4,tags=$5::jsonb,alt_text=$6,featured=$7,active=$8,sort_order=$9,archived_at=CASE WHEN $8 THEN NULL ELSE COALESCE(archived_at,NOW()) END,updated_at=NOW() WHERE id=$1 AND user_id=$2 RETURNING *`,[poolId,userId,label,kind,JSON.stringify(tags),altText,featured,active,sortOrder]);
+    const after=virtualPoolSnapshot(rows[0]);
+    const changed=JSON.stringify(before)!==JSON.stringify(after);
+    const actionType=!before.active&&after.active?'restore':before.active&&!after.active?'archive':'edit_metadata';
+    const actionId=changed?await logVirtualVisualAction(client,{adminId:req.user.id,userId,actionType,poolId,mediaId:Number(row.media_id),before:{pool:before},after:{pool:after},reversible:true}):0;
+    return {item:rows[0],actionId};
+  });
+  res.json({ok:true,item:result.item,action_id:result.actionId});
 }));
 
 app.post('/api/admin/virtual-profiles/:userId/media/:poolId/use', auth, adminOnly, asyncRoute(async (req,res) => {
   const userId=Number(req.params.userId),poolId=Number(req.params.poolId);
   const role=String(req.body?.role||'').toLowerCase();
   if(!['avatar','cover'].includes(role)) return res.status(400).json({error:'Uso de imagen no válido'});
-  const found=await pool.query(`SELECT vpm.id,vpm.media_id FROM virtual_profile_media vpm JOIN users u ON u.id=vpm.user_id WHERE vpm.id=$1 AND vpm.user_id=$2 AND u.is_virtual=TRUE`,[poolId,userId]);
-  if(!found.rowCount) return res.status(404).json({error:'Imagen no encontrada'});
-  const mediaId=Number(found.rows[0].media_id);
-  await withTransaction(async client=>{
-    await client.query(`UPDATE virtual_profile_media SET kind=$3,active=TRUE,archived_at=NULL,updated_at=NOW() WHERE id=$1 AND user_id=$2`,[poolId,userId,role]);
+  const result=await withTransaction(async client=>{
+    const found=await client.query(`SELECT vpm.*,u.avatar,u.cover FROM virtual_profile_media vpm JOIN users u ON u.id=vpm.user_id WHERE vpm.id=$1 AND vpm.user_id=$2 AND u.is_virtual=TRUE FOR UPDATE`,[poolId,userId]);
+    if(!found.rowCount) throw Object.assign(new Error('Imagen no encontrada'),{status:404});
+    const row=found.rows[0],mediaId=Number(row.media_id),before={pool:virtualPoolSnapshot(row),avatar:row.avatar,cover:row.cover};
+    const updated=(await client.query(`UPDATE virtual_profile_media SET kind=$3,active=TRUE,archived_at=NULL,updated_at=NOW() WHERE id=$1 AND user_id=$2 RETURNING *`,[poolId,userId,role])).rows[0];
     await client.query(`UPDATE users SET ${role}=$2 WHERE id=$1 AND is_virtual=TRUE`,[userId,`/media/${mediaId}`]);
+    const after={pool:virtualPoolSnapshot(updated),avatar:role==='avatar'?`/media/${mediaId}`:row.avatar,cover:role==='cover'?`/media/${mediaId}`:row.cover};
+    const actionId=await logVirtualVisualAction(client,{adminId:req.user.id,userId,actionType:role==='avatar'?'set_avatar':'set_cover',poolId,mediaId,before,after,reversible:true});
+    return {mediaId,actionId};
   });
-  res.json({ok:true,role,media_id:mediaId});
+  io.to('admins').emit('virtual-community:update',{type:`visual-${role}`,user_id:userId});
+  res.json({ok:true,role,media_id:result.mediaId,action_id:result.actionId});
 }));
 
 app.post('/api/admin/virtual-profiles/:userId/media/:poolId/archive', auth, adminOnly, asyncRoute(async (req,res) => {
   const userId=Number(req.params.userId),poolId=Number(req.params.poolId);
-  const found=await pool.query(`SELECT vpm.media_id,u.avatar,u.cover FROM virtual_profile_media vpm JOIN users u ON u.id=vpm.user_id WHERE vpm.id=$1 AND vpm.user_id=$2 AND u.is_virtual=TRUE`,[poolId,userId]);
-  if(!found.rowCount) return res.status(404).json({error:'Imagen no encontrada'});
-  const localUrl=`/media/${found.rows[0].media_id}`;
-  if(found.rows[0].avatar===localUrl||found.rows[0].cover===localUrl) return res.status(409).json({error:'No puedes archivar el avatar o la portada actuales. Elige otra imagen primero.'});
-  await pool.query(`UPDATE virtual_profile_media SET active=FALSE,archived_at=NOW(),updated_at=NOW() WHERE id=$1 AND user_id=$2`,[poolId,userId]);
-  res.json({ok:true});
+  const result=await withTransaction(async client=>{
+    const found=await client.query(`SELECT vpm.*,u.avatar,u.cover FROM virtual_profile_media vpm JOIN users u ON u.id=vpm.user_id WHERE vpm.id=$1 AND vpm.user_id=$2 AND u.is_virtual=TRUE FOR UPDATE`,[poolId,userId]);
+    if(!found.rowCount) throw Object.assign(new Error('Imagen no encontrada'),{status:404});
+    const row=found.rows[0],localUrl=`/media/${row.media_id}`;
+    if(row.avatar===localUrl||row.cover===localUrl) throw Object.assign(new Error('No puedes archivar el avatar o la portada actuales. Elige otra imagen primero.'),{status:409});
+    const before=virtualPoolSnapshot(row);
+    const updated=(await client.query(`UPDATE virtual_profile_media SET active=FALSE,archived_at=COALESCE(archived_at,NOW()),updated_at=NOW() WHERE id=$1 AND user_id=$2 RETURNING *`,[poolId,userId])).rows[0];
+    const actionId=await logVirtualVisualAction(client,{adminId:req.user.id,userId,actionType:'archive',poolId,mediaId:Number(row.media_id),before:{pool:before},after:{pool:virtualPoolSnapshot(updated)},reversible:true});
+    return {actionId};
+  });
+  res.json({ok:true,action_id:result.actionId});
 }));
 
 app.delete('/api/admin/virtual-profiles/:userId/media/:poolId', auth, adminOnly, asyncRoute(async (req,res) => {
   const userId=Number(req.params.userId),poolId=Number(req.params.poolId);
-  const found=await pool.query(`SELECT vpm.media_id,u.avatar,u.cover FROM virtual_profile_media vpm JOIN users u ON u.id=vpm.user_id WHERE vpm.id=$1 AND vpm.user_id=$2 AND u.is_virtual=TRUE`,[poolId,userId]);
-  if(!found.rowCount) return res.status(404).json({error:'Imagen no encontrada'});
-  const mediaId=Number(found.rows[0].media_id),localUrl=`/media/${mediaId}`;
-  if(found.rows[0].avatar===localUrl||found.rows[0].cover===localUrl) return res.status(409).json({error:'No puedes borrar el avatar o la portada actuales. Elige otra imagen primero.'});
-  await pool.query(`DELETE FROM virtual_profile_media WHERE id=$1 AND user_id=$2`,[poolId,userId]);
-  await cleanupMediaIfUnused(mediaId);
-  res.json({ok:true});
+  const result=await withTransaction(async client=>{
+    const found=await client.query(`SELECT vpm.*,u.avatar,u.cover FROM virtual_profile_media vpm JOIN users u ON u.id=vpm.user_id WHERE vpm.id=$1 AND vpm.user_id=$2 AND u.is_virtual=TRUE FOR UPDATE`,[poolId,userId]);
+    if(!found.rowCount) throw Object.assign(new Error('Imagen no encontrada'),{status:404});
+    const row=found.rows[0],mediaId=Number(row.media_id),localUrl=`/media/${mediaId}`;
+    if(row.avatar===localUrl||row.cover===localUrl) throw Object.assign(new Error('No puedes borrar el avatar o la portada actuales. Elige otra imagen primero.'),{status:409});
+    if(Boolean(row.active)&&!row.archived_at) throw Object.assign(new Error('Por seguridad, archiva primero la imagen antes de borrarla definitivamente.'),{status:409});
+    await client.query(`DELETE FROM virtual_profile_media WHERE id=$1 AND user_id=$2`,[poolId,userId]);
+    const actionId=await logVirtualVisualAction(client,{adminId:req.user.id,userId,actionType:'delete',poolId,mediaId,before:{pool:virtualPoolSnapshot(row)},after:{deleted:true},reversible:false});
+    return {mediaId,actionId};
+  });
+  await cleanupMediaIfUnused(result.mediaId);
+  res.json({ok:true,action_id:result.actionId});
 }));
+
+app.post('/api/admin/virtual-profiles/:userId/visual-actions/:actionId/rollback', auth, adminOnly, asyncRoute(async (req,res) => {
+  const userId=Number(req.params.userId),actionId=Number(req.params.actionId);
+  if(!Number.isSafeInteger(userId)||!Number.isSafeInteger(actionId)||userId<=0||actionId<=0) return res.status(400).json({error:'Cambio visual inválido'});
+  const result=await withTransaction(async client=>{
+    const latest=(await client.query(`SELECT * FROM virtual_visual_actions WHERE user_id=$1 AND status='applied' ORDER BY id DESC LIMIT 1 FOR UPDATE`,[userId])).rows[0];
+    if(!latest) throw Object.assign(new Error('No hay cambios pendientes de deshacer.'),{status:409});
+    if(Number(latest.id)!==actionId) throw Object.assign(new Error('Solo se puede deshacer el último cambio aplicado. Recarga el editor.'),{status:409});
+    if(!latest.reversible) throw Object.assign(new Error('El último cambio no es reversible.'),{status:409});
+    const before=latest.before_state||{},after=latest.after_state||{},type=String(latest.action_type||'');
+    let restoredRefs=0;
+    if(['edit_metadata','archive','restore'].includes(type)){
+      await restoreVirtualPoolSnapshot(client,before.pool||{});
+    }else if(type==='set_avatar'||type==='set_cover'){
+      await restoreVirtualPoolSnapshot(client,before.pool||{});
+      await client.query(`UPDATE users SET avatar=$2,cover=$3 WHERE id=$1 AND is_virtual=TRUE`,[userId,String(before.avatar||''),String(before.cover||'')]);
+    }else if(type==='reorder_posts'){
+      const orders=Array.isArray(before.orders)?before.orders:[];
+      for(const item of orders) await client.query(`UPDATE virtual_profile_media SET sort_order=$3,updated_at=NOW() WHERE id=$1 AND user_id=$2`,[Number(item.id),userId,Number(item.sort_order||0)]);
+    }else if(type==='replace'){
+      await restoreVirtualPoolSnapshot(client,before.pool||{});
+      await client.query(`UPDATE users SET avatar=$2,cover=$3 WHERE id=$1 AND is_virtual=TRUE`,[userId,String(before.avatar||''),String(before.cover||'')]);
+      const oldMedia=Number(before.pool?.media_id||after.old_media_id||0),newMedia=Number(after.new_media_id||latest.media_id||0);
+      const postIds=Array.isArray(before.post_ids)?before.post_ids.map(Number).filter(Boolean):[];
+      const storyIds=Array.isArray(before.story_ids)?before.story_ids.map(Number).filter(Boolean):[];
+      if(oldMedia&&newMedia&&postIds.length){const q=await client.query(`UPDATE posts SET media_id=$2 WHERE user_id=$1 AND id=ANY($3::bigint[]) AND media_id=$4`,[userId,oldMedia,postIds,newMedia]);restoredRefs+=q.rowCount||0;}
+      if(oldMedia&&newMedia&&storyIds.length){const q=await client.query(`UPDATE stories SET media_id=$2 WHERE user_id=$1 AND id=ANY($3::bigint[]) AND media_id=$4`,[userId,oldMedia,storyIds,newMedia]);restoredRefs+=q.rowCount||0;}
+      if(after.new_pool_id&&(postIds.length||storyIds.length)){
+        await client.query(`
+          UPDATE virtual_profile_media_usage
+             SET virtual_profile_media_id=$3
+           WHERE user_id=$1 AND virtual_profile_media_id=$2
+             AND ((post_id IS NOT NULL AND post_id=ANY($4::bigint[])) OR (story_id IS NOT NULL AND story_id=ANY($5::bigint[])))
+        `,[userId,Number(after.new_pool_id),Number(before.pool?.id||latest.pool_id||0),postIds,storyIds]);
+      }
+      if(after.new_pool_id) await client.query(`UPDATE virtual_profile_media SET active=FALSE,archived_at=COALESCE(archived_at,NOW()),updated_at=NOW() WHERE id=$1 AND user_id=$2`,[Number(after.new_pool_id),userId]);
+    }else if(type==='upload'){
+      await client.query(`UPDATE users SET avatar=$2,cover=$3 WHERE id=$1 AND is_virtual=TRUE`,[userId,String(before.avatar||''),String(before.cover||'')]);
+      const newPoolId=Number(after.pool?.id||latest.pool_id||0);
+      if(newPoolId) await client.query(`UPDATE virtual_profile_media SET active=FALSE,archived_at=COALESCE(archived_at,NOW()),updated_at=NOW() WHERE id=$1 AND user_id=$2`,[newPoolId,userId]);
+    }else{
+      throw Object.assign(new Error(`Este tipo de cambio no admite rollback (${type}).`),{status:409});
+    }
+    await client.query(`UPDATE virtual_visual_actions SET status='reverted',reverted_at=NOW(),reverted_by=$2 WHERE id=$1`,[actionId,req.user.id]);
+    return {type,restoredRefs};
+  });
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,target_user_id,note) VALUES($1,'virtual_visual_rollback',$2,$3)`,[req.user.id,userId,JSON.stringify({visual_action_id:actionId,action_type:result.type,restored_refs:result.restoredRefs}).slice(0,1000)]).catch(()=>{});
+  io.to('admins').emit('virtual-community:update',{type:'visual-rollback',user_id:userId});
+  res.json({ok:true,action_type:result.type,restored_refs:result.restoredRefs});
+}));
+
 
 app.get('/api/admin/virtual-conversations/:id/messages', auth, adminOnly, asyncRoute(async (req,res) => {
   const conversationId=Number(req.params.id);
@@ -5827,7 +6128,7 @@ async function hardenLegacyCloudinaryMedia() {
 
 async function start() {
   await initDb();
-  await recoverInterruptedMassImports(pool).then(n=>{if(n)console.log(`V1.12.40.1: ${n} importación(es) masiva(s) interrumpida(s) marcadas para reintento.`);}).catch(err=>console.error('Recuperación importador masivo:',err.message));
+  await recoverInterruptedMassImports(pool).then(n=>{if(n)console.log(`V1.12.41: ${n} importación(es) masiva(s) interrumpida(s) marcadas para reintento.`);}).catch(err=>console.error('Recuperación importador masivo:',err.message));
   await syncSystemAccounts();
   await repairLegacyVirtualCoverFrames().catch(err => console.error('V1.12.30 reparación de portadas virtuales:',err.message));
   await syncPilotVirtualImages(pool).catch(err => console.error('Virtual Profile Image System pilot:',err.message));
@@ -5835,7 +6136,7 @@ async function start() {
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
   await pool.query(`DELETE FROM smart_email_log WHERE sent_at < NOW()-INTERVAL '120 days'`).catch(err => console.error('Limpieza smart_email_log:',err.message));
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Instant Admirers V1.12.40.1 en http://localhost:${PORT}`);
+    console.log(`Instant Admirers V1.12.41 en http://localhost:${PORT}`);
     void hardenLegacyCloudinaryMedia().catch(err => console.error('Protección multimedia heredada:', err.message));
     void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message));
     const bunnyStatusTimer=setInterval(() => void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message)),30000);

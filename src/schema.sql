@@ -962,3 +962,23 @@ CREATE TABLE IF NOT EXISTS virtual_media_import_refs (
   UNIQUE(job_id,ref_type,ref_id)
 );
 CREATE INDEX IF NOT EXISTS idx_virtual_media_import_refs_job ON virtual_media_import_refs(job_id,user_id);
+
+-- V1.12.41: Gestión visual de perfiles virtuales 2.0.
+-- Historial reversible para cambios individuales en la biblioteca visual.
+CREATE TABLE IF NOT EXISTS virtual_visual_actions (
+  id BIGSERIAL PRIMARY KEY,
+  admin_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  action_type VARCHAR(32) NOT NULL,
+  pool_id BIGINT,
+  media_id BIGINT REFERENCES media(id) ON DELETE SET NULL,
+  before_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+  after_state JSONB NOT NULL DEFAULT '{}'::jsonb,
+  reversible BOOLEAN NOT NULL DEFAULT TRUE,
+  status VARCHAR(20) NOT NULL DEFAULT 'applied' CHECK (status IN ('applied','reverted')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reverted_at TIMESTAMPTZ,
+  reverted_by BIGINT REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_virtual_visual_actions_user ON virtual_visual_actions(user_id,created_at DESC,id DESC);
+CREATE INDEX IF NOT EXISTS idx_virtual_visual_actions_status ON virtual_visual_actions(user_id,status,created_at DESC,id DESC);
