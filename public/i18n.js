@@ -1,4 +1,4 @@
-// Instant Admirers V1.12.38 · Español / English
+// Instant Admirers V1.12.39 · Español / English
 (() => {
   const STORAGE_KEY = 'iaLanguage';
   const SUPPORTED = new Set(['es','en']);
@@ -108,6 +108,24 @@
     'Perfil virtual':'Virtual profile','perfiles virtuales':'virtual profiles',
     'Actividad de la publicación':'Post activity','Todavía no hay comentarios.':'No comments yet.'
   });
+  Object.assign(ES_EN,{
+    'Encuentra personas, temas y contenido nuevo':'Find people, topics and new content',
+    'Mezclamos intereses, conexiones, actividad y variedad.':'We mix interests, connections, activity and variety.',
+    'Tu ciudad':'Your city','Activos':'Active','Nuevos':'New','Cambiar':'Refresh',
+    'Personas de tu ciudad':'People in your city','Perfiles que indican la misma ciudad en su perfil.':'Profiles that list the same city on their profile.',
+    'Personas activas':'Active people','Perfiles con actividad reciente en la comunidad.':'Profiles with recent activity in the community.',
+    'Nuevos perfiles':'New profiles','Personas que se han unido recientemente.':'People who joined recently.',
+    'Ocultar sugerencia':'Hide suggestion','Cambiar sugerencias':'Refresh suggestions','Filtros de personas':'People filters',
+    'Añade tu ciudad en el perfil para usar este filtro':'Add your city to your profile to use this filter',
+    'Añade tu ciudad para descubrir gente de tu zona':'Add your city to discover people in your area',
+    'Usamos solo la ciudad que escribes en tu perfil; no necesitamos tu ubicación exacta.':'We only use the city you enter on your profile; we do not need your precise location.',
+    'No hay más perfiles en este filtro por ahora':'There are no more profiles in this filter for now',
+    'Prueba otra categoría o cambia las sugerencias.':'Try another category or refresh the suggestions.',
+    'Para descubrir':'For discovery','Contenido público ordenado por intereses, actividad reciente y variedad.':'Public content ordered by interests, recent activity and variety.',
+    'Activo ahora':'Active now','Actividad reciente':'Recent activity','Activo hoy':'Active today','Se ha unido hace poco':'Joined recently',
+    'Sugerido para ti':'Suggested for you','Relacionado con lo que te gusta':'Related to what you like','Tu red conecta con este perfil':'Your network connects with this profile',
+    'Con conversación reciente':'With recent conversation','Publicado hace poco':'Posted recently','Nuevo en Instant Admirers':'New on Instant Admirers'
+  });
   const EN_ES = Object.fromEntries(Object.entries(ES_EN).map(([es,en]) => [en,es]));
   const normalized = obj => {
     const map = new Map();
@@ -140,6 +158,12 @@
     if(direct) return lead+direct+trail;
     if(lang==='en') {
       let m;
+      if((m=body.match(/^Tenéis (\d+) intereses en común$/))) return `${lead}You have ${m[1]} interests in common${trail}`;
+      if((m=body.match(/^Tenéis un interés en común$/))) return `${lead}You have one interest in common${trail}`;
+      if((m=body.match(/^(\d+) conexiones? en común$/))) return `${lead}${m[1]} ${Number(m[1])===1?'connection':'connections'} in common${trail}`;
+      if((m=body.match(/^También está en (.+)$/))) return `${lead}Also in ${m[1]}${trail}`;
+      if((m=body.match(/^De alguien de (.+)$/))) return `${lead}From someone in ${m[1]}${trail}`;
+      if((m=body.match(/^@(\S+) ya no aparecerá en tus sugerencias\.$/))) return `${lead}@${m[1]} will no longer appear in your suggestions.${trail}`;
       if((m=body.match(/^Tienes (\d+) novedad(?:es)?$/))) return `${lead}You have ${m[1]} new ${Number(m[1])===1?'activity':'activities'}${trail}`;
       if((m=body.match(/^(\d+) conexión(?:es)?$/))) return `${lead}${m[1]} ${Number(m[1])===1?'connection':'connections'}${trail}`;
       if((m=body.match(/^(\d+) comentario(?:s)?$/))) return `${lead}${m[1]} ${Number(m[1])===1?'comment':'comments'}${trail}`;

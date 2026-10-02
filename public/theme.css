@@ -435,3 +435,15 @@ html[data-theme="light"] .virtual-admin-profile-meta>span{background:#edf0f5!imp
 html[data-theme="light"] .virtual-admin-message.from-virtual{background:linear-gradient(110deg,#fff1f8,#f4f0ff)!important;border-color:#decff2!important}
 html[data-theme="light"] .virtual-chat-disclosure{background:linear-gradient(100deg,#fff6fb,#f6f3ff)!important;border-color:#ded1f0!important}html[data-theme="light"] .virtual-chat-disclosure b{color:#6546c7!important}
 html[data-theme="light"] .virtual-cadence select{background:#fff;color:#182033;border-color:#dfe3ed}
+
+/* V1.12.39 · Descubrir 2.0 */
+html[data-theme="light"] .discover-refresh,
+html[data-theme="light"] .discover-mode-chip{background:#fff!important;border-color:#dfe3eb!important;color:#697082!important}
+html[data-theme="light"] .discover-mode-chip.active{color:#4b2f8f!important;border-color:rgba(124,60,255,.22)!important;background:linear-gradient(110deg,rgba(255,45,154,.08),rgba(124,60,255,.10))!important}
+html[data-theme="light"] .discover2-empty{background:#fafbfc!important;border-color:#dfe3eb!important}
+html[data-theme="light"] .discover2-empty b{color:#232734!important}
+html[data-theme="light"] .discover-signal{background:#f5f1ff!important;color:#655294!important;border-color:#ded4f8!important}
+html[data-theme="light"] .discover-signal.online{background:#eef9f3!important;color:#3d8a63!important;border-color:#cdebdc!important}
+html[data-theme="light"] .discover-signal.location{background:#eef5ff!important;color:#4c72a5!important;border-color:#d5e5fb!important}
+html[data-theme="light"] .discover-dismiss{color:#8c93a1!important}
+html[data-theme="light"] .discover-dismiss:hover{background:#f0f2f6!important;color:#4f5665!important}

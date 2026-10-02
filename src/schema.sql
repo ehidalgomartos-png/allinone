@@ -352,6 +352,30 @@ CREATE INDEX IF NOT EXISTS idx_smart_email_log_user_kind_sent
   ON smart_email_log(user_id,kind,sent_at DESC);
 
 
+-- V1.12.39: Descubrir 2.0. Rotación de perfiles y sugerencias descartadas.
+CREATE TABLE IF NOT EXISTS discovery_profile_impressions (
+  viewer_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  target_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  shown_count INTEGER NOT NULL DEFAULT 1,
+  first_shown_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_shown_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (viewer_id,target_id),
+  CHECK (viewer_id <> target_id)
+);
+CREATE INDEX IF NOT EXISTS idx_discovery_profile_impressions_viewer_recent
+  ON discovery_profile_impressions(viewer_id,last_shown_at DESC);
+
+CREATE TABLE IF NOT EXISTS discovery_profile_dismissals (
+  viewer_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  target_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (viewer_id,target_id),
+  CHECK (viewer_id <> target_id)
+);
+CREATE INDEX IF NOT EXISTS idx_discovery_profile_dismissals_viewer
+  ON discovery_profile_dismissals(viewer_id,created_at DESC);
+
+
 -- TRUE por defecto conserva la experiencia de los usuarios existentes.
 -- Los nuevos registros se crean explícitamente con FALSE desde el servidor.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN NOT NULL DEFAULT TRUE;
