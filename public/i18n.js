@@ -1,4 +1,4 @@
-// Instant Admirers V1.12.39 · Español / English
+// Instant Admirers V1.12.39.1 · Español / English
 (() => {
   const STORAGE_KEY = 'iaLanguage';
   const SUPPORTED = new Set(['es','en']);
@@ -116,6 +116,7 @@
     'Personas activas':'Active people','Perfiles con actividad reciente en la comunidad.':'Profiles with recent activity in the community.',
     'Nuevos perfiles':'New profiles','Personas que se han unido recientemente.':'People who joined recently.',
     'Ocultar sugerencia':'Hide suggestion','Cambiar sugerencias':'Refresh suggestions','Filtros de personas':'People filters',
+    'Mover carrusel':'Move carousel','Perfiles anteriores':'Previous profiles','Más perfiles':'More profiles',
     'Añade tu ciudad en el perfil para usar este filtro':'Add your city to your profile to use this filter',
     'Añade tu ciudad para descubrir gente de tu zona':'Add your city to discover people in your area',
     'Usamos solo la ciudad que escribes en tu perfil; no necesitamos tu ubicación exacta.':'We only use the city you enter on your profile; we do not need your precise location.',

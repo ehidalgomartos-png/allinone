@@ -1,4 +1,4 @@
-// V1.12.39 · Descubrir 2.0 + Emails inteligentes + Activity Visual Polish
+// V1.12.39.1 · Descubrir Balance Hotfix + Descubrir 2.0
 const RESERVED_PROFILE_SLUGS = new Set([
   'api','media','assets','socket.io','legal','privacy','cookies','terms','community-guidelines','en','ciudades','guias',
   'favicon.ico','manifest.webmanifest','sw.js','offline.html','robots.txt','sitemap.xml','sitemap-core.xml','sitemap-landings.xml','login','register','logout','admin',
@@ -285,6 +285,8 @@ const state = {
   mediaObserver: null,
   reelObserver: null,
   rightbarCache: null,
+  rightbarRequestSeq: 0,
+  discoverCurrentPersonIds: [],
   launchStatus: { registration_mode:'open', invite_required:false, registration_paused:false, launch_phase:'prelaunch', cohort_target:100, banner_enabled:true, banner_text:'' },
   community: null,
   virtualCommunityData: null,
@@ -1775,7 +1777,7 @@ function discoverPeoplePanel(payload={}) {
     body=`<div class="discover2-empty"><b>No hay más perfiles en este filtro por ahora</b><p>Prueba otra categoría o cambia las sugerencias.</p></div>`;
   }
   return `<section class="discover-people discover2-people" id="discoverPeople2" data-mode="${escapeAttr(mode)}">
-    <div class="discover2-toolbar"><div><h3>${escapeHtml(copy.title)}</h3><p>${escapeHtml(copy.subtitle)}</p></div><button class="discover-refresh" type="button" onclick="refreshDiscoverPeople()" title="Cambiar sugerencias">↻ <span>Cambiar</span></button></div>
+    <div class="discover2-toolbar"><div><h3>${escapeHtml(copy.title)}</h3><p>${escapeHtml(copy.subtitle)}</p></div><div class="discover2-actions"><div class="discover-carousel-nav" aria-label="Mover carrusel"><button type="button" onclick="scrollDiscoverPeople(-1)" title="Perfiles anteriores" aria-label="Perfiles anteriores">‹</button><button type="button" onclick="scrollDiscoverPeople(1)" title="Más perfiles" aria-label="Más perfiles">›</button></div><button class="discover-refresh" type="button" onclick="refreshDiscoverPeople()" title="Cambiar sugerencias">↻ <span>Cambiar</span></button></div></div>
     <div class="discover-mode-tabs" role="tablist" aria-label="Filtros de personas">${tabs}</div>
     <div class="discover2-body">${body}</div>
   </section>`;
@@ -1784,6 +1786,15 @@ function discoverPeoplePanel(payload={}) {
 async function fetchDiscoverPeople(mode=state.discoverPeopleMode || 'for_you') {
   return api(`/api/discover/people?limit=10&mode=${encodeURIComponent(mode)}`);
 }
+
+window.scrollDiscoverPeople = direction => {
+  const scroller=$('#discoverPeople2 .discover2-scroll');
+  if (!scroller) return;
+  const card=scroller.querySelector('.discover2-card');
+  const width=card?.getBoundingClientRect?.().width || 180;
+  const cardsPerStep=window.matchMedia?.('(min-width: 861px)').matches ? 3 : 1;
+  scroller.scrollBy({left:(direction<0?-1:1)*(width+9)*cardsPerStep,behavior:'smooth'});
+};
 
 window.setDiscoverPeopleMode = async mode => {
   if (!['for_you','local','active','new'].includes(mode)) mode='for_you';
@@ -1794,8 +1805,9 @@ window.setDiscoverPeopleMode = async mode => {
   if (host) host.classList.add('is-loading');
   try {
     const payload=await fetchDiscoverPeople(mode);
+    state.discoverCurrentPersonIds=(payload?.items||[]).map(u=>Number(u.id)).filter(Number.isSafeInteger);
     const current=$('#discoverPeople2');
-    if (state.view==='discover' && current) current.outerHTML=discoverPeoplePanel(payload);
+    if (state.view==='discover' && current) { current.outerHTML=discoverPeoplePanel(payload); state.rightbarCache=null; void loadRightbar(); }
   } catch (e) { toast(e.message,'error'); if(host) host.classList.remove('is-loading'); }
 };
 
@@ -1805,8 +1817,9 @@ window.refreshDiscoverPeople = async () => {
   if (host) host.classList.add('is-loading');
   try {
     const payload=await fetchDiscoverPeople(mode);
+    state.discoverCurrentPersonIds=(payload?.items||[]).map(u=>Number(u.id)).filter(Number.isSafeInteger);
     const current=$('#discoverPeople2');
-    if (state.view==='discover' && current) current.outerHTML=discoverPeoplePanel(payload);
+    if (state.view==='discover' && current) { current.outerHTML=discoverPeoplePanel(payload); state.rightbarCache=null; void loadRightbar(); }
   } catch (e) { toast(e.message,'error'); if(host) host.classList.remove('is-loading'); }
 };
 
@@ -1832,11 +1845,14 @@ async function renderDiscover() {
   ]);
   state.community=community || state.community;
   if (peoplePayload?.mode) state.discoverPeopleMode=peoplePayload.mode;
+  state.discoverCurrentPersonIds=(peoplePayload?.items||[]).map(u=>Number(u.id)).filter(Number.isSafeInteger);
   const page = normalizePagePayload(rawPage);
   const rows = page.items;
   const trendStrip = trends.length ? `<div class="trend-strip">${trends.slice(0,8).map(t=>`<button onclick="searchTag('${escapeAttr(t.tag)}')"><b>${escapeHtml(t.tag)}</b><small>${t.count} ${Number(t.count)===1?'post':'posts'} · ${t.authors} ${Number(t.authors)===1?'persona':'personas'}</small></button>`).join('')}</div>` : '';
   $('#main').innerHTML = `${pageHeader('Descubrir','Encuentra personas, temas y contenido nuevo')}${communityPulseHtml(community)}${discoverPeoplePanel(peoplePayload)}${trendStrip}<div class="section-heading post-discover-heading"><div><h3>Para descubrir</h3><p>Contenido público ordenado por intereses, actividad reciente y variedad.</p></div></div><div class="post-list" id="discoverPostList">${rows.length ? rows.map(postHtml).join('') : `<div class="card empty"><div class="empty-icon">✦</div><h3>Aún no hay contenido público</h3><p>Cuando la comunidad publique contenido público, aparecerá aquí.</p><button class="btn primary compact" onclick="openComposerModal()">Publicar primero</button></div>`}</div>${pagerHtml('discover', page.has_more)}`;
   setupLazyMedia($('#main'));
+  state.rightbarCache=null;
+  void loadRightbar();
   installInfinitePager('discover', page, async pager => {
     if (state.view !== 'discover') return;
     const next = normalizePagePayload(await api(pageUrl('/api/discover', pager, 15)));
@@ -2877,17 +2893,21 @@ function layoutNavOnly() {
 
 async function loadRightbar() {
   const box = $('#rightbar'); if (!box) return;
+  const requestSeq=++state.rightbarRequestSeq;
   try {
     let suggestions, tags;
+    const excluded=state.view==='discover' ? (state.discoverCurrentPersonIds||[]).slice(0,16) : [];
+    const cacheKey=excluded.join(',');
     const cached = state.rightbarCache;
-    if (cached && Date.now() - cached.at < 45000) {
+    if (cached && cached.key===cacheKey && Date.now() - cached.at < 45000) {
       suggestions = cached.suggestions;
       tags = cached.tags;
     } else {
-      [suggestions, tags] = await Promise.all([api('/api/suggestions?limit=4'), api('/api/trending')]);
-      state.rightbarCache = { at:Date.now(), suggestions, tags };
+      const suffix=excluded.length ? `&exclude=${encodeURIComponent(excluded.join(','))}` : '';
+      [suggestions, tags] = await Promise.all([api(`/api/suggestions?limit=4${suffix}`), api('/api/trending')]);
+      state.rightbarCache = { at:Date.now(), key:cacheKey, suggestions, tags };
     }
-    if (!box.isConnected) return;
+    if (requestSeq!==state.rightbarRequestSeq || !box.isConnected) return;
     const accountCard=isSystemAccount()
       ? `<div class="card side-card"><div class="side-title">Cuenta técnica</div><div class="profile-summary">${avatar(state.me)}<span><b>${escapeHtml(state.me.name)}</b><small>Administración · fuera de la red social</small></span></div><div class="system-account-actions"><button class="btn primary compact" onclick="go('admin')">Administración</button><button class="btn ghost compact" onclick="openAccountSettings()">Ajustes</button></div></div>`
       : `<div class="card side-card"><div class="side-title">Tu perfil</div><button class="profile-summary" onclick="openProfile('${escapeAttr(state.me.username)}')">${avatar(state.me)}<span><b>${escapeHtml(state.me.name)}</b><small>@${escapeHtml(state.me.username)}</small></span></button><div class="mini-stats"><button type="button" class="mini-stat-btn" onclick="openProfile('${escapeAttr(state.me.username)}')" title="Ver tus publicaciones"><b>${state.me.posts_count || 0}</b><span>posts</span></button><button type="button" class="mini-stat-btn social" onclick="openFollowList('${escapeAttr(state.me.username)}','followers')" title="Ver seguidores" aria-label="Ver seguidores"><b>${state.me.followers_count || 0}</b><span>seguidores ↗</span></button><button type="button" class="mini-stat-btn social" onclick="openFollowList('${escapeAttr(state.me.username)}','following')" title="Ver a quién sigues" aria-label="Ver a quién sigues"><b>${state.me.following_count || 0}</b><span>siguiendo ↗</span></button></div></div>`;
@@ -2897,7 +2917,7 @@ async function loadRightbar() {
       <button class="logout-link" onclick="logout()">Cerrar sesión</button>`;
     void mountRightbarAd();
   } catch {
-    if (box.isConnected) box.innerHTML = '';
+    if (requestSeq===state.rightbarRequestSeq && box.isConnected) box.innerHTML = '';
   }
 }
 
@@ -3862,14 +3882,14 @@ function virtualCommunityAdminHtml(data={}) {
   const interactionHtml=interactions.length ? interactions.slice(0,18).map(x=>`<div class="virtual-activity-row virtual-interaction-row"><img src="${escapeAttr(x.avatar||'/assets/brand/instant-admirers-mark.svg')}" alt=""><span><b>${escapeHtml(x.name||x.username||'Perfil virtual')} <small>@${escapeHtml(x.username||'')}</small></b><em>${interactionLabel(x.interaction_type)} → @${escapeHtml(x.target_username||'usuario')}</em><small>${escapeHtml(String(x.comment_text||x.post_text||'Interacción con contenido público').slice(0,105))}</small></span><time>${x.created_at?timeAgo(x.created_at):''}</time></div>`).join('') : '<div class="empty compact-empty">Todavía no hay interacciones automáticas registradas.</div>';
   const profilesHtml=profiles.length ? profiles.map(u=>`<article class="virtual-admin-profile ${escapeAttr(u.status||'active')}"><div class="virtual-admin-profile-main"><img src="${escapeAttr(u.avatar||'/assets/brand/instant-admirers-mark.svg')}" alt=""><div><b>${escapeHtml(u.name)} <span class="virtual-badge compact">✦ Virtual</span></b><small>@${escapeHtml(u.username)} · ${escapeHtml(u.location||'')} · ${Number(u.age||0)} años</small><span>${escapeHtml(u.headline||'')}</span></div></div><div class="virtual-admin-profile-meta"><span class="virtual-status ${escapeAttr(u.status||'active')}">${statusLabel(u.status)}</span><span class="${u.auto_post_enabled?'virtual-auto-on':'virtual-auto-off'}">Posts ${u.auto_post_enabled?'ON':'OFF'}</span><span class="${u.auto_interact_enabled?'virtual-auto-on':'virtual-auto-off'}">Interacción ${u.auto_interact_enabled?'ON':'OFF'}</span><span>${Number(u.posts_count||0)} posts</span><span>${Number(u.media_count||0)} fotos</span><label class="virtual-cadence"><span>Publicaciones</span><select onchange="setVirtualProfileCadence(${Number(u.id)},this.value)">${[1,2,3,4,5,6,7].map(n=>`<option value="${n}" ${Number(u.posts_per_week||0)===n?'selected':''}>${n===7?'Diaria':`${n}/semana`}</option>`).join('')}</select></label><label class="virtual-cadence"><span>Interacciones</span><select onchange="setVirtualProfileInteractionCadence(${Number(u.id)},this.value)">${[1,2,3,4].map(n=>`<option value="${n}" ${Number(u.interactions_per_day||2)===n?'selected':''}>${n}/día</option>`).join('')}</select></label><small>${u.next_auto_post_at?`Post ${timeAgo(u.next_auto_post_at)}`:'Sin post programado'}${u.next_auto_interact_at?` · Interacción ${timeAgo(u.next_auto_interact_at)}`:' · Sin interacción programada'}${u.last_interaction_type?` · Última int.: ${interactionLabel(u.last_interaction_type)}`:''}</small></div><div class="virtual-admin-profile-actions">${u.status!=='active'?`<button class="btn primary compact" onclick="setVirtualProfileStatus(${Number(u.id)},'active')">Activar</button>`:`<button class="btn ghost compact" onclick="setVirtualProfileStatus(${Number(u.id)},'paused')">Pausar</button>`}<button class="btn ghost compact" onclick="toggleVirtualProfileAuto(${Number(u.id)},${u.auto_post_enabled?'false':'true'})">Posts ${u.auto_post_enabled?'OFF':'ON'}</button><button class="btn ghost compact" onclick="toggleVirtualProfileInteractions(${Number(u.id)},${u.auto_interact_enabled?'false':'true'})">Interacción ${u.auto_interact_enabled?'OFF':'ON'}</button>${u.status!=='retired'?`<button class="btn ghost compact" onclick="setVirtualProfileStatus(${Number(u.id)},'retired')">Retirar</button>`:''}<label class="btn ghost compact virtual-media-upload">+ Foto<input type="file" accept="image/*" hidden onchange="uploadVirtualProfileMedia(${Number(u.id)},this.files?.[0],this,false)"></label><label class="btn ghost compact virtual-media-upload">Avatar<input type="file" accept="image/*" hidden onchange="uploadVirtualProfileMedia(${Number(u.id)},this.files?.[0],this,true)"></label><button class="btn ghost compact" onclick="openVirtualImageManager(${Number(u.id)})">Imágenes</button><button class="btn ghost compact" onclick="openProfile('${escapeAttr(u.username)}')">Ver perfil</button></div></article>`).join('') : '';
   return `<section class="card admin-section virtual-community-admin">
-    <div class="section-row"><div><h3>Comunidad virtual</h3><p>100 anfitriones ficticios identificados como virtuales. Actividad e interacción programadas con límites, historial y control individual.</p></div><span class="virtual-community-version">V1.12.39</span></div>
+    <div class="section-row"><div><h3>Comunidad virtual</h3><p>100 anfitriones ficticios identificados como virtuales. Actividad e interacción programadas con límites, historial y control individual.</p></div><span class="virtual-community-version">V1.12.39.1</span></div>
     ${total===0 ? `<div class="virtual-community-empty"><div>✦</div><b>La comunidad virtual todavía no está creada</b><p>Crea 50 perfiles de mujer y 50 de hombre, con ciudades, intereses, bios, contenido inicial y actividad programada. Todos se muestran con la etiqueta “Perfil virtual”.</p><button class="btn primary" onclick="seedVirtualCommunity()">Crear 100 perfiles virtuales</button></div>` : `
       <div class="virtual-community-metrics"><span><b>${total}</b> perfiles</span><span><b>${Number(st.active||0)}</b> activos</span><span><b>${Number(st.auto_enabled||0)}</b> posts Auto</span><span><b>${Number(st.auto_interact_enabled||0)}</b> interacción Auto</span><span><b>${Number(st.activity_events_today||0)}</b> actividad hoy</span><span><b>${Number(st.interaction_events_today||0)}</b> interacciones hoy</span><span><b>${Number(st.virtual_likes_today||0)}</b> likes</span><span><b>${Number(st.virtual_comments_today||0)}</b> comentarios</span><span><b>${Number(st.virtual_follows_today||0)}</b> follows</span><span><b>${Number(st.stories_today||0)}</b> Stories hoy</span><span><b>${Number(st.interacting_profiles_7d||0)}</b> interactuando 7d</span><span><b>${Number(st.media_total||0)}</b> imágenes activas</span><span class="${Number(st.inbox_unread||0)>0?'has-unread':''}"><b>${Number(st.inbox_unread||0)}</b> mensajes pendientes</span></div>
       <div class="virtual-community-actions"><button class="btn primary compact" onclick="runVirtualCommunityNow()">Generar actividad ahora</button><button class="btn primary compact" onclick="runVirtualInteractionsNow()">Generar interacciones ahora</button><button class="btn ghost compact" onclick="rescheduleVirtualCommunity()">Reprogramar posts</button><button class="btn ghost compact" onclick="rescheduleVirtualInteractionsNow()">Reprogramar interacciones</button><button class="btn ghost compact" onclick="syncVirtualImagePacks()">Sincronizar packs base</button><button class="btn ghost compact" onclick="go('feed')">Ver en Inicio</button><small>Interacción 2.0 actúa solo sobre usuarios reales y contenido público, con 1–4 acciones diarias por perfil, anti-ráfagas y afinidad por ciudad/intereses. Los mensajes privados siguen siendo manuales desde el buzón.</small></div>
       <details class="virtual-activity-history" open><summary>Interacción reciente</summary><div class="virtual-activity-list">${interactionHtml}</div></details>
       <details class="virtual-activity-history"><summary>Actividad reciente</summary><div class="virtual-activity-list">${activityHtml}</div></details>
       <div class="virtual-realistic-importer"><div class="virtual-realistic-importer-copy"><b>Importar packs fotográficos realistas</b><small>ZIP de hasta 100 MB · máximo 10 perfiles · exactamente 6 imágenes por perfil: avatar, portada y 4 publicaciones. El importador valida el manifest antes de subir nada.</small><a href="/virtual-pack-import-template.json" target="_blank" rel="noopener">Ver manifest de ejemplo</a></div><label class="btn primary compact">Seleccionar ZIP<input type="file" accept=".zip,application/zip,application/x-zip-compressed" hidden onchange="importVirtualRealisticPacks(this)"></label></div>
-      <div class="virtual-inbox-block"><div class="section-row"><div><h4>Buzón de anfitriones</h4><p>Cuando una persona real escribe a un perfil virtual, aparece aquí para que administración responda desde ese personaje. V1.12.39 no automatiza mensajes privados.</p></div><span>${Number(st.inbox_unread||0)}</span></div><div class="virtual-inbox-list">${inboxHtml}</div></div>
+      <div class="virtual-inbox-block"><div class="section-row"><div><h4>Buzón de anfitriones</h4><p>Cuando una persona real escribe a un perfil virtual, aparece aquí para que administración responda desde ese personaje. V1.12.39.1 no automatiza mensajes privados.</p></div><span>${Number(st.inbox_unread||0)}</span></div><div class="virtual-inbox-list">${inboxHtml}</div></div>
       <details class="virtual-profile-manager" ${profiles.length && profiles.length<=12?'open':''}><summary>Gestionar los ${total} perfiles</summary><div class="virtual-profile-toolbar"><input id="virtualProfileSearch" placeholder="Buscar nombre, usuario, ciudad…" onkeydown="if(event.key==='Enter')searchVirtualProfiles()"><button class="btn ghost compact" onclick="searchVirtualProfiles()">Buscar</button><button class="btn ghost compact" onclick="resetVirtualProfiles()">Todos</button></div><div id="virtualProfileList" class="virtual-admin-profile-list">${profilesHtml}</div></details>
     `}
   </section>`;
@@ -4104,7 +4124,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.39</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.39.1</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>
