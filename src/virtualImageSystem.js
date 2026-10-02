@@ -177,14 +177,20 @@ async function ensureLocalPackMedia(db,{userId,providerId,rel,mimeType='image/sv
 }
 
 async function upsertPackPoolItem(db,{userId,mediaId,label,kind,tags,altText,featured=false,sortOrder=100,reactivate=true}){
+  // V1.12.42.1: cuando un perfil ya fue sustituido por una importación masiva,
+  // el pack base se conserva como respaldo pero nunca debe volver al pool activo.
+  // En conflicto preservamos el estado existente; si faltara una fila base y hay
+  // una importación masiva activa, se crea directamente archivada.
+  const insertActive=Boolean(reactivate);
+  const insertArchived=insertActive?null:new Date();
   const activeSql=reactivate?'TRUE':'virtual_profile_media.active';
   const archivedSql=reactivate?'NULL':'virtual_profile_media.archived_at';
   await db.query(`
-    INSERT INTO virtual_profile_media(user_id,media_id,label,kind,tags,alt_text,active,featured,sort_order,times_used,created_at,updated_at)
-    VALUES($1,$2,$3,$4,$5::jsonb,$6,TRUE,$7,$8,0,NOW(),NOW())
+    INSERT INTO virtual_profile_media(user_id,media_id,label,kind,tags,alt_text,active,featured,sort_order,times_used,archived_at,created_at,updated_at)
+    VALUES($1,$2,$3,$4,$5::jsonb,$6,$7,$8,$9,0,$10,NOW(),NOW())
     ON CONFLICT(user_id,media_id) DO UPDATE SET label=EXCLUDED.label,kind=EXCLUDED.kind,tags=EXCLUDED.tags,alt_text=EXCLUDED.alt_text,
       active=${activeSql},featured=EXCLUDED.featured,sort_order=EXCLUDED.sort_order,archived_at=${archivedSql},updated_at=NOW()
-  `,[userId,mediaId,label,kind,JSON.stringify(normalizeTags(tags)),altText,Boolean(featured),Number(sortOrder||100)]);
+  `,[userId,mediaId,label,kind,JSON.stringify(normalizeTags(tags)),altText,insertActive,Boolean(featured),Number(sortOrder||100),insertArchived]);
 }
 
 async function syncVirtualProfileBasePacks(db,{includePilot=false}={}){
@@ -194,6 +200,16 @@ async function syncVirtualProfileBasePacks(db,{includePilot=false}={}){
      WHERE u.is_virtual=TRUE AND u.account_status='active'
      ORDER BY u.id
   `);
+  // V1.12.42.1: el sync de arranque no puede reactivar las seis imágenes base
+  // después de una importación masiva confirmada. Esa reactivación era la causa
+  // de que 99 perfiles volvieran a tener 12 imágenes activas tras cada deploy.
+  const imported=await db.query(`
+    SELECT DISTINCT i.user_id
+      FROM virtual_media_import_items i
+      JOIN virtual_media_import_jobs j ON j.id=i.job_id
+     WHERE j.status='completed' AND i.status='ready'
+  `).catch(()=>({rows:[]}));
+  const massImportedUsers=new Set(imported.rows.map(r=>Number(r.user_id)));
   let profiles=0,images=0,createdMedia=0,avatars=0,covers=0;
   const details=[];
   for(const user of rows){
@@ -203,13 +219,14 @@ async function syncVirtualProfileBasePacks(db,{includePilot=false}={}){
     const n=String(idx).padStart(3,'0');
     const interests=String(user.interests||'').split(',').map(x=>x.trim()).filter(Boolean);
     const baseTags=[user.location||'',...interests];
+    const reactivateBase=!massImportedUsers.has(Number(user.id));
     const avatarRel=`/assets/virtual/avatar-${n}.svg`;
     const coverRel=`/assets/virtual/cover-${n}.svg`;
     const avatar=await ensureLocalPackMedia(db,{userId:user.id,providerId:`virtual-pack-${idx}-avatar`,rel:avatarRel,width:512,height:512,meta:{virtual:true,synthetic:true,pack:'v1.12.25',pack_stage:'base',profile_index:idx,role:'avatar'}});
     const cover=await ensureLocalPackMedia(db,{userId:user.id,providerId:`virtual-pack-${idx}-cover`,rel:coverRel,width:1200,height:420,meta:{virtual:true,synthetic:true,pack:'v1.12.25',pack_stage:'base',profile_index:idx,role:'cover'}});
     createdMedia+=Number(avatar.created)+Number(cover.created);
-    await upsertPackPoolItem(db,{userId:user.id,mediaId:avatar.id,label:'Avatar base del personaje',kind:'avatar',tags:[...baseTags,'retrato','avatar'],altText:`Avatar de ${user.name}, anfitrión virtual de Instant Admirers`,featured:true,sortOrder:0});
-    await upsertPackPoolItem(db,{userId:user.id,mediaId:cover.id,label:`Portada de ${user.location||'Instant Admirers'}`,kind:'cover',tags:[...baseTags,'portada','ciudad'],altText:`Portada de ${user.name}, perfil virtual de Instant Admirers`,sortOrder:1});
+    await upsertPackPoolItem(db,{userId:user.id,mediaId:avatar.id,label:'Avatar base del personaje',kind:'avatar',tags:[...baseTags,'retrato','avatar'],altText:`Avatar de ${user.name}, anfitrión virtual de Instant Admirers`,featured:true,sortOrder:0,reactivate:reactivateBase});
+    await upsertPackPoolItem(db,{userId:user.id,mediaId:cover.id,label:`Portada de ${user.location||'Instant Admirers'}`,kind:'cover',tags:[...baseTags,'portada','ciudad'],altText:`Portada de ${user.name}, perfil virtual de Instant Admirers`,sortOrder:1,reactivate:reactivateBase});
     images+=2;
     // Las cuatro escenas ya existían desde la creación de la comunidad; ahora pasan a formar parte del pack gestionado.
     for(const spec of BASE_PACK_SCENES){
@@ -220,13 +237,17 @@ async function syncVirtualProfileBasePacks(db,{includePilot=false}={}){
         const created=await ensureLocalPackMedia(db,{userId:user.id,providerId,rel,width:1080,height:1080,meta:{virtual:true,synthetic:true,pack:'v1.12.25',pack_stage:'base',profile_index:idx,scene:spec.scene}});
         media={id:created.id};createdMedia+=Number(created.created);
       }
-      await upsertPackPoolItem(db,{userId:user.id,mediaId:Number(media.id),label:spec.label,kind:'post',tags:[...baseTags,...spec.tags],altText:`${spec.label} de ${user.name}, perfil virtual de Instant Admirers`,featured:spec.scene===1,sortOrder:10+spec.scene});
+      // Escenas creadas antes de V1.12.25 llevaban solo seed_scene en metadata.
+      // Las marcamos explícitamente como pack base para que el Centro de Calidad
+      // y la reparación puedan distinguirlas de las fotos V4.
+      await db.query(`UPDATE media SET provider_meta=COALESCE(provider_meta,'{}'::jsonb) || $2::jsonb WHERE id=$1`,[Number(media.id),JSON.stringify({pack:'v1.12.25',pack_stage:'base',profile_index:idx,scene:spec.scene})]);
+      await upsertPackPoolItem(db,{userId:user.id,mediaId:Number(media.id),label:spec.label,kind:'post',tags:[...baseTags,...spec.tags],altText:`${spec.label} de ${user.name}, perfil virtual de Instant Admirers`,featured:spec.scene===1,sortOrder:10+spec.scene,reactivate:reactivateBase});
       images+=1;
     }
     const currentAvatar=String(user.avatar||'');
     const currentCover=String(user.cover||'');
-    if(!currentAvatar||currentAvatar===avatarRel||currentAvatar.startsWith('/assets/virtual/avatar-')){await db.query(`UPDATE users SET avatar=$2 WHERE id=$1`,[user.id,`/media/${avatar.id}`]);avatars+=1;}
-    if(!currentCover||currentCover===coverRel||currentCover.startsWith('/assets/virtual/cover-')){await db.query(`UPDATE users SET cover=$2 WHERE id=$1`,[user.id,`/media/${cover.id}`]);covers+=1;}
+    if(reactivateBase&&(!currentAvatar||currentAvatar===avatarRel||currentAvatar.startsWith('/assets/virtual/avatar-'))){await db.query(`UPDATE users SET avatar=$2 WHERE id=$1`,[user.id,`/media/${avatar.id}`]);avatars+=1;}
+    if(reactivateBase&&(!currentCover||currentCover===coverRel||currentCover.startsWith('/assets/virtual/cover-'))){await db.query(`UPDATE users SET cover=$2 WHERE id=$1`,[user.id,`/media/${cover.id}`]);covers+=1;}
     profiles+=1;
     details.push({user_id:Number(user.id),username:user.username,index:idx,images:6});
   }

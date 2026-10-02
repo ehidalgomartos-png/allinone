@@ -951,6 +951,21 @@ CREATE TABLE IF NOT EXISTS virtual_media_import_pool_snapshots (
 );
 CREATE INDEX IF NOT EXISTS idx_virtual_media_import_pool_snapshots_job ON virtual_media_import_pool_snapshots(job_id,user_id);
 
+-- V1.12.42.1: reparaciones de calidad globales, con snapshot visual reversible.
+CREATE TABLE IF NOT EXISTS virtual_quality_repairs (
+  id BIGSERIAL PRIMARY KEY,
+  admin_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  source_job_id BIGINT REFERENCES virtual_media_import_jobs(id) ON DELETE SET NULL,
+  status VARCHAR(20) NOT NULL DEFAULT 'applied',
+  summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+  snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  rolled_back_at TIMESTAMPTZ,
+  rolled_back_by BIGINT REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS idx_virtual_quality_repairs_created ON virtual_quality_repairs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_virtual_quality_repairs_status ON virtual_quality_repairs(status,created_at DESC);
+
 CREATE TABLE IF NOT EXISTS virtual_media_import_refs (
   id BIGSERIAL PRIMARY KEY,
   job_id BIGINT NOT NULL REFERENCES virtual_media_import_jobs(id) ON DELETE CASCADE,

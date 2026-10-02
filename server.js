@@ -229,17 +229,17 @@ function seoProfileServerHtml(profile, posts=[], counts={}) {
 <meta property="og:title" content="${seoEscapeHtml(title)}"><meta property="og:description" content="${seoEscapeHtml(description)}"><meta property="og:url" content="${seoEscapeHtml(canonical)}"><meta property="og:image" content="${seoEscapeHtml(shareImage)}">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${seoEscapeHtml(title)}"><meta name="twitter:description" content="${seoEscapeHtml(description)}"><meta name="twitter:image" content="${seoEscapeHtml(shareImage)}">
 <script type="application/ld+json">${seoProfileJsonLd(profile,counts)}</script>
-<script src="/theme.js?v=1.12.42"></script>
-<link rel="stylesheet" href="/styles.css?v=1.12.42">
+<script src="/theme.js?v=1.12.42.1"></script>
+<link rel="stylesheet" href="/styles.css?v=1.12.42.1">
 <style>.seo-profile-prerender{max-width:760px;margin:0 auto;padding:26px 16px 110px;color:#f7f7fb;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.seo-profile-brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:#fff;font-size:24px;font-weight:800;margin-bottom:18px}.seo-profile-brand img{width:38px;height:38px}.seo-profile-card{overflow:hidden;border:1px solid #2b2d3c;border-radius:22px;background:#141620}.seo-profile-cover{height:190px;background:#222532}.seo-profile-cover img{width:100%;height:100%;object-fit:cover}.seo-profile-body{padding:0 22px 22px}.seo-profile-avatar{width:104px;height:104px;border-radius:50%;margin-top:-54px;border:5px solid #141620;background:#242736;overflow:hidden;display:grid;place-items:center;font-size:28px;font-weight:800}.seo-profile-avatar img{width:100%;height:100%;object-fit:cover}.seo-profile-body h1{font-size:30px;margin:12px 0 2px}.seo-handle{color:#9da3b4}.seo-headline{font-weight:700;margin:15px 0 6px}.seo-bio{color:#d4d7e3;line-height:1.55;white-space:pre-wrap}.seo-virtual-notice{display:flex;gap:8px;align-items:flex-start;margin:14px 0;padding:12px 14px;border:1px solid #7147b8;border-radius:13px;background:rgba(124,60,255,.12);color:#e8dcff;line-height:1.45}.seo-virtual-notice b{white-space:nowrap;color:#ff74c7}.seo-cta{display:inline-flex;margin-top:16px;padding:12px 17px;border-radius:12px;text-decoration:none;color:#fff;font-weight:800;background:linear-gradient(135deg,#ff2aa1,#7c3cff)}.seo-profile-posts{margin-top:20px}.seo-profile-posts h2{font-size:21px}.seo-profile-post{border:1px solid #292c3b;background:#12141d;border-radius:16px;padding:16px;margin:12px 0}.seo-profile-post p{line-height:1.55;white-space:pre-wrap}.seo-media-lock{margin-top:12px;border:1px dashed #555a70;border-radius:12px;padding:18px;color:#c7cad7;text-align:center}.seo-empty{color:#aeb3c3}.seo-profile-prerender-noscript{display:block}</style>
-<link rel="stylesheet" href="/theme.css?v=1.12.42">
+<link rel="stylesheet" href="/theme.css?v=1.12.42.1">
 </head><body>
 <div id="app"><main class="seo-profile-prerender">
 <a class="seo-profile-brand" href="/"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a>
 <section class="seo-profile-card">${cover?`<div class="seo-profile-cover"><img src="${seoEscapeHtml(cover)}" alt="Cabecera de ${seoEscapeHtml(profile.name||profile.username)}"></div>`:'<div class="seo-profile-cover"></div>'}<div class="seo-profile-body"><div class="seo-profile-avatar">${avatar?`<img src="${seoEscapeHtml(avatar)}" alt="${seoEscapeHtml(profile.name||profile.username)}">`:`${seoEscapeHtml(String(profile.name||profile.username||'?').slice(0,1).toUpperCase())}`}</div><h1>${seoEscapeHtml(profile.name||profile.username)}</h1><div class="seo-handle">@${seoEscapeHtml(profile.username)}</div>${profile.is_virtual?'<div class="seo-virtual-notice"><b>✦ Perfil virtual</b><span>Personaje ficticio y anfitrión gestionado por Instant Admirers. No representa a una persona real.</span></div>':''}${profile.headline?`<div class="seo-headline">${seoEscapeHtml(seoPlainText(profile.headline,180))}</div>`:''}${profile.bio?`<p class="seo-bio">${seoEscapeHtml(seoPlainText(profile.bio,700))}</p>`:''}<a class="seo-cta" href="${seoEscapeHtml(registerUrl)}">Crear cuenta para ver todo el contenido</a></div></section>
 <section class="seo-profile-posts"><h2>Publicaciones públicas de ${seoEscapeHtml(profile.name||profile.username)}</h2>${postHtml}</section>
 </main></div><div id="modal-root"></div>
-<script src="/i18n.js?v=1.12.42"></script><script src="/socket.io/socket.io.js"></script><script src="/vendor/hls/hls.min.js?v=1.12.42"></script><script src="/app.js?v=1.12.42"></script>
+<script src="/i18n.js?v=1.12.42.1"></script><script src="/socket.io/socket.io.js"></script><script src="/vendor/hls/hls.min.js?v=1.12.42.1"></script><script src="/app.js?v=1.12.42.1"></script>
 </body></html>`;
 }
 function seoProfilesHubHtml(profiles=[]) {
@@ -250,7 +250,7 @@ function seoProfilesHubHtml(profiles=[]) {
     const desc=seoPlainText(p.headline || p.bio || `Perfil de @${p.username} en Instant Admirers.`,150);
     return `<a class="hub-card" href="/${encodeURIComponent(p.username)}">${avatar?`<img src="${seoEscapeHtml(avatar)}" alt="${seoEscapeHtml(p.name||p.username)}" loading="lazy">`:''}<span>@${seoEscapeHtml(p.username)}</span><b>${seoEscapeHtml(p.name||p.username)}</b>${p.is_virtual?'<em class="hub-virtual-badge">✦ Perfil virtual</em>':''}<p>${seoEscapeHtml(desc)}</p></a>`;
   }).join('');
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0b12"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1"><title>${title}</title><meta name="description" content="${description}"><link rel="canonical" href="${APP_URL}/perfiles/"><link rel="icon" href="/favicon.ico" sizes="any"><script src="/theme.js?v=1.12.42"></script><link rel="stylesheet" href="/seo.css?v=1.12.42"><link rel="stylesheet" href="/theme.css?v=1.12.42"><style>.hub-card img{width:58px;height:58px;object-fit:cover;border-radius:50%;margin-bottom:10px}.hub-virtual-badge{display:inline-flex;width:max-content;margin:7px 0 1px;padding:4px 8px;border-radius:999px;background:rgba(124,60,255,.12);border:1px solid rgba(124,60,255,.35);color:#9a5dff;font-size:12px;font-style:normal;font-weight:800}</style><script type="application/ld+json">${JSON.stringify({'@context':'https://schema.org','@type':'CollectionPage',name:title,description,url:`${APP_URL}/perfiles/`,isPartOf:{'@type':'WebSite',name:'Instant Admirers',url:`${APP_URL}/`}}).replace(/</g,'\\u003c')}</script></head><body><header class="site-header"><div class="nav-wrap"><a class="brand" href="/" aria-label="Instant Admirers"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a><nav aria-label="Navegación principal"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/perfiles/">Perfiles</a><a href="/?auth=login">Entrar</a><a class="nav-cta" href="/?auth=register&utm_source=seo&utm_medium=organic&utm_campaign=public-profiles">Crear cuenta</a></nav></div></header><main><section class="hero"><div class="hero-inner"><div class="breadcrumbs"><a href="/">Inicio</a><span>›</span><span>Perfiles</span></div><p class="eyebrow">Perfiles de Instant Admirers</p><h1>Tu próxima conexión puede estar aquí</h1><p class="hero-lead hub-intro">Descubre perfiles públicos y anfitriones virtuales identificados de Instant Admirers.</p></div></section><section class="hub-grid">${cards || '<div class="hub-card"><b>Muy pronto</b><p>Nuevos perfiles por descubrir.</p></div>'}</section></main><footer class="site-footer"><div class="footer-wrap"><div><b>Instant Admirers</b><p>Comunidad 18+ para conectar, compartir y descubrir perfiles e intereses.</p></div><div class="footer-links"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/privacy/">Privacidad</a><a href="/terms/">Términos</a></div></div></footer></body></html>`;
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0b12"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1"><title>${title}</title><meta name="description" content="${description}"><link rel="canonical" href="${APP_URL}/perfiles/"><link rel="icon" href="/favicon.ico" sizes="any"><script src="/theme.js?v=1.12.42.1"></script><link rel="stylesheet" href="/seo.css?v=1.12.42.1"><link rel="stylesheet" href="/theme.css?v=1.12.42.1"><style>.hub-card img{width:58px;height:58px;object-fit:cover;border-radius:50%;margin-bottom:10px}.hub-virtual-badge{display:inline-flex;width:max-content;margin:7px 0 1px;padding:4px 8px;border-radius:999px;background:rgba(124,60,255,.12);border:1px solid rgba(124,60,255,.35);color:#9a5dff;font-size:12px;font-style:normal;font-weight:800}</style><script type="application/ld+json">${JSON.stringify({'@context':'https://schema.org','@type':'CollectionPage',name:title,description,url:`${APP_URL}/perfiles/`,isPartOf:{'@type':'WebSite',name:'Instant Admirers',url:`${APP_URL}/`}}).replace(/</g,'\\u003c')}</script></head><body><header class="site-header"><div class="nav-wrap"><a class="brand" href="/" aria-label="Instant Admirers"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a><nav aria-label="Navegación principal"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/perfiles/">Perfiles</a><a href="/?auth=login">Entrar</a><a class="nav-cta" href="/?auth=register&utm_source=seo&utm_medium=organic&utm_campaign=public-profiles">Crear cuenta</a></nav></div></header><main><section class="hero"><div class="hero-inner"><div class="breadcrumbs"><a href="/">Inicio</a><span>›</span><span>Perfiles</span></div><p class="eyebrow">Perfiles de Instant Admirers</p><h1>Tu próxima conexión puede estar aquí</h1><p class="hero-lead hub-intro">Descubre perfiles públicos y anfitriones virtuales identificados de Instant Admirers.</p></div></section><section class="hub-grid">${cards || '<div class="hub-card"><b>Muy pronto</b><p>Nuevos perfiles por descubrir.</p></div>'}</section></main><footer class="site-footer"><div class="footer-wrap"><div><b>Instant Admirers</b><p>Comunidad 18+ para conectar, compartir y descubrir perfiles e intereses.</p></div><div class="footer-links"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/privacy/">Privacidad</a><a href="/terms/">Términos</a></div></div></footer></body></html>`;
 }
 
 function tokenDigest(raw='') { return crypto.createHash('sha256').update(String(raw)).digest('hex'); }
@@ -990,34 +990,35 @@ function virtualProfileIndexFromUsername(username='') {
 
 async function resolveVirtualProfileDisplayCover(profile, db=pool) {
   if(!profile || !profile.is_virtual) return String(profile?.cover || '');
-  const idx=virtualProfileIndexFromUsername(profile.username);
-
-  // V1.12.30: los lotes 32-41 y 52-100 se generaron con una composición
-  // de portada que ya contiene un fondo ampliado/desenfocado y una imagen
-  // centrada. No es un problema de CSS: está dentro del propio JPG.
-  // En esos lotes usamos el avatar realista (archivo limpio) como cabecera,
-  // dejando que .profile-cover > img { object-fit:cover } haga el recorte.
-  // Los lotes 02-31 y 42-51 conservan su portada importada porque no presentan
-  // ese defecto de composición.
-  const affected=(idx>=32 && idx<=41) || (idx>=52 && idx<=100);
-  if(!affected) return String(profile.cover || '');
-
-  const avatar=String(profile.avatar || '').trim();
-  if(avatar) return avatar;
-
+  const stored=String(profile.cover||'').trim();
+  const storedId=mediaIdFromStoredUrl(stored);
+  // Respeta cualquier portada válida actual (incluye cambios posteriores desde
+  // Gestión visual). Solo hacemos fallback cuando el valor guardado apunta al
+  // avatar u otro rol incorrecto heredado del workaround V1.12.30.
+  if(storedId){
+    const current=await db.query(`
+      SELECT vpm.kind,vpm.active,vpm.archived_at,m.provider_status
+        FROM virtual_profile_media vpm JOIN media m ON m.id=vpm.media_id
+       WHERE vpm.user_id=$1 AND vpm.media_id=$2 LIMIT 1
+    `,[profile.id,storedId]).catch(()=>({rows:[]}));
+    const row=current.rows[0];
+    if(row&&row.active&&!row.archived_at&&String(row.kind)==='cover'&&String(row.provider_status||'ready')==='ready') return stored;
+  } else if(stored) {
+    return stored;
+  }
   const {rows}=await db.query(`
-    SELECT '/media/'||vpm.media_id::text AS cover
-      FROM virtual_profile_media vpm
-      JOIN media m ON m.id=vpm.media_id
-     WHERE vpm.user_id=$1
-       AND vpm.active=TRUE
-       AND vpm.archived_at IS NULL
-       AND vpm.kind='avatar'
-       AND COALESCE(m.provider_meta->>'realistic_pack','false')='true'
-     ORDER BY vpm.id DESC
+    SELECT '/media/'||i.media_id::text AS cover
+      FROM virtual_media_import_items i
+      JOIN virtual_media_import_jobs j ON j.id=i.job_id
+      JOIN virtual_profile_media vpm ON vpm.user_id=i.user_id AND vpm.media_id=i.media_id
+      JOIN media m ON m.id=i.media_id
+     WHERE i.user_id=$1 AND i.kind='cover' AND i.status='ready'
+       AND j.status='completed' AND vpm.active=TRUE AND vpm.archived_at IS NULL
+       AND COALESCE(m.provider_status,'ready')='ready'
+     ORDER BY j.committed_at DESC NULLS LAST,j.id DESC,i.id DESC
      LIMIT 1
-  `,[profile.id]);
-  return String(rows[0]?.cover || profile.cover || '');
+  `,[profile.id]).catch(()=>({rows:[]}));
+  return String(rows[0]?.cover || stored || '');
 }
 
 async function hydrateVirtualProfileDisplayCover(profile, db=pool) {
@@ -1027,8 +1028,9 @@ async function hydrateVirtualProfileDisplayCover(profile, db=pool) {
 }
 
 async function repairLegacyVirtualCoverFrames() {
-  // V1.12.30: corrige también los datos persistidos para cualquier vista que
-  // no pase por el hidratador. Solo toca los lotes realmente afectados.
+  // El fallback V1.12.30 solo sigue siendo necesario para perfiles antiguos que
+  // nunca recibieron una importación masiva confirmada. Los perfiles V4 quedan
+  // fuera para que su portada real no vuelva a ser sustituida por el avatar.
   const {rows}=await pool.query(`
     UPDATE users u
        SET cover=u.avatar
@@ -1039,10 +1041,16 @@ async function repairLegacyVirtualCoverFrames() {
          substring(u.username FROM '([0-9]+)$')::int BETWEEN 32 AND 41
          OR substring(u.username FROM '([0-9]+)$')::int BETWEEN 52 AND 100
        )
+       AND NOT EXISTS (
+         SELECT 1
+           FROM virtual_media_import_items i
+           JOIN virtual_media_import_jobs j ON j.id=i.job_id
+          WHERE i.user_id=u.id AND i.kind='cover' AND i.status='ready' AND j.status='completed'
+       )
        AND COALESCE(u.cover,'') IS DISTINCT FROM COALESCE(u.avatar,'')
     RETURNING u.id,u.username,u.cover
   `);
-  if(rows.length) console.log(`V1.12.30: normalizadas ${rows.length} portada(s) virtuales afectadas usando avatar limpio.`);
+  if(rows.length) console.log(`V1.12.42.1: normalizadas ${rows.length} portada(s) legacy sin importación masiva.`);
   return rows.length;
 }
 
@@ -1935,7 +1943,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.12.42', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default','growth-public-teaser-profile','growth-teaser-media-lock','growth-teaser-signup-attribution','public-teaser-desktop-layout-fix','feed-full-image-fit','full-image-viewer','protected-image-lightbox','friend-gate-chat-lock','conversation-reply-continuity','chat-video-processing-refresh','chat-scroll-containment','chat-bottom-autoscroll','mobile-chat-composer-layout','mobile-chat-composer-viewport-fix','mobile-chat-active-header-compaction','direct-public-profile','direct-profile-media-lock','direct-profile-referral-attribution','public-profile-preview-control','seo-public-profiles','dynamic-profile-meta','profilepage-structured-data','profile-sitemap','public-profiles-hub','seo-profile-privacy-noindex','seo-navigation-cache-safety','visitor-theme-switcher','light-theme','dark-theme','theme-preference-persistence','light-theme-contrast-fix','light-sent-message-contrast-fix','sent-message-delete','message-delete-realtime','virtual-community','virtual-host-profiles','virtual-daily-activity','virtual-admin-inbox','virtual-admin-reply','virtual-profile-media-pools','virtual-profile-disclosure','virtual-profile-seo','virtual-profile-sitemap','virtual-profile-public-hub','virtual-profile-seo-disclosure','virtual-profile-dynamic-meta','profile-seo-hydration-preservation','virtual-profile-image-library','virtual-profile-image-tags','virtual-profile-image-usage-history','virtual-profile-image-auto-selection','virtual-profile-image-admin','virtual-profile-image-batch-upload','virtual-profile-image-pilot','virtual-profile-base-packs','virtual-profile-pack-auto-sync','virtual-profile-pack-status','virtual-realistic-pack-importer','virtual-mass-media-import','virtual-mass-zip-staging','virtual-mass-auto-assignment','virtual-mass-username-folder-fix','virtual-mass-preview','virtual-mass-progress','virtual-mass-history','virtual-mass-atomic-commit','virtual-mass-rollback','virtual-visual-manager-2','virtual-visual-single-replace','virtual-visual-post-reorder','virtual-visual-duplicate-detection','virtual-visual-change-history','virtual-visual-last-change-rollback','virtual-quality-center','virtual-quality-broken-reference-scan','virtual-quality-duplicate-scan','virtual-quality-low-resolution-scan','virtual-quality-admin-filters','virtual-pack-zip-validation','virtual-pack-manifest-v1','virtual-pack-safe-replacement','virtual-pack-import-history','virtual-image-admin-preview-fix','virtual-profile-retire-fix','virtual-profile-cover-display-fix','virtual-profile-retire-transaction-fix','virtual-profile-cover-runtime-resolver','virtual-profile-cover-clean-avatar-fallback','virtual-profile-retire-failsafe','virtual-historical-post-media-relink','virtual-historical-story-media-relink','virtual-activity-2','virtual-activity-smart-schedule','virtual-activity-content-variety','virtual-activity-history','virtual-activity-weekend-mode','virtual-activity-text-photo-mix','virtual-interaction-2','virtual-interaction-smart-targeting','virtual-interaction-rate-limits','virtual-interaction-history','virtual-like-comment-follow','virtual-interaction-no-private-dm','virtual-interaction-ranking-safety','post-comment-previews','post-like-people','post-social-preview-batch','social-email-notifications','email-like-alerts','email-comment-alerts','email-connection-alerts','email-notification-preferences','virtual-interaction-email-alerts','activity-center-2','activity-grouped-likes','activity-unread-actions','activity-direct-targets','notification-comment-targets','virtual-notification-realtime','activity-person-like-grouping','activity-follower-grouping','activity-mobile-tools-scroll','activity-visual-polish','activity-count-labels','post-like-summary-spacing-fix','smart-email-digests','smart-email-inactive-recovery','social-email-online-suppression','social-email-rate-guard','smart-email-test','discover-2','discover-person-modes','discover-profile-rotation','discover-profile-dismissals','discover-location-mode','discover-content-diversity','discover-real-engagement-ranking','discover-adaptive-real-balance','discover-sidebar-dedupe','discover-carousel-controls','discover-mobile-density'] });
+  res.json({ ok: true, version: '1.12.42.1', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default','growth-public-teaser-profile','growth-teaser-media-lock','growth-teaser-signup-attribution','public-teaser-desktop-layout-fix','feed-full-image-fit','full-image-viewer','protected-image-lightbox','friend-gate-chat-lock','conversation-reply-continuity','chat-video-processing-refresh','chat-scroll-containment','chat-bottom-autoscroll','mobile-chat-composer-layout','mobile-chat-composer-viewport-fix','mobile-chat-active-header-compaction','direct-public-profile','direct-profile-media-lock','direct-profile-referral-attribution','public-profile-preview-control','seo-public-profiles','dynamic-profile-meta','profilepage-structured-data','profile-sitemap','public-profiles-hub','seo-profile-privacy-noindex','seo-navigation-cache-safety','visitor-theme-switcher','light-theme','dark-theme','theme-preference-persistence','light-theme-contrast-fix','light-sent-message-contrast-fix','sent-message-delete','message-delete-realtime','virtual-community','virtual-host-profiles','virtual-daily-activity','virtual-admin-inbox','virtual-admin-reply','virtual-profile-media-pools','virtual-profile-disclosure','virtual-profile-seo','virtual-profile-sitemap','virtual-profile-public-hub','virtual-profile-seo-disclosure','virtual-profile-dynamic-meta','profile-seo-hydration-preservation','virtual-profile-image-library','virtual-profile-image-tags','virtual-profile-image-usage-history','virtual-profile-image-auto-selection','virtual-profile-image-admin','virtual-profile-image-batch-upload','virtual-profile-image-pilot','virtual-profile-base-packs','virtual-profile-pack-auto-sync','virtual-profile-pack-status','virtual-realistic-pack-importer','virtual-mass-media-import','virtual-mass-zip-staging','virtual-mass-auto-assignment','virtual-mass-username-folder-fix','virtual-mass-preview','virtual-mass-progress','virtual-mass-history','virtual-mass-atomic-commit','virtual-mass-rollback','virtual-visual-manager-2','virtual-visual-single-replace','virtual-visual-post-reorder','virtual-visual-duplicate-detection','virtual-visual-change-history','virtual-visual-last-change-rollback','virtual-quality-center','virtual-quality-broken-reference-scan','virtual-quality-duplicate-scan','virtual-quality-low-resolution-scan','virtual-quality-admin-filters','virtual-quality-repair-preview','virtual-quality-repair-safe-apply','virtual-quality-legacy-pool-cleanup','virtual-quality-hash-backfill','virtual-quality-repair-rollback','virtual-base-pack-reactivation-guard','virtual-cover-repair-import-aware','virtual-pack-zip-validation','virtual-pack-manifest-v1','virtual-pack-safe-replacement','virtual-pack-import-history','virtual-image-admin-preview-fix','virtual-profile-retire-fix','virtual-profile-cover-display-fix','virtual-profile-retire-transaction-fix','virtual-profile-cover-runtime-resolver','virtual-profile-cover-clean-avatar-fallback','virtual-profile-retire-failsafe','virtual-historical-post-media-relink','virtual-historical-story-media-relink','virtual-activity-2','virtual-activity-smart-schedule','virtual-activity-content-variety','virtual-activity-history','virtual-activity-weekend-mode','virtual-activity-text-photo-mix','virtual-interaction-2','virtual-interaction-smart-targeting','virtual-interaction-rate-limits','virtual-interaction-history','virtual-like-comment-follow','virtual-interaction-no-private-dm','virtual-interaction-ranking-safety','post-comment-previews','post-like-people','post-social-preview-batch','social-email-notifications','email-like-alerts','email-comment-alerts','email-connection-alerts','email-notification-preferences','virtual-interaction-email-alerts','activity-center-2','activity-grouped-likes','activity-unread-actions','activity-direct-targets','notification-comment-targets','virtual-notification-realtime','activity-person-like-grouping','activity-follower-grouping','activity-mobile-tools-scroll','activity-visual-polish','activity-count-labels','post-like-summary-spacing-fix','smart-email-digests','smart-email-inactive-recovery','social-email-online-suppression','social-email-rate-guard','smart-email-test','discover-2','discover-person-modes','discover-profile-rotation','discover-profile-dismissals','discover-location-mode','discover-content-diversity','discover-real-engagement-ranking','discover-adaptive-real-balance','discover-sidebar-dedupe','discover-carousel-controls','discover-mobile-density'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -5056,7 +5064,7 @@ async function logVirtualVisualAction(client,{adminId,userId,actionType,poolId=n
 }
 
 async function createVirtualManagerMedia({userId,file,adminId,sha256}) {
-  const meta={virtual:true,synthetic:true,uploaded_by_admin:Number(adminId),image_system:'1.12.42',visual_manager:true,visual_sha256:String(sha256||'')};
+  const meta={virtual:true,synthetic:true,uploaded_by_admin:Number(adminId),image_system:'1.12.42.1',visual_manager:true,visual_sha256:String(sha256||'')};
   if(imageUploadConfigured()){
     const uploaded=await uploadMediaBuffer(file.buffer,{mimeType:file.mimetype,originalName:file.originalname,userId,privateDelivery:true});
     const inserted=await pool.query(`
@@ -5173,7 +5181,9 @@ async function virtualQualityCenterReport() {
         FROM stories WHERE media_id IS NOT NULL GROUP BY user_id,media_id
     )
     SELECT vpm.id AS pool_id,vpm.user_id,vpm.media_id,vpm.kind,vpm.active,vpm.archived_at,
-           vpm.label,vpm.sort_order,m.provider,m.provider_status,m.width,m.height,m.size_bytes,
+           vpm.label,vpm.sort_order,m.provider,m.provider_id,m.provider_status,m.width,m.height,m.size_bytes,m.secure_url,m.provider_meta,
+           COALESCE(m.provider_meta->>'pack_stage','') AS pack_stage,
+           (COALESCE(m.provider_meta->>'pack_stage','')='base' OR (m.provider='virtual_local' AND (m.provider_id ~ '^virtual-pack-[0-9]+-(avatar|cover)$' OR m.provider_id ~ '^virtual-[0-9]+-[1-4]$'))) AS is_base_legacy,
            COALESCE(NULLIF(m.provider_meta->>'visual_sha256',''),NULLIF(m.provider_meta->>'mass_import_sha256',''),NULLIF(m.provider_meta->>'realistic_sha256',''),'') AS sha256,
            COALESCE(pr.refs,0)::int AS post_refs,COALESCE(sr.refs,0)::int AS story_refs
       FROM virtual_profile_media vpm
@@ -5203,6 +5213,12 @@ async function virtualQualityCenterReport() {
            MAX(created_at) FILTER (WHERE status='applied') AS last_change_at
       FROM virtual_visual_actions GROUP BY user_id
   `).catch(()=>({rows:[]}));
+  const {rows:massImportedRows}=await pool.query(`
+    SELECT DISTINCT i.user_id FROM virtual_media_import_items i
+    JOIN virtual_media_import_jobs j ON j.id=i.job_id
+    WHERE j.status='completed' AND i.status='ready'
+  `).catch(()=>({rows:[]}));
+  const massImportedUsers=new Set(massImportedRows.map(r=>Number(r.user_id)));
 
   const brokenPosts=new Map(brokenPostRows.map(r=>[Number(r.user_id),Number(r.broken||0)]));
   const brokenStories=new Map(brokenStoryRows.map(r=>[Number(r.user_id),Number(r.broken||0)]));
@@ -5238,7 +5254,7 @@ async function virtualQualityCenterReport() {
   }
 
   const results=[];
-  let activeImagesTotal=0,archivedRefsTotal=0,lowResolutionTotal=0,brokenRefsTotal=0;
+  let activeImagesTotal=0,archivedRefsTotal=0,lowResolutionTotal=0,brokenRefsTotal=0,missingHashTotal=0,legacyBaseActiveTotal=0;
   for(const profile of profiles){
     const uid=Number(profile.id),items=byUser.get(uid)||[];
     const active=items.filter(x=>Boolean(x.active)&&!x.archived_at);
@@ -5250,6 +5266,7 @@ async function virtualQualityCenterReport() {
     const nonReady=active.filter(x=>String(x.provider_status||'ready')!=='ready');
     const archivedRefs=archived.reduce((n,x)=>n+x.post_refs+x.story_refs,0);
     const missingHash=active.filter(x=>!String(x.sha256||'')).length;
+    const legacyBaseActive=massImportedUsers.has(uid)?active.filter(x=>Boolean(x.is_base_legacy)):[];
     const lowResolution=active.filter(x=>{
       const w=Number(x.width||0),h=Number(x.height||0),kind=String(x.kind||'post');
       if(!w||!h) return false;
@@ -5284,6 +5301,7 @@ async function virtualQualityCenterReport() {
     if(dup.same_profile_groups) add('duplicate_same_profile','warning','Fotos repetidas en el mismo perfil',`${dup.same_profile_groups} grupo(s) duplicados dentro de este perfil.`,dup.same_profile_groups);
     if(lowResolution.length) add('low_resolution','warning','Resolución baja o anómala',`${lowResolution.length} imagen(es) están por debajo de los mínimos recomendados.`,lowResolution.length);
     if(archivedRefs) add('archived_referenced','warning','Archivadas todavía referenciadas',`${archivedRefs} referencia(s) histórica(s) siguen usando imágenes retiradas.`,archivedRefs);
+    if(legacyBaseActive.length) add('legacy_base_active','warning','Pack base reactivado',`${legacyBaseActive.length} imagen(es) del pack base antiguo siguen activas junto al lote fotográfico actual.`,legacyBaseActive.length);
     if(missingHash) add('hash_missing','notice','Sin huella de duplicados',`${missingHash} imagen(es) activas no tienen SHA-256 registrado y no pueden compararse con precisión.`,missingHash);
     if(Boolean(profile.auto_post_enabled)&&posts.length<4) add('auto_post_visual_risk','warning','Actividad automática con poca variedad','Los posts automáticos están activos pero el pool de publicación tiene poca variedad.');
 
@@ -5293,13 +5311,13 @@ async function virtualQualityCenterReport() {
     const status=critical?'critical':warnings?'warning':'ok';
     const score=Math.max(0,100-(critical*24)-(warnings*7)-(notices*2));
     const actionInfo=actions.get(uid)||{applied:0,last:null};
-    activeImagesTotal+=active.length;archivedRefsTotal+=archivedRefs;lowResolutionTotal+=lowResolution.length;brokenRefsTotal+=brokenPostsCount+brokenStoriesCount;
+    activeImagesTotal+=active.length;archivedRefsTotal+=archivedRefs;lowResolutionTotal+=lowResolution.length;brokenRefsTotal+=brokenPostsCount+brokenStoriesCount;missingHashTotal+=missingHash;legacyBaseActiveTotal+=legacyBaseActive.length;
     results.push({
       id:uid,username:profile.username,name:profile.name,avatar:profile.avatar,cover:profile.cover,location:profile.location,
       profile_status:profile.status,auto_post_enabled:Boolean(profile.auto_post_enabled),auto_interact_enabled:Boolean(profile.auto_interact_enabled),
       quality_status:status,quality_score:score,critical_issues:critical,warning_issues:warnings,notice_issues:notices,issues:issueList,
       active_images:active.length,archived_images:archived.length,post_images:posts.length,low_resolution_images:lowResolution.length,
-      archived_refs:archivedRefs,broken_refs:brokenPostsCount+brokenStoriesCount,missing_hash_images:missingHash,
+      archived_refs:archivedRefs,broken_refs:brokenPostsCount+brokenStoriesCount,missing_hash_images:missingHash,legacy_base_active:legacyBaseActive.length,
       duplicate_groups:Number(dup.groups||0),duplicate_images:Number(dup.images||0),visual_changes:Number(actionInfo.applied||0),last_visual_change_at:actionInfo.last||null
     });
   }
@@ -5315,9 +5333,184 @@ async function virtualQualityCenterReport() {
     generated_at:new Date().toISOString(),scan_ms:Date.now()-started,
     summary:{profiles:results.length,healthy_profiles:healthyProfiles,warning_profiles:warningProfiles,critical_profiles:criticalProfiles,
       active_images:activeImagesTotal,duplicate_groups:duplicateGroups,duplicate_images:duplicateImages,low_resolution_images:lowResolutionTotal,
-      archived_refs:archivedRefsTotal,broken_refs:brokenRefsTotal},
+      archived_refs:archivedRefsTotal,broken_refs:brokenRefsTotal,missing_hash_images:missingHashTotal,legacy_base_active:legacyBaseActiveTotal},
     profiles:results
   };
+}
+
+const QUALITY_REPAIR_ADVISORY_LOCK=112421;
+
+function localVirtualMediaPath(secureUrl='') {
+  const rel=String(secureUrl||'').trim();
+  if(!rel.startsWith('/assets/virtual/')) return '';
+  const abs=path.resolve(publicDir,rel.replace(/^\//,''));
+  const safeRoot=path.resolve(publicDir,'assets','virtual')+path.sep;
+  return abs.startsWith(safeRoot)?abs:'';
+}
+
+async function latestCompletedFullMassImport(db=pool) {
+  const {rows}=await db.query(`
+    SELECT id,archive_name,total_profiles,total_images,committed_at
+      FROM virtual_media_import_jobs
+     WHERE status='completed' AND total_profiles=100 AND total_images>=600
+     ORDER BY committed_at DESC NULLS LAST,id DESC LIMIT 1
+  `);
+  return rows[0]||null;
+}
+
+async function buildVirtualQualityRepairPlan({db=pool,includeSnapshot=false}={}) {
+  const existing=(await db.query(`SELECT id,created_at FROM virtual_quality_repairs WHERE status='applied' ORDER BY id DESC LIMIT 1`).catch(()=>({rows:[]}))).rows[0];
+  if(existing) return {available:true,blocked:true,reason:`La reparación #${existing.id} ya está aplicada. Reanaliza el Centro de Calidad o deshaz esa reparación antes de crear otra.`,repair_id:Number(existing.id)};
+  const job=await latestCompletedFullMassImport(db);
+  if(!job) return {available:false,blocked:true,reason:'No existe una importación masiva completa y confirmada de 100 perfiles.'};
+  const {rows:items}=await db.query(`
+    SELECT i.id,i.user_id,i.username,i.kind,i.media_id,i.sha256,i.sort_order
+      FROM virtual_media_import_items i
+      JOIN media m ON m.id=i.media_id
+     WHERE i.job_id=$1 AND i.status='ready' AND m.provider_status='ready'
+     ORDER BY i.user_id,i.sort_order,i.id
+  `,[Number(job.id)]);
+  const userIds=[...new Set(items.map(x=>Number(x.user_id)))];
+  if(userIds.length!==100 || items.length<600) return {available:false,blocked:true,reason:`La importación #${job.id} no contiene los 100 perfiles completos.`,job_id:Number(job.id)};
+
+  const manual=await db.query(`
+    SELECT id,user_id,action_type,created_at
+      FROM virtual_visual_actions
+     WHERE user_id=ANY($1::bigint[]) AND status='applied' AND created_at>COALESCE($2,'epoch'::timestamptz)
+     ORDER BY id DESC LIMIT 1
+  `,[userIds,job.committed_at]).catch(()=>({rows:[]}));
+  if(manual.rowCount) return {available:true,blocked:true,reason:`Existe un cambio visual individual posterior a la importación (acción #${manual.rows[0].id}). Deshazlo antes de reparar globalmente.`,job_id:Number(job.id),archive_name:job.archive_name};
+
+  const {rows:users}=await db.query(`SELECT id,username,avatar,cover FROM users WHERE id=ANY($1::bigint[]) AND is_virtual=TRUE ORDER BY id`,[userIds]);
+  const {rows:baseRows}=await db.query(`
+    SELECT vpm.id AS pool_id,vpm.user_id,vpm.media_id,vpm.active,vpm.archived_at,vpm.kind,vpm.sort_order,
+           m.provider,m.provider_id,m.secure_url,m.provider_meta,
+           COALESCE(NULLIF(m.provider_meta->>'visual_sha256',''),NULLIF(m.provider_meta->>'mass_import_sha256',''),NULLIF(m.provider_meta->>'realistic_sha256',''),'') AS sha256
+      FROM virtual_profile_media vpm
+      JOIN media m ON m.id=vpm.media_id
+     WHERE vpm.user_id=ANY($1::bigint[])
+       AND (COALESCE(m.provider_meta->>'pack_stage','')='base' OR (m.provider='virtual_local' AND (m.provider_id ~ '^virtual-pack-[0-9]+-(avatar|cover)$' OR m.provider_id ~ '^virtual-[0-9]+-[1-4]$')))
+     ORDER BY vpm.user_id,vpm.id
+  `,[userIds]);
+  const expectedCover=new Map(),expectedAvatar=new Map();
+  for(const item of items){
+    if(item.kind==='cover') expectedCover.set(Number(item.user_id),Number(item.media_id));
+    if(item.kind==='avatar') expectedAvatar.set(Number(item.user_id),Number(item.media_id));
+  }
+  const coverFixes=users.filter(u=>expectedCover.has(Number(u.id))&&String(u.cover||'')!==`/media/${expectedCover.get(Number(u.id))}`)
+    .map(u=>({user_id:Number(u.id),username:u.username,before:String(u.cover||''),after:`/media/${expectedCover.get(Number(u.id))}`}));
+  const avatarFixes=users.filter(u=>expectedAvatar.has(Number(u.id))&&!String(u.avatar||'').trim())
+    .map(u=>({user_id:Number(u.id),username:u.username,before:String(u.avatar||''),after:`/media/${expectedAvatar.get(Number(u.id))}`}));
+  const legacyActive=baseRows.filter(x=>Boolean(x.active)&&!x.archived_at).map(x=>({pool_id:Number(x.pool_id),user_id:Number(x.user_id),media_id:Number(x.media_id),kind:x.kind,sort_order:Number(x.sort_order||0),active:Boolean(x.active),archived_at:x.archived_at||null}));
+  const legacyMediaIds=[...new Set(legacyActive.map(x=>x.media_id))];
+  let legacyRefs=[];
+  if(legacyMediaIds.length){
+    const refs=await db.query(`
+      SELECT 'post'::text AS ref_type,p.id AS ref_id,p.user_id,p.media_id FROM posts p WHERE p.user_id=ANY($1::bigint[]) AND p.media_id=ANY($2::bigint[])
+      UNION ALL
+      SELECT 'story'::text AS ref_type,s.id AS ref_id,s.user_id,s.media_id FROM stories s WHERE s.user_id=ANY($1::bigint[]) AND s.media_id=ANY($2::bigint[])
+      ORDER BY user_id,ref_type,ref_id
+    `,[userIds,legacyMediaIds]);
+    legacyRefs=refs.rows;
+  }
+  const importedByRole=new Map();
+  const importedPostsByUser=new Map();
+  for(const item of items){
+    const uid=Number(item.user_id);
+    importedByRole.set(`${uid}:${item.kind}:${Number(item.sort_order||0)}`,Number(item.media_id));
+    importedByRole.set(`${uid}:${item.kind}`,Number(item.media_id));
+    if(item.kind==='post'){if(!importedPostsByUser.has(uid))importedPostsByUser.set(uid,[]);importedPostsByUser.get(uid).push(item);}
+  }
+  const baseByMedia=new Map(baseRows.map(x=>[Number(x.media_id),x]));
+  const refChanges=[];
+  for(const ref of legacyRefs){
+    const uid=Number(ref.user_id),base=baseByMedia.get(Number(ref.media_id));
+    if(!base)continue;
+    let replacement=importedByRole.get(`${uid}:${base.kind}:${Number(base.sort_order||0)}`)||importedByRole.get(`${uid}:${base.kind}`)||0;
+    if(!replacement&&base.kind==='post'){const arr=importedPostsByUser.get(uid)||[];replacement=Number(arr[0]?.media_id||0);}
+    if(replacement&&replacement!==Number(ref.media_id)) refChanges.push({ref_type:ref.ref_type,ref_id:Number(ref.ref_id),user_id:uid,old_media_id:Number(ref.media_id),new_media_id:replacement});
+  }
+  const unresolvedRefs=Math.max(0,legacyRefs.length-refChanges.length);
+  const hashCandidates=[]; let unhashable=0;
+  for(const row of baseRows){
+    if(String(row.sha256||'')) continue;
+    const abs=localVirtualMediaPath(row.secure_url);
+    if(abs&&fs.existsSync(abs)) hashCandidates.push({media_id:Number(row.media_id),path:abs}); else unhashable+=1;
+  }
+  const summary={profiles:userIds.length,covers_to_fix:coverFixes.length,avatars_to_fix:avatarFixes.length,legacy_active_to_archive:legacyActive.length,legacy_refs_to_relink:refChanges.length,legacy_refs_unresolved:unresolvedRefs,hashes_to_backfill:hashCandidates.length,hashes_unavailable:unhashable,current_active_estimate:items.length+legacyActive.length,target_active_estimate:items.length};
+  const plan={available:true,blocked:false,job_id:Number(job.id),archive_name:job.archive_name,committed_at:job.committed_at,summary,sample_profiles:coverFixes.slice(0,12).map(x=>x.username)};
+  if(includeSnapshot){plan.userIds=userIds;plan.users=users;plan.items=items;plan.baseRows=baseRows;plan.coverFixes=coverFixes;plan.avatarFixes=avatarFixes;plan.legacyActive=legacyActive;plan.refChanges=refChanges;plan.hashCandidates=hashCandidates;}
+  return plan;
+}
+
+async function applyVirtualQualityRepair({adminId}) {
+  const plan=await buildVirtualQualityRepairPlan({includeSnapshot:true});
+  if(!plan.available||plan.blocked) throw Object.assign(new Error(plan.reason||'La reparación no está disponible.'),{status:409});
+  if(Number(plan.summary?.legacy_refs_unresolved||0)>0) throw Object.assign(new Error(`Hay ${plan.summary.legacy_refs_unresolved} referencia(s) legacy sin sustituto seguro. No se archivará nada hasta resolverlas.`),{status:409});
+  const hashUpdates=[];
+  for(const item of plan.hashCandidates){
+    const digest=crypto.createHash('sha256').update(fs.readFileSync(item.path)).digest('hex');
+    hashUpdates.push({media_id:Number(item.media_id),sha256:digest});
+  }
+  const result=await withTransaction(async client=>{
+    await client.query('SELECT pg_advisory_xact_lock($1)',[QUALITY_REPAIR_ADVISORY_LOCK]);
+    const latest=await client.query(`SELECT id,status,committed_at FROM virtual_media_import_jobs WHERE id=$1 FOR SHARE`,[plan.job_id]);
+    if(!latest.rowCount||latest.rows[0].status!=='completed') throw Object.assign(new Error('La importación base cambió antes de aplicar la reparación.'),{status:409});
+    const newerRepair=await client.query(`SELECT id FROM virtual_quality_repairs WHERE status='applied' ORDER BY id DESC LIMIT 1 FOR UPDATE`);
+    if(newerRepair.rowCount) throw Object.assign(new Error(`Ya existe una reparación de calidad aplicada (#${newerRepair.rows[0].id}). Deshazla o reanaliza antes de continuar.`),{status:409});
+    const manual=await client.query(`SELECT id FROM virtual_visual_actions WHERE user_id=ANY($1::bigint[]) AND status='applied' AND created_at>COALESCE($2,'epoch'::timestamptz) ORDER BY id DESC LIMIT 1`,[plan.userIds,plan.committed_at]);
+    if(manual.rowCount) throw Object.assign(new Error(`Se detectó un cambio visual posterior (acción #${manual.rows[0].id}). Reanaliza antes de reparar.`),{status:409});
+
+    const snapshot={job_id:plan.job_id,users:plan.users.map(u=>({id:Number(u.id),avatar:String(u.avatar||''),cover:String(u.cover||'')})),pools:plan.baseRows.map(x=>({id:Number(x.pool_id),user_id:Number(x.user_id),active:Boolean(x.active),archived_at:x.archived_at||null})),refs:plan.refChanges};
+    let coversFixed=0,avatarsFixed=0,legacyArchived=0,hashesBackfilled=0,refsRelinked=0;
+    for(const fix of plan.coverFixes){const q=await client.query(`UPDATE users SET cover=$2 WHERE id=$1 AND is_virtual=TRUE`,[fix.user_id,fix.after]);coversFixed+=q.rowCount||0;}
+    for(const fix of plan.avatarFixes){const q=await client.query(`UPDATE users SET avatar=$2 WHERE id=$1 AND is_virtual=TRUE`,[fix.user_id,fix.after]);avatarsFixed+=q.rowCount||0;}
+    for(const ref of plan.refChanges){
+      if(ref.ref_type==='post'){const q=await client.query(`UPDATE posts SET media_id=$2 WHERE id=$1 AND user_id=$3 AND media_id=$4`,[ref.ref_id,ref.new_media_id,ref.user_id,ref.old_media_id]);refsRelinked+=q.rowCount||0;}
+      else if(ref.ref_type==='story'){const q=await client.query(`UPDATE stories SET media_id=$2 WHERE id=$1 AND user_id=$3 AND media_id=$4`,[ref.ref_id,ref.new_media_id,ref.user_id,ref.old_media_id]);refsRelinked+=q.rowCount||0;}
+    }
+    if(plan.legacyActive.length){
+      const ids=plan.legacyActive.map(x=>x.pool_id);
+      const q=await client.query(`UPDATE virtual_profile_media SET active=FALSE,archived_at=COALESCE(archived_at,NOW()),updated_at=NOW() WHERE id=ANY($1::bigint[]) AND active=TRUE`,[ids]);legacyArchived=q.rowCount||0;
+    }
+    for(const item of hashUpdates){
+      const q=await client.query(`UPDATE media SET provider_meta=jsonb_set(jsonb_set(COALESCE(provider_meta,'{}'::jsonb),'{visual_sha256}',to_jsonb($2::text),true),'{quality_repair_v12421}','true'::jsonb,true) WHERE id=$1`,[item.media_id,item.sha256]);hashesBackfilled+=q.rowCount||0;
+    }
+    const summary={source_job_id:plan.job_id,covers_fixed:coversFixed,avatars_fixed:avatarsFixed,legacy_archived:legacyArchived,refs_relinked:refsRelinked,hashes_backfilled:hashesBackfilled,target_active_images:plan.items.length};
+    const inserted=await client.query(`INSERT INTO virtual_quality_repairs(admin_id,source_job_id,status,summary,snapshot,created_at) VALUES($1,$2,'applied',$3::jsonb,$4::jsonb,NOW()) RETURNING id,created_at`,[Number(adminId),plan.job_id,JSON.stringify(summary),JSON.stringify(snapshot)]);
+    return {repair_id:Number(inserted.rows[0].id),created_at:inserted.rows[0].created_at,...summary};
+  });
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'virtual_quality_repair',$2)`,[Number(adminId),JSON.stringify(result).slice(0,1000)]).catch(()=>{});
+  io.to('admins').emit('virtual-community:update',{type:'quality-repair',repair_id:result.repair_id});
+  return result;
+}
+
+async function rollbackVirtualQualityRepair({repairId,adminId}) {
+  const result=await withTransaction(async client=>{
+    await client.query('SELECT pg_advisory_xact_lock($1)',[QUALITY_REPAIR_ADVISORY_LOCK]);
+    const locked=await client.query(`SELECT * FROM virtual_quality_repairs WHERE id=$1 FOR UPDATE`,[Number(repairId)]);
+    const repair=locked.rows[0];
+    if(!repair) throw Object.assign(new Error('Reparación no encontrada.'),{status:404});
+    if(repair.status!=='applied') throw Object.assign(new Error('Esta reparación ya no está aplicada.'),{status:409});
+    const newer=await client.query(`SELECT id FROM virtual_quality_repairs WHERE id>$1 AND status='applied' ORDER BY id DESC LIMIT 1`,[Number(repairId)]);
+    if(newer.rowCount) throw Object.assign(new Error(`Existe una reparación posterior (#${newer.rows[0].id}).`),{status:409});
+    const snap=repair.snapshot||{}; const users=Array.isArray(snap.users)?snap.users:[]; const pools=Array.isArray(snap.pools)?snap.pools:[]; const refs=Array.isArray(snap.refs)?snap.refs:[];
+    const userIds=users.map(x=>Number(x.id)).filter(Boolean);
+    const manual=await client.query(`SELECT id FROM virtual_visual_actions WHERE user_id=ANY($1::bigint[]) AND status='applied' AND created_at>$2 ORDER BY id DESC LIMIT 1`,[userIds,repair.created_at]).catch(()=>({rows:[],rowCount:0}));
+    if(manual.rowCount) throw Object.assign(new Error(`Hay cambios visuales posteriores (acción #${manual.rows[0].id}). Deshazlos antes del rollback.`),{status:409});
+    let usersRestored=0,poolsRestored=0,refsRestored=0;
+    for(const u of users){const q=await client.query(`UPDATE users SET avatar=$2,cover=$3 WHERE id=$1 AND is_virtual=TRUE`,[Number(u.id),String(u.avatar||''),String(u.cover||'')]);usersRestored+=q.rowCount||0;}
+    for(const ref of refs){
+      if(ref.ref_type==='post'){const q=await client.query(`UPDATE posts SET media_id=$2 WHERE id=$1 AND user_id=$3 AND media_id=$4`,[Number(ref.ref_id),Number(ref.old_media_id),Number(ref.user_id),Number(ref.new_media_id)]);refsRestored+=q.rowCount||0;}
+      else if(ref.ref_type==='story'){const q=await client.query(`UPDATE stories SET media_id=$2 WHERE id=$1 AND user_id=$3 AND media_id=$4`,[Number(ref.ref_id),Number(ref.old_media_id),Number(ref.user_id),Number(ref.new_media_id)]);refsRestored+=q.rowCount||0;}
+    }
+    for(const x of pools){const q=await client.query(`UPDATE virtual_profile_media SET active=$3,archived_at=$4,updated_at=NOW() WHERE id=$1 AND user_id=$2`,[Number(x.id),Number(x.user_id),Boolean(x.active),x.archived_at||null]);poolsRestored+=q.rowCount||0;}
+    await client.query(`UPDATE virtual_quality_repairs SET status='rolled_back',rolled_back_at=NOW(),rolled_back_by=$2 WHERE id=$1`,[Number(repairId),Number(adminId)]);
+    return {repair_id:Number(repairId),users_restored:usersRestored,pools_restored:poolsRestored,refs_restored:refsRestored,hashes_preserved:true};
+  });
+  await pool.query(`INSERT INTO moderation_actions(admin_id,action,note) VALUES($1,'virtual_quality_repair_rollback',$2)`,[Number(adminId),JSON.stringify(result).slice(0,1000)]).catch(()=>{});
+  io.to('admins').emit('virtual-community:update',{type:'quality-repair-rollback',repair_id:Number(repairId)});
+  return result;
 }
 
 async function restoreVirtualPoolSnapshot(client,snap={}) {
@@ -5333,7 +5526,27 @@ async function restoreVirtualPoolSnapshot(client,snap={}) {
 
 app.get('/api/admin/virtual-community/quality', auth, adminOnly, asyncRoute(async (req,res) => {
   const report=await virtualQualityCenterReport();
-  res.json(report);
+  const latestRepair=(await pool.query(`SELECT id,status,summary,created_at,rolled_back_at FROM virtual_quality_repairs ORDER BY id DESC LIMIT 1`).catch(()=>({rows:[]}))).rows[0]||null;
+  res.json({...report,latest_repair:latestRepair});
+}));
+
+app.get('/api/admin/virtual-community/quality-repair/preview', auth, adminOnly, asyncRoute(async (_req,res) => {
+  const plan=await buildVirtualQualityRepairPlan();
+  res.json(plan);
+}));
+
+app.post('/api/admin/virtual-community/quality-repair/apply', auth, adminOnly, asyncRoute(async (req,res) => {
+  const result=await applyVirtualQualityRepair({adminId:req.user.id});
+  const quality=await virtualQualityCenterReport();
+  res.json({ok:true,result,quality});
+}));
+
+app.post('/api/admin/virtual-community/quality-repair/:repairId/rollback', auth, adminOnly, asyncRoute(async (req,res) => {
+  const repairId=Number(req.params.repairId);
+  if(!Number.isSafeInteger(repairId)||repairId<=0) return res.status(400).json({error:'Reparación inválida'});
+  const result=await rollbackVirtualQualityRepair({repairId,adminId:req.user.id});
+  const quality=await virtualQualityCenterReport();
+  res.json({ok:true,result,quality});
 }));
 
 app.get('/api/admin/virtual-profiles/:userId/media', auth, adminOnly, asyncRoute(async (req,res) => {
@@ -6304,7 +6517,7 @@ async function hardenLegacyCloudinaryMedia() {
 
 async function start() {
   await initDb();
-  await recoverInterruptedMassImports(pool).then(n=>{if(n)console.log(`V1.12.42: ${n} importación(es) masiva(s) interrumpida(s) marcadas para reintento.`);}).catch(err=>console.error('Recuperación importador masivo:',err.message));
+  await recoverInterruptedMassImports(pool).then(n=>{if(n)console.log(`V1.12.42.1: ${n} importación(es) masiva(s) interrumpida(s) marcadas para reintento.`);}).catch(err=>console.error('Recuperación importador masivo:',err.message));
   await syncSystemAccounts();
   await repairLegacyVirtualCoverFrames().catch(err => console.error('V1.12.30 reparación de portadas virtuales:',err.message));
   await syncPilotVirtualImages(pool).catch(err => console.error('Virtual Profile Image System pilot:',err.message));
@@ -6312,7 +6525,7 @@ async function start() {
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
   await pool.query(`DELETE FROM smart_email_log WHERE sent_at < NOW()-INTERVAL '120 days'`).catch(err => console.error('Limpieza smart_email_log:',err.message));
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Instant Admirers V1.12.42 en http://localhost:${PORT}`);
+    console.log(`Instant Admirers V1.12.42.1 en http://localhost:${PORT}`);
     void hardenLegacyCloudinaryMedia().catch(err => console.error('Protección multimedia heredada:', err.message));
     void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message));
     const bunnyStatusTimer=setInterval(() => void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message)),30000);
