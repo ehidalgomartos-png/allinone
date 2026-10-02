@@ -290,6 +290,7 @@ const state = {
   launchStatus: { registration_mode:'open', invite_required:false, registration_paused:false, launch_phase:'prelaunch', cohort_target:100, banner_enabled:true, banner_text:'' },
   community: null,
   virtualCommunityData: null,
+  virtualQualityWatchData: null,
   authMode: 'login'
 };
 
@@ -3438,7 +3439,12 @@ function connectRealtime() {
     updateNavBadges();
     if(state.view==='admin') await renderAdmin().catch(()=>{});
   });
-  state.socket.on('virtual-community:update', async () => {
+  state.socket.on('virtual-community:update', async (event={}) => {
+    if(state.me?.is_admin && event?.type==='quality-watch-alert'){
+      const n=Number(event?.new_issues||0),critical=Number(event?.critical||0);
+      toast(critical?`Vigilancia visual: ${critical} incidencia(s) crítica(s)`:`Vigilancia visual: ${n} incidencia(s) nueva(s)`,'warning');
+      browserNotice('Instant Admirers · Calidad visual',critical?`${critical} incidencia(s) crítica(s) requieren revisión`:`${n} incidencia(s) nueva(s) requieren revisión`);
+    }
     if(state.me?.is_admin && state.view==='admin') await renderAdmin().catch(()=>{});
   });
   state.socket.on('notification:new', (event) => {
@@ -3872,6 +3878,12 @@ function virtualCommunityAdminHtml(data={}) {
   const activity=Array.isArray(data?.recent_activity)?data.recent_activity:[];
   const interactions=Array.isArray(data?.recent_interactions)?data.recent_interactions:[];
   const massImports=Array.isArray(data?.mass_imports)?data.mass_imports:[];
+  const qualityWatch=data?.quality_watch||{};
+  const qualityWatchLatest=qualityWatch?.latest||null;
+  const qualityWatchNew=Number(qualityWatch?.new_issues||0);
+  const qualityWatchAttention=Number(qualityWatch?.attention_profiles||0);
+  const qualityWatchCritical=Number(qualityWatchLatest?.summary?.critical_profiles||0);
+  const qualityWatchBanner=qualityWatch?.needs_attention?`<button class="virtual-quality-watch-alert ${qualityWatchCritical?'critical':''}" onclick="openVirtualQualityWatch()"><span><b>${qualityWatchCritical?'⚠ Incidencia crítica en vigilancia visual':'⚠ La vigilancia visual requiere revisión'}</b><small>${qualityWatchNew?`${qualityWatchNew} incidencia(s) nueva(s) detectada(s)`: `${qualityWatchAttention} perfil(es) siguen necesitando revisión`} · último escaneo ${qualityWatchLatest?.created_at?timeAgo(qualityWatchLatest.created_at):'reciente'}</small></span><strong>Abrir vigilancia →</strong></button>`:'';
   const massImportMaxZipMb=Math.max(100,Number(data?.mass_import_max_zip_mb||900));
   const total=Number(st.total||0);
   const statusLabel=x=>x==='active'?'Activo':x==='paused'?'Pausado':'Retirado';
@@ -3887,10 +3899,11 @@ function virtualCommunityAdminHtml(data={}) {
   const massActive=massImports.find(x=>['uploaded','validating','staging','ready','committing','rolling_back','cancelling'].includes(String(x.status||'')));
   const massHistoryHtml=massImports.length?massImports.map(x=>`<button class="virtual-mass-history-row ${escapeAttr(x.status||'')}" onclick="openVirtualMassImport(${Number(x.id)})"><span><b>#${Number(x.id)} · ${escapeHtml(x.archive_name||'ZIP')}</b><small>${massStatusLabel(x.status)} · ${Number(x.total_profiles||0)} perfiles · ${Number(x.total_images||0)} fotos</small></span><em>${Number(x.progress_percent||0)}%</em><time>${x.created_at?timeAgo(x.created_at):''}</time></button>`).join(''):'<div class="empty compact-empty">Aún no hay importaciones masivas.</div>';
   return `<section class="card admin-section virtual-community-admin">
-    <div class="section-row"><div><h3>Comunidad virtual</h3><p>100 anfitriones ficticios identificados como virtuales. Actividad e interacción programadas con límites, historial y control individual.</p></div><span class="virtual-community-version">V1.12.42.1</span></div>
+    <div class="section-row"><div><h3>Comunidad virtual</h3><p>100 anfitriones ficticios identificados como virtuales. Actividad e interacción programadas con límites, historial y control individual.</p></div><span class="virtual-community-version">V1.12.43</span></div>
     ${total===0 ? `<div class="virtual-community-empty"><div>✦</div><b>La comunidad virtual todavía no está creada</b><p>Crea 50 perfiles de mujer y 50 de hombre, con ciudades, intereses, bios, contenido inicial y actividad programada. Todos se muestran con la etiqueta “Perfil virtual”.</p><button class="btn primary" onclick="seedVirtualCommunity()">Crear 100 perfiles virtuales</button></div>` : `
       <div class="virtual-community-metrics"><span><b>${total}</b> perfiles</span><span><b>${Number(st.active||0)}</b> activos</span><span><b>${Number(st.auto_enabled||0)}</b> posts Auto</span><span><b>${Number(st.auto_interact_enabled||0)}</b> interacción Auto</span><span><b>${Number(st.activity_events_today||0)}</b> actividad hoy</span><span><b>${Number(st.interaction_events_today||0)}</b> interacciones hoy</span><span><b>${Number(st.virtual_likes_today||0)}</b> likes</span><span><b>${Number(st.virtual_comments_today||0)}</b> comentarios</span><span><b>${Number(st.virtual_follows_today||0)}</b> follows</span><span><b>${Number(st.stories_today||0)}</b> Stories hoy</span><span><b>${Number(st.interacting_profiles_7d||0)}</b> interactuando 7d</span><span><b>${Number(st.media_total||0)}</b> imágenes activas</span><span class="${Number(st.inbox_unread||0)>0?'has-unread':''}"><b>${Number(st.inbox_unread||0)}</b> mensajes pendientes</span></div>
-      <div class="virtual-community-actions"><button class="btn primary compact" onclick="runVirtualCommunityNow()">Generar actividad ahora</button><button class="btn primary compact" onclick="runVirtualInteractionsNow()">Generar interacciones ahora</button><button class="btn ghost compact" onclick="rescheduleVirtualCommunity()">Reprogramar posts</button><button class="btn ghost compact" onclick="rescheduleVirtualInteractionsNow()">Reprogramar interacciones</button><button class="btn ghost compact virtual-quality-launch" onclick="openVirtualQualityCenter()">🩺 Centro de calidad</button><button class="btn ghost compact" onclick="syncVirtualImagePacks()">Sincronizar packs base</button><button class="btn ghost compact" onclick="go('feed')">Ver en Inicio</button><small>Interacción 2.0 actúa solo sobre usuarios reales y contenido público, con 1–4 acciones diarias por perfil, anti-ráfagas y afinidad por ciudad/intereses. Los mensajes privados siguen siendo manuales desde el buzón.</small></div>
+      ${qualityWatchBanner}
+      <div class="virtual-community-actions"><button class="btn primary compact" onclick="runVirtualCommunityNow()">Generar actividad ahora</button><button class="btn primary compact" onclick="runVirtualInteractionsNow()">Generar interacciones ahora</button><button class="btn ghost compact" onclick="rescheduleVirtualCommunity()">Reprogramar posts</button><button class="btn ghost compact" onclick="rescheduleVirtualInteractionsNow()">Reprogramar interacciones</button><button class="btn ghost compact virtual-quality-launch" onclick="openVirtualQualityCenter()">🩺 Centro de calidad</button><button class="btn ghost compact virtual-quality-watch-launch" onclick="openVirtualQualityWatch()">🛡 Vigilancia visual</button><button class="btn ghost compact" onclick="syncVirtualImagePacks()">Sincronizar packs base</button><button class="btn ghost compact" onclick="go('feed')">Ver en Inicio</button><small>Interacción 2.0 actúa solo sobre usuarios reales y contenido público, con 1–4 acciones diarias por perfil, anti-ráfagas y afinidad por ciudad/intereses. Los mensajes privados siguen siendo manuales desde el buzón.</small></div>
       <details class="virtual-activity-history" open><summary>Interacción reciente</summary><div class="virtual-activity-list">${interactionHtml}</div></details>
       <details class="virtual-activity-history"><summary>Actividad reciente</summary><div class="virtual-activity-list">${activityHtml}</div></details>
       <div class="virtual-mass-importer">
@@ -3898,7 +3911,7 @@ function virtualCommunityAdminHtml(data={}) {
         ${massActive?`<button class="virtual-mass-active" onclick="openVirtualMassImport(${Number(massActive.id)})"><span><b>Importación #${Number(massActive.id)}</b><small>${massStatusLabel(massActive.status)} · ${escapeHtml(massActive.progress_message||'')}</small></span><strong>${Number(massActive.progress_percent||0)}%</strong></button>`:''}
         <details class="virtual-mass-history" ${massActive?'open':''}><summary>Historial y rollback</summary><div>${massHistoryHtml}</div></details>
       </div>
-      <div class="virtual-inbox-block"><div class="section-row"><div><h4>Buzón de anfitriones</h4><p>Cuando una persona real escribe a un perfil virtual, aparece aquí para que administración responda desde ese personaje. V1.12.42.1 no automatiza mensajes privados.</p></div><span>${Number(st.inbox_unread||0)}</span></div><div class="virtual-inbox-list">${inboxHtml}</div></div>
+      <div class="virtual-inbox-block"><div class="section-row"><div><h4>Buzón de anfitriones</h4><p>Cuando una persona real escribe a un perfil virtual, aparece aquí para que administración responda desde ese personaje. V1.12.43 no automatiza mensajes privados.</p></div><span>${Number(st.inbox_unread||0)}</span></div><div class="virtual-inbox-list">${inboxHtml}</div></div>
       <details class="virtual-profile-manager" ${profiles.length && profiles.length<=12?'open':''}><summary>Gestionar los ${total} perfiles</summary><div class="virtual-profile-toolbar"><input id="virtualProfileSearch" placeholder="Buscar nombre, usuario, ciudad…" onkeydown="if(event.key==='Enter')searchVirtualProfiles()"><button class="btn ghost compact" onclick="searchVirtualProfiles()">Buscar</button><button class="btn ghost compact" onclick="resetVirtualProfiles()">Todos</button></div><div id="virtualProfileList" class="virtual-admin-profile-list">${profilesHtml}</div></details>
     `}
   </section>`;
@@ -3979,7 +3992,7 @@ window.renderVirtualQualityRows=()=>{
 function virtualQualityCenterHtml(data={}){
   const s=data.summary||{};
   const profiles=Array.isArray(data.profiles)?data.profiles:[];
-  return `<div class="modal-head virtual-quality-head"><div><h3>Centro de Calidad · Perfiles virtuales</h3><small class="muted">V1.12.42.1 · diagnóstico global de fotos, referencias y duplicados · ${Number(data.scan_ms||0)} ms</small></div><div class="virtual-quality-head-actions"><button class="btn primary compact" onclick="openVirtualQualityRepairPreview()">🛠 Reparar calidad</button>${data?.latest_repair?.status==='applied'?`<button class="btn ghost compact" onclick="rollbackVirtualQualityRepair(${Number(data.latest_repair.id||0)})">↶ Deshacer reparación #${Number(data.latest_repair.id||0)}</button>`:''}<button class="btn ghost compact" onclick="downloadVirtualQualityReport()">Descargar diagnóstico</button><button class="btn ghost compact" onclick="refreshVirtualQualityCenter()">↻ Reanalizar</button><button class="icon-btn" onclick="closeModal()">×</button></div></div>
+  return `<div class="modal-head virtual-quality-head"><div><h3>Centro de Calidad · Perfiles virtuales</h3><small class="muted">V1.12.43 · diagnóstico global de fotos, referencias y duplicados · ${Number(data.scan_ms||0)} ms</small></div><div class="virtual-quality-head-actions"><button class="btn primary compact" onclick="openVirtualQualityRepairPreview()">🛠 Reparar calidad</button><button class="btn ghost compact virtual-quality-watch-launch" onclick="openVirtualQualityWatch()">🛡 Vigilancia</button>${data?.latest_repair?.status==='applied'?`<button class="btn ghost compact" onclick="rollbackVirtualQualityRepair(${Number(data.latest_repair.id||0)})">↶ Deshacer reparación #${Number(data.latest_repair.id||0)}</button>`:''}<button class="btn ghost compact" onclick="downloadVirtualQualityReport()">Descargar diagnóstico</button><button class="btn ghost compact" onclick="refreshVirtualQualityCenter()">↻ Reanalizar</button><button class="icon-btn" onclick="closeModal()">×</button></div></div>
     <div class="virtual-quality-summary"><span class="ok"><b>${Number(s.healthy_profiles||0)}</b> correctos</span><span class="warning"><b>${Number(s.warning_profiles||0)}</b> revisar</span><span class="critical"><b>${Number(s.critical_profiles||0)}</b> críticos</span><span><b>${Number(s.active_images||0)}</b> imágenes activas</span><span><b>${Number(s.duplicate_groups||0)}</b> grupos duplicados</span><span><b>${Number(s.low_resolution_images||0)}</b> baja resolución</span><span><b>${Number(s.archived_refs||0)}</b> refs. archivadas</span><span class="${Number(s.broken_refs||0)?'critical':''}"><b>${Number(s.broken_refs||0)}</b> refs. rotas</span><span class="${Number(s.legacy_base_active||0)?'warning':''}"><b>${Number(s.legacy_base_active||0)}</b> base legacy activas</span><span><b>${Number(s.missing_hash_images||0)}</b> sin SHA-256</span></div>
     <div class="virtual-quality-explainer"><b>Semáforo automático</b><span><i class="dot critical"></i> Crítico: puede romper avatar, portada o contenido. <i class="dot warning"></i> Revisar: calidad, variedad o duplicados. <i class="dot ok"></i> Correcto: sin incidencias que requieran acción.</span></div>
     <div class="virtual-quality-toolbar"><select id="virtualQualityFilter" onchange="renderVirtualQualityRows()"><option value="all">Todos</option><option value="critical">Solo críticos</option><option value="warning">Solo revisar</option><option value="ok">Solo correctos</option></select><input id="virtualQualitySearch" placeholder="Buscar nombre, @usuario o ciudad…" oninput="renderVirtualQualityRows()"><span id="virtualQualityVisibleCount">${profiles.length} perfiles</span></div>
@@ -3996,9 +4009,36 @@ window.downloadVirtualQualityReport=()=>{
   const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`instant-admirers-calidad-${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
 };
 
+
+function virtualQualityWatchHtml(data={}){
+  const history=Array.isArray(data?.history)?data.history:[],latest=data?.latest||null;
+  const ls=latest?.summary||{},lc=latest?.changes||{};
+  const rows=history.length?history.map(x=>{
+    const s=x.summary||{},c=x.changes||{},newN=Array.isArray(c.new)?c.new.length:0,resolvedN=Array.isArray(c.resolved)?c.resolved.length:0;
+    const source=x.source==='manual'?'Manual':'Automático';
+    return `<div class="virtual-quality-watch-row ${escapeAttr(x.status||'completed')}"><span><b>#${Number(x.id||0)} · ${source}</b><small>${x.status==='failed'?escapeHtml(x.error_message||'Error de escaneo'):`${Number(s.healthy_profiles||0)} correctos · ${Number(s.warning_profiles||0)} revisar · ${Number(s.critical_profiles||0)} críticos`}</small></span><em>${x.status==='failed'?'Error':newN?`+${newN} nuevas`:resolvedN?`${resolvedN} resueltas`:'Sin cambios'}</em><time>${x.created_at?timeAgo(x.created_at):''}</time></div>`;
+  }).join(''):'<div class="empty compact-empty">Todavía no hay escaneos guardados. Ejecuta el primero ahora o espera al ciclo automático.</div>';
+  const newN=Array.isArray(lc.new)?lc.new.length:0,resolvedN=Array.isArray(lc.resolved)?lc.resolved.length:0;
+  return `<div class="modal-head virtual-quality-head"><div><h3>Vigilancia automática · Calidad visual</h3><small class="muted">V1.12.43 · escaneo diario de solo lectura · histórico y detección de cambios</small></div><div class="virtual-quality-head-actions"><button class="btn primary compact" onclick="runVirtualQualityWatchNow()">▶ Escanear ahora</button><button class="btn ghost compact" onclick="cleanupVirtualQualityWatch()">Limpiar histórico antiguo</button><button class="btn ghost compact" onclick="openVirtualQualityCenter()">Centro de calidad</button><button class="icon-btn" onclick="closeModal()">×</button></div></div>
+    <div class="virtual-quality-watch-status ${data?.needs_attention?'attention':'clean'}"><span><b>${data?.needs_attention?'⚠ Requiere atención':'✓ Vigilancia sin incidencias'}</b><small>${latest?`Último escaneo ${latest.created_at?timeAgo(latest.created_at):''} · ${latest.source==='manual'?'manual':'automático'}`:'Aún no hay escaneos registrados'}</small></span><strong>Cada ${Number(data?.cadence_hours||24)} h</strong></div>
+    <div class="virtual-quality-summary"><span class="ok"><b>${Number(ls.healthy_profiles||0)}</b> correctos</span><span class="warning"><b>${Number(ls.warning_profiles||0)}</b> revisar</span><span class="critical"><b>${Number(ls.critical_profiles||0)}</b> críticos</span><span><b>${newN}</b> incidencias nuevas</span><span><b>${resolvedN}</b> resueltas</span><span><b>${Number(ls.active_images||0)}</b> imágenes activas</span><span><b>${Number(ls.broken_refs||0)}</b> refs. rotas</span><span><b>${Number(ls.duplicate_groups||0)}</b> duplicados</span></div>
+    <div class="virtual-quality-watch-schedule"><span><b>Último automático</b>${data?.last_automatic_at?timeAgo(data.last_automatic_at):'Pendiente'}</span><span><b>Próximo previsto</b>${data?.next_due_at?new Date(data.next_due_at).toLocaleString():'Se programará tras el primer ciclo'}</span><span><b>Retención automática</b>${Number(data?.retention_days||180)} días</span></div>
+    <div class="virtual-quality-watch-history"><h4>Historial de escaneos</h4>${rows}</div>`;
+}
+window.openVirtualQualityWatch=async()=>{
+  try{toast('Cargando vigilancia visual…');const d=await api('/api/admin/virtual-community/quality-watch',{timeout:120000});state.virtualQualityWatchData=d;modal(virtualQualityWatchHtml(d));}catch(e){toast(e.message,'error');}
+};
+window.runVirtualQualityWatchNow=async()=>{
+  try{toast('Escaneando los 100 perfiles…');const r=await api('/api/admin/virtual-community/quality-watch/run',{method:'POST',body:'{}',timeout:180000});state.virtualQualityWatchData=r.watch;modal(virtualQualityWatchHtml(r.watch));const n=Number(r?.watch?.new_issues||0);toast(n?`${n} incidencia(s) nueva(s) detectada(s)`:'Escaneo completado sin incidencias nuevas',n?'warning':'success');if(state.view==='admin'){state.virtualCommunityData=await api('/api/admin/virtual-community?limit=100');}}catch(e){toast(e.message,'error');}
+};
+window.cleanupVirtualQualityWatch=async()=>{
+  if(!confirm('Eliminar del historial los escaneos de más de 90 días? Se conservará siempre el último registro.'))return;
+  try{const r=await api('/api/admin/virtual-community/quality-watch/cleanup',{method:'POST',body:JSON.stringify({keep_days:90})});state.virtualQualityWatchData=r.watch;modal(virtualQualityWatchHtml(r.watch));toast(`Histórico limpiado: ${Number(r?.result?.deleted||0)} registro(s)`);}catch(e){toast(e.message,'error');}
+};
+
 function virtualQualityRepairPreviewHtml(data={}){
   const s=data?.summary||{};const blocked=Boolean(data?.blocked);
-  return `<div class="modal-head"><div><h3>Reparación de Calidad · V1.12.42.1</h3><small class="muted">Preview seguro sobre la importación #${Number(data.job_id||0)} · ${escapeHtml(data.archive_name||'')}</small></div><button class="icon-btn" onclick="closeModal()">×</button></div>
+  return `<div class="modal-head"><div><h3>Reparación de Calidad · V1.12.43</h3><small class="muted">Preview seguro sobre la importación #${Number(data.job_id||0)} · ${escapeHtml(data.archive_name||'')}</small></div><button class="icon-btn" onclick="closeModal()">×</button></div>
     ${blocked?`<div class="danger-note"><b>No se puede aplicar todavía</b><p>${escapeHtml(data.reason||'La reparación está bloqueada.')}</p></div>`:`<div class="success-note"><b>✓ Preview listo</b><p>No se ha modificado ninguna foto. Revisa las cifras y confirma solo si son coherentes.</p></div>`}
     <div class="virtual-quality-repair-metrics"><span><b>${Number(s.profiles||0)}</b> perfiles</span><span><b>${Number(s.covers_to_fix||0)}</b> portadas a corregir</span><span><b>${Number(s.legacy_active_to_archive||0)}</b> base legacy a archivar</span><span><b>${Number(s.hashes_to_backfill||0)}</b> SHA-256 a calcular</span><span><b>${Number(s.legacy_refs_to_relink||0)}</b> refs. a reenlazar</span><span><b>${Number(s.current_active_estimate||0)}</b> activas ahora</span><span><b>${Number(s.target_active_estimate||0)}</b> activas después</span></div>
     <div class="virtual-quality-repair-note"><b>Qué hará</b><p>Usará la última importación masiva confirmada como fuente de verdad, restaurará la portada V4 correspondiente, retirará del pool automático las imágenes base antiguas, reenlazará al equivalente V4 cualquier post o Story que todavía use una imagen base y añadirá SHA-256 a los recursos locales que no lo tienen. No borra archivos, posts ni Stories.</p></div>
@@ -4015,7 +4055,7 @@ window.applyVirtualQualityRepair=async()=>{
 };
 function virtualQualityRepairResultHtml(data={}){
   const r=data?.result||{},q=data?.quality?.summary||{};
-  return `<div class="modal-head"><div><h3>Reparación #${Number(r.repair_id||0)} completada</h3><small class="muted">V1.12.42.1 · limpieza visual reversible</small></div><button class="icon-btn" onclick="closeModal()">×</button></div>
+  return `<div class="modal-head"><div><h3>Reparación #${Number(r.repair_id||0)} completada</h3><small class="muted">V1.12.43 · limpieza visual reversible</small></div><button class="icon-btn" onclick="closeModal()">×</button></div>
     <div class="success-note"><b>✓ Reparación aplicada</b><p>El pool visual actual queda intacto; las imágenes antiguas se han archivado como respaldo.</p></div>
     <div class="virtual-quality-repair-metrics"><span><b>${Number(r.covers_fixed||0)}</b> portadas corregidas</span><span><b>${Number(r.legacy_archived||0)}</b> legacy archivadas</span><span><b>${Number(r.hashes_backfilled||0)}</b> hashes añadidos</span><span><b>${Number(r.refs_relinked||0)}</b> refs. reenlazadas</span><span><b>${Number(q.active_images||0)}</b> imágenes activas</span><span><b>${Number(q.warning_profiles||0)}</b> perfiles a revisar</span><span><b>${Number(q.critical_profiles||0)}</b> críticos</span></div>
     <div class="virtual-quality-repair-actions"><button class="btn primary" onclick="openVirtualQualityCenter()">Abrir Centro de Calidad</button><button class="btn ghost" onclick="rollbackVirtualQualityRepair(${Number(r.repair_id||0)})">Deshacer reparación</button></div>`;
@@ -4367,7 +4407,7 @@ async function renderAdmin() {
       <div class="launch-center-actions"><button class="btn primary compact" onclick="saveCommunityLaunchSettings()">Guardar comunidad inicial</button>${readiness.invite_url?`<button class="btn ghost compact" onclick="copyLaunchInvite('${escapeAttr(readiness.invite_url)}')">Copiar invitación de cohorte</button>`:''}</div>
     </section>
     <section class="card admin-section growth-engine-admin">
-      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.42.1</span></div>
+      <div class="section-row"><div><h3>Growth Engine</h3><p>Campañas medibles para convertir audiencia externa en registros y saber exactamente de dónde llegan las visitas.</p></div><span class="growth-version-badge">V1.12.43</span></div>
       <div class="growth-create-grid growth-create-grid-v124">
         <label>Campaña<input id="growthCampaignName" maxlength="120" placeholder="Página 16K"></label>
         <label>Canal<select id="growthCampaignChannel"><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="whatsapp">WhatsApp</option><option value="google">Google</option><option value="email">Email</option><option value="other">Otro</option></select></label>

@@ -966,6 +966,25 @@ CREATE TABLE IF NOT EXISTS virtual_quality_repairs (
 CREATE INDEX IF NOT EXISTS idx_virtual_quality_repairs_created ON virtual_quality_repairs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_virtual_quality_repairs_status ON virtual_quality_repairs(status,created_at DESC);
 
+
+-- V1.12.43: vigilancia automática diaria del Centro de Calidad.
+-- Guarda solo resumen + deltas accionables; no modifica fotografías ni referencias.
+CREATE TABLE IF NOT EXISTS virtual_quality_scans (
+  id BIGSERIAL PRIMARY KEY,
+  source VARCHAR(16) NOT NULL DEFAULT 'automatic' CHECK (source IN ('automatic','manual')),
+  admin_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  status VARCHAR(16) NOT NULL DEFAULT 'completed' CHECK (status IN ('completed','failed')),
+  summary JSONB NOT NULL DEFAULT '{}'::jsonb,
+  issue_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
+  changes JSONB NOT NULL DEFAULT '{"new":[],"resolved":[]}'::jsonb,
+  scan_ms INTEGER NOT NULL DEFAULT 0,
+  error_message TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_virtual_quality_scans_created ON virtual_quality_scans(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_virtual_quality_scans_source_created ON virtual_quality_scans(source,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_virtual_quality_scans_status_created ON virtual_quality_scans(status,created_at DESC);
+
 CREATE TABLE IF NOT EXISTS virtual_media_import_refs (
   id BIGSERIAL PRIMARY KEY,
   job_id BIGINT NOT NULL REFERENCES virtual_media_import_jobs(id) ON DELETE CASCADE,
