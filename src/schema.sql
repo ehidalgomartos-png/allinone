@@ -1035,3 +1035,8 @@ CREATE TABLE IF NOT EXISTS virtual_visual_actions (
 );
 CREATE INDEX IF NOT EXISTS idx_virtual_visual_actions_user ON virtual_visual_actions(user_id,created_at DESC,id DESC);
 CREATE INDEX IF NOT EXISTS idx_virtual_visual_actions_status ON virtual_visual_actions(user_id,status,created_at DESC,id DESC);
+
+-- V1.12.45: Motor de actividad virtual 3.0. Acelera diagnósticos por versión del motor
+-- sin cambiar el modelo de datos ni automatizar decisiones administrativas.
+CREATE INDEX IF NOT EXISTS idx_virtual_activity_log_engine_created
+  ON virtual_activity_log ((metadata->>'engine'), created_at DESC);

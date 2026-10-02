@@ -1,7 +1,7 @@
 {
   "name": "instant-admirers-community",
-  "version": "1.12.44",
-  "description": "Instant Admirers V1.12.44 - Salud y Mantenimiento de la Comunidad Virtual",
+  "version": "1.12.45",
+  "description": "Instant Admirers V1.12.45 - Motor de Actividad Virtual 3.0",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

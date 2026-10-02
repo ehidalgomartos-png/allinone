@@ -167,75 +167,125 @@ function makePostText(p, n=0) {
 }
 
 
-// V1.12.33 · Actividad virtual 2.0
-// Mantiene la divulgación de perfil virtual y hace que la actividad programada sea
-// menos uniforme: horarios diurnos, formatos mixtos, fin de semana, tono propio,
-// anti-repetición e historial auditable desde Administración.
+// V1.12.45 · Motor de actividad virtual 3.0
+// Evoluciona Actividad 2.0 con ritmos personales, preferencias horarias, mezcla
+// adaptativa de formatos, contexto local/intereses y anti-repetición global.
+// Los perfiles siguen identificados como virtuales y los mensajes privados no se automatizan.
 const activityTemplates = {
   morning: [
     'Empezando el día con calma y pensando en algún plan de {i1}. ¿Alguna recomendación por {city}?',
     'Mañana tranquila, café cerca y una lista demasiado larga de cosas que quiero hacer. Hoy toca elegir una 😄',
     'Hay días que empiezan mejor si sales un rato antes de meterte de lleno en todo. Hoy ha sido uno de esos.',
-    'Primera decisión del día: hacer hueco para {i2}. La segunda todavía está pendiente.'
+    'Primera decisión del día: hacer hueco para {i2}. La segunda todavía está pendiente.',
+    'Hoy he empezado antes de lo habitual y me ha sentado bastante bien. Igual repito.',
+    'Mañana de las que piden algo sencillo: café, paseo y un rato para {i1}.'
   ],
   afternoon: [
     'Pausa de media tarde y cabeza en modo próximo plan. Algo relacionado con {i1} no estaría nada mal.',
     'Hoy el día pedía cambiar un poco de escenario. A veces con eso basta para volver con otra energía.',
     'Entre una cosa y otra he terminado guardando otro sitio pendiente en {city}. La lista no para de crecer.',
-    'Tarde sencilla: un rato para {i2}, algo rico y cero prisas. Difícil mejorarla.'
+    'Tarde sencilla: un rato para {i2}, algo rico y cero prisas. Difícil mejorarla.',
+    'He conseguido sacar un rato para desconectar y ya me parece una pequeña victoria.',
+    'La tarde se ha quedado perfecta para hacer algo distinto sin montar un plan enorme.'
   ],
   evening: [
     'Cerrando el día con ganas de conversación y algún plan tranquilo. ¿Qué tal ha ido el vuestro?',
     'A estas horas siempre me entran ganas de organizar una escapada que seguramente acabaré improvisando 😄',
     'Hoy me quedo con un momento pequeño que no estaba planeado. Suelen ser los mejores.',
-    'Noche de bajar revoluciones. Algo de {i1} y mañana será otro día.'
+    'Noche de bajar revoluciones. Algo de {i1} y mañana será otro día.',
+    'Ya en modo tranquilo. Hoy no necesito mucho más que una buena conversación.',
+    'Cerrando el día con la sensación de haber hecho menos cosas, pero haberlas disfrutado más.'
   ],
   weekend: [
     'Fin de semana sin agenda cerrada. Si aparece un plan de {i1}, probablemente me apunte.',
     'Hoy gana el “vamos y vemos”. Los mejores fines de semana suelen empezar así.',
-    'Sábado/domingo de descubrir algún rincón nuevo de {city}. Se aceptan ideas.',
+    'Finde de descubrir algún rincón nuevo de {city}. Se aceptan ideas.',
     'El finde mejora bastante cuando hay tiempo para {i2} y ninguna obligación mirando el reloj.',
-    'Plan de fin de semana: salir de lo de siempre aunque sea solo un par de horas.'
+    'Plan de fin de semana: salir de lo de siempre aunque sea solo un par de horas.',
+    'Este finde me apetece un plan pequeño pero diferente. Nada de llenar el día por llenarlo.'
   ],
   cercano: [
     'Me apetecía pasar por aquí y preguntar algo sencillo: ¿qué pequeño plan os ha alegrado la semana?',
-    'Cada vez valoro más los planes que permiten hablar de verdad. Con {i1} de por medio, mejor todavía.'
+    'Cada vez valoro más los planes que permiten hablar de verdad. Con {i1} de por medio, mejor todavía.',
+    'Una buena conversación arregla más días de los que parece. Hoy vengo con ganas de una de esas.'
   ],
   tranquilo: [
     'Hoy estoy en modo bajar un poco el ritmo. Un paseo, algo de {i2} y poco más hace falta.',
-    'Día para no correr detrás de nada. A veces desconectar un rato es el mejor plan.'
+    'Día para no correr detrás de nada. A veces desconectar un rato es el mejor plan.',
+    'No todo tiene que ser un plan grande. Hoy me quedo con lo sencillo.'
   ],
   curioso: [
     'Curiosidad del día: ¿qué sitio de {city} recomendaríais a alguien que quiere salirse de lo típico?',
-    'Pregunta abierta: ¿qué afición relacionada con {i1} os gustaría probar si tuvierais una tarde libre?'
+    'Pregunta abierta: ¿qué afición relacionada con {i1} os gustaría probar si tuvierais una tarde libre?',
+    'Tengo curiosidad: ¿qué plan habéis descubierto casi por casualidad y ahora repetís siempre que podéis?'
   ],
   espontaneo: [
     'He cambiado de plan a última hora y creo que ha sido lo mejor del día. Improvisar tiene sus ventajas.',
-    'Cero agenda para lo que queda de día. Si aparece algo relacionado con {i2}, mejor.'
+    'Cero agenda para lo que queda de día. Si aparece algo relacionado con {i2}, mejor.',
+    'Hoy he dicho que sí a un plan sin pensarlo demasiado. Buena decisión.'
   ],
   divertido: [
     'Mi talento de hoy: convertir un plan de una hora en media tarde 😄',
-    'Confirmado: decir “solo un rato” sigue siendo una mentira bastante frecuente por aquí.'
+    'Confirmado: decir “solo un rato” sigue siendo una mentira bastante frecuente por aquí.',
+    'Plan sencillo, cero expectativas y al final ha sido lo mejor del día. Clásico.'
+  ]
+};
+
+const activityThemeTemplates = {
+  local: [
+    'Tengo pendiente descubrir un sitio nuevo en {city}. ¿Algún rincón que merezca de verdad la pena?',
+    'Hoy me ha dado por caminar por {city} sin ruta. Siempre aparece algún sitio que no tenía fichado.',
+    'Me gusta cuando una ciudad todavía consigue sorprenderte. {city} hoy lo ha hecho.'
+  ],
+  interest: [
+    'Últimamente estoy volviendo bastante a {i1}. Se aceptan recomendaciones para no quedarme en lo de siempre.',
+    'Hoy he sacado un rato para {i2} y me ha recordado por qué me gusta tanto.',
+    'Si tuviera dos horas libres ahora mismo, probablemente acabarían siendo para {i1}.'
+  ],
+  social: [
+    'Me quedo con los planes en los que se puede hablar sin mirar el reloj.',
+    'Hay gente con la que una conversación de diez minutos termina siendo de dos horas. Eso siempre suma.',
+    'Pregunta sencilla: ¿sois más de conocer gente tomando algo o haciendo algún plan?'
+  ],
+  discovery: [
+    'Me he propuesto hacer al menos una cosa distinta esta semana. No hace falta que sea enorme.',
+    'Últimamente intento cambiar algún detalle de la rutina cada pocos días. Funciona mejor de lo que esperaba.',
+    'Tengo ganas de probar algo nuevo aunque sea en modo principiante total 😄'
+  ],
+  slow: [
+    'Hoy necesitaba bajar un poco el ritmo y no llenar cada hueco del día.',
+    'Un rato sin prisas me ha sentado mejor que cualquier plan complicado.',
+    'Día sencillo, cabeza más tranquila. A veces no hace falta mucho más.'
+  ],
+  question: [
+    'Pregunta del día: ¿qué plan pequeño os cambia el ánimo casi siempre?',
+    '¿Qué preferís cuando queréis desconectar de verdad: salir, deporte, música o sofá?',
+    '¿Qué sitio tenéis guardado desde hace meses y todavía no habéis ido?'
   ]
 };
 
 const storyTemplates = [
-  'Un momento del día ✨',
-  'Pausa rápida y seguimos',
-  'Plan improvisado 😄',
-  'Un poco de aire por aquí',
-  'Hoy tocaba salir de la rutina',
-  'Guardando este momento',
-  'Modo desconexión',
-  'Un rincón de {city}',
-  'Hoy: {i1}',
-  'Pequeño plan, buen día'
+  'Un momento del día ✨','Pausa rápida y seguimos','Plan improvisado 😄','Un poco de aire por aquí',
+  'Hoy tocaba salir de la rutina','Guardando este momento','Modo desconexión','Un rincón de {city}',
+  'Hoy: {i1}','Pequeño plan, buen día','Un rato para {i2}','Sin demasiada prisa hoy',
+  'Esto no estaba en el plan','Pausa merecida','Cambio de escenario','Un poco de {city} por aquí'
+];
+
+const activityMicroOpeners = [
+  '', 'Hoy, ', 'Por aquí, ', 'Pequeño momento del día: ', 'Entre una cosa y otra, ', 'Sin planearlo mucho, '
+];
+const activityMicroClosers = [
+  '', ' Me lo guardo para repetir.', ' Y con eso ya mejora bastante el día.', ' No hacía falta mucho más.',
+  ' De esos momentos sencillos que suman.', ' A veces lo pequeño gana.'
 ];
 
 function normalizeActivityText(value='') {
   return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim();
 }
-
+function activityTextHash(value='') {
+  const normalized=normalizeActivityText(value);
+  return normalized?crypto.createHash('sha256').update(normalized).digest('hex'):'';
+}
 function madridClock(date=new Date()) {
   const parts=Object.fromEntries(new Intl.DateTimeFormat('en-GB',{
     timeZone:'Europe/Madrid',weekday:'short',hour:'2-digit',minute:'2-digit',hourCycle:'h23'
@@ -245,7 +295,6 @@ function madridClock(date=new Date()) {
   const hour=Number(parts.hour||0);
   return {weekday,hour,minute:Number(parts.minute||0),weekend:weekday===0||weekday===6};
 }
-
 function toneKey(value='') {
   const v=normalizeActivityText(value);
   if(v.includes('tranquilo')) return 'tranquilo';
@@ -254,61 +303,143 @@ function toneKey(value='') {
   if(v.includes('divert')) return 'divertido';
   return 'cercano';
 }
-
-function activityTextCandidates(p,{clock,tone='cercano'}={}) {
+function activityRhythmFor(row={}) {
+  const roll=seededNumber(`activity-rhythm-v3-${row.user_id||row.persona_key||0}`,0,99);
+  if(roll<18) return 'pausado';
+  if(roll<48) return 'equilibrado';
+  if(roll<70) return 'social';
+  if(roll<86) return 'explorador';
+  return 'fin-de-semana';
+}
+function activityPreferredDaypart(row={},eventSeq=0) {
+  const tone=toneKey(row.tone),rhythm=activityRhythmFor(row);
+  const options=rhythm==='fin-de-semana'?['afternoon','evening','afternoon','morning']:
+    tone==='tranquilo'?['morning','afternoon','evening']:
+    tone==='divertido'||tone==='espontaneo'?['evening','afternoon','evening','morning']:
+    ['afternoon','morning','evening','afternoon'];
+  return options[seededNumber(`activity-daypart-v3-${row.user_id}-${eventSeq}`,0,options.length-1)];
+}
+function activityDaypartFromClock(clock={}) {
+  const h=Number(clock.hour??12);return h<12?'morning':h<19?'afternoon':'evening';
+}
+function activityThemeFor(row={},eventSeq=0,clock=madridClock()) {
+  const tone=toneKey(row.tone),rhythm=activityRhythmFor(row);
+  const base=clock.weekend?['local','social','interest','discovery','slow']:['interest','local','question','slow','social','discovery'];
+  if(tone==='curioso') base.push('question','discovery');
+  if(tone==='tranquilo') base.push('slow');
+  if(rhythm==='explorador') base.push('local','discovery');
+  return base[seededNumber(`activity-theme-v3-${row.user_id}-${eventSeq}-${clock.weekday}`,0,base.length-1)];
+}
+function activityTextCandidates(p,{clock,tone='cercano',theme='social',profileIndex=0,seq=0}={}) {
   const pool=[];
   if(clock?.weekend) pool.push(...activityTemplates.weekend);
   if((clock?.hour??12)<12) pool.push(...activityTemplates.morning);
   else if((clock?.hour??12)<19) pool.push(...activityTemplates.afternoon);
   else pool.push(...activityTemplates.evening);
+  pool.push(...(activityThemeTemplates[theme]||activityThemeTemplates.social));
   pool.push(...(activityTemplates[toneKey(tone)]||activityTemplates.cercano));
   pool.push(...postTemplates);
-  return pool.map(t=>fill(t,p));
+  const opener=activityMicroOpeners[seededNumber(`activity-open-${profileIndex}-${seq}`,0,activityMicroOpeners.length-1)];
+  const closer=activityMicroClosers[seededNumber(`activity-close-${profileIndex}-${seq}`,0,activityMicroClosers.length-1)];
+  const expanded=[];
+  for(const raw of pool){
+    const base=fill(raw,p);
+    expanded.push(base);
+    if(opener) expanded.push(`${opener}${base.charAt(0).toLowerCase()}${base.slice(1)}`);
+    if(closer && base.length<210) expanded.push(`${base}${closer}`);
+  }
+  return [...new Set(expanded)];
 }
-
-function pickFreshActivityText(p,{seq=0,clock=madridClock(),tone='cercano',recentTexts=[]}={}) {
-  const candidates=activityTextCandidates(p,{clock,tone});
+function pickFreshActivityText(p,{seq=0,clock=madridClock(),tone='cercano',theme='social',recentTexts=[],globalHashes=new Set()}={}) {
+  const candidates=activityTextCandidates(p,{clock,tone,theme,profileIndex:p.index,seq});
   const used=new Set((recentTexts||[]).map(normalizeActivityText).filter(Boolean));
-  const start=seededNumber(`activity-text-${p.index}-${seq}-${clock.weekday}-${clock.hour}`,0,Math.max(0,candidates.length-1));
+  const start=seededNumber(`activity-text-v3-${p.index}-${seq}-${clock.weekday}-${clock.hour}-${theme}`,0,Math.max(0,candidates.length-1));
+  let avoided=0;
   for(let offset=0;offset<candidates.length;offset+=1){
     const candidate=candidates[(start+offset)%candidates.length];
-    if(!used.has(normalizeActivityText(candidate))) return candidate;
+    const normalized=normalizeActivityText(candidate),hash=activityTextHash(candidate);
+    if(used.has(normalized) || (hash&&globalHashes.has(hash))){avoided+=1;continue;}
+    return {text:candidate,hash,avoided};
   }
-  return `${makePostText(p,seq)} ${seq%2===0?'✨':'🙂'}`;
+  const fallback=fill(`Hoy me apetecía hacer algo relacionado con {i1} por {city}, sin convertirlo en un plan enorme.${seq%2===0?' Se agradecen ideas.':' A veces improvisar funciona.'}`,p);
+  return {text:fallback,hash:activityTextHash(fallback),avoided};
 }
-
-function pickStoryText(p,{seq=0}={}) {
-  return fill(storyTemplates[seededNumber(`story-text-${p.index}-${seq}`,0,storyTemplates.length-1)],p);
-}
-
-function activityKindFor(row,eventSeq) {
-  const roll=seededNumber(`activity-kind-${row.user_id}-${eventSeq}`,0,99);
-  if(roll<14) return 'story-only';
-  if(roll<39) return 'post-text';
-  if(roll<82) return 'post-photo';
-  return 'post-photo-story';
-}
-
-function nextActivityDate(row,eventSeq,now=new Date()) {
-  const postsPerWeek=Math.min(7,Math.max(1,Number(row.posts_per_week||3)));
-  const baseHours=168/postsPerWeek;
-  const tone=toneKey(row.tone);
-  const factor=tone==='tranquilo'?1.12:tone==='espontaneo'?0.92:tone==='divertido'?0.96:1;
-  const jitterPct=seededNumber(`activity-gap-${row.user_id}-${eventSeq}`,-24,26)/100;
-  let hours=Math.max(12,Math.round(baseHours*factor*(1+jitterPct)));
-  let candidate=new Date(now.getTime()+hours*3600000);
-  let c=madridClock(candidate);
-  // Nunca programar actividad automática de madrugada. El tick de servidor se
-  // ejecuta cada 30 min, así que basta desplazar la siguiente fecha a la mañana.
-  if(c.hour<8){
-    hours+=8-c.hour+seededNumber(`activity-morning-${row.user_id}-${eventSeq}`,0,2);
-  } else if(c.hour>=23){
-    hours+=(24-c.hour)+8+seededNumber(`activity-morning-${row.user_id}-${eventSeq}`,0,2);
+function pickFreshStoryText(p,{seq=0,globalHashes=new Set()}={}) {
+  const start=seededNumber(`story-text-v3-${p.index}-${seq}`,0,storyTemplates.length-1);
+  let avoided=0;
+  for(let offset=0;offset<storyTemplates.length;offset+=1){
+    const base=fill(storyTemplates[(start+offset)%storyTemplates.length],p);
+    const variants=[base,`${base} · ${p.city}`,`${base} · ${p.interests[0]}`];
+    for(const text of variants){
+      const hash=activityTextHash(text);
+      if(!hash||!globalHashes.has(hash)) return {text,hash,avoided};
+      avoided+=1;
+    }
   }
-  candidate=new Date(now.getTime()+hours*3600000);
+  const endings=['sin prisa','por aquí','y seguimos','pequeño plan','un rato bueno','modo tranquilo'];
+  const text=fill(`Un rato de {i1} en {city} · ${endings[seededNumber(`story-fallback-${p.index}-${seq}`,0,endings.length-1)]}`,p);
+  return {text,hash:activityTextHash(text),avoided};
+}
+function weightedPick(seed,weights={}) {
+  const entries=Object.entries(weights).filter(([,w])=>Number(w)>0);const total=entries.reduce((n,[,w])=>n+Number(w),0);
+  if(!entries.length||total<=0)return 'post-photo';
+  let roll=seededNumber(seed,1,Math.max(1,Math.round(total)));
+  for(const [key,w] of entries){roll-=Number(w);if(roll<=0)return key;}
+  return entries[entries.length-1][0];
+}
+function activityKindFor(row,eventSeq,{recentKinds=[],clock=madridClock()}={}) {
+  const last=(recentKinds||[]).slice(0,8),counts=last.reduce((m,k)=>(m[k]=(m[k]||0)+1,m),{});
+  const storyCount=(counts['story-only']||0)+(counts['post-photo-story']||0);
+  const textCount=counts['post-text']||0,photoCount=(counts['post-photo']||0)+(counts['post-photo-story']||0);
+  const weights={'story-only':14,'post-text':25,'post-photo':43,'post-photo-story':18};
+  if(storyCount>=3){weights['story-only']=5;weights['post-photo-story']=8;}
+  else if(storyCount===0&&last.length>=4){weights['story-only']+=10;weights['post-photo-story']+=6;}
+  if(textCount>=3)weights['post-text']=10; else if(textCount===0&&last.length>=4)weights['post-text']+=12;
+  if(photoCount>=5)weights['post-photo']-=10;
+  if(clock.weekend){weights['post-photo-story']+=6;weights['story-only']+=4;}
+  return weightedPick(`activity-kind-v3-${row.user_id}-${eventSeq}-${clock.weekday}`,weights);
+}
+function activityTargetHour(row,eventSeq,daypart=activityPreferredDaypart(row,eventSeq)) {
+  const windows={morning:[9,11],afternoon:[13,18],evening:[19,22]},w=windows[daypart]||windows.afternoon;
+  return seededNumber(`activity-hour-v3-${row.user_id}-${eventSeq}`,w[0],w[1]);
+}
+function alignActivityCandidate(row,eventSeq,candidate) {
+  const preferred=activityPreferredDaypart(row,eventSeq),targetHour=activityTargetHour(row,eventSeq,preferred),clock=madridClock(candidate);
+  let delta=targetHour-clock.hour;
+  // Mantiene la cadencia base: solo alinea dentro de una ventana razonable y nunca retrocede demasiado.
+  if(delta<-4) delta+=24;
+  if(delta>12) delta=seededNumber(`activity-soft-align-${row.user_id}-${eventSeq}`,0,4);
+  candidate=new Date(candidate.getTime()+delta*3600000);
+  const aligned=madridClock(candidate);
+  if(aligned.hour<8) candidate=new Date(candidate.getTime()+(8-aligned.hour+seededNumber(`activity-morning-a-${row.user_id}-${eventSeq}`,0,2))*3600000);
+  else if(aligned.hour>=23) candidate=new Date(candidate.getTime()+((24-aligned.hour)+8+seededNumber(`activity-morning-b-${row.user_id}-${eventSeq}`,0,2))*3600000);
   return candidate;
 }
-
+function nextActivityDate(row,eventSeq,now=new Date()) {
+  const postsPerWeek=Math.min(7,Math.max(1,Number(row.posts_per_week||3))),baseHours=168/postsPerWeek;
+  const rhythm=activityRhythmFor(row),tone=toneKey(row.tone);
+  const rhythmFactor={pausado:1.18,equilibrado:1,social:.91,explorador:.97,'fin-de-semana':1.04}[rhythm]||1;
+  const toneFactor=tone==='tranquilo'?1.08:tone==='espontaneo'?.94:tone==='divertido'?.96:1;
+  const jitterPct=seededNumber(`activity-gap-v3-${row.user_id}-${eventSeq}`,-32,38)/100;
+  let hours=Math.max(14,Math.min(168,Math.round(baseHours*rhythmFactor*toneFactor*(1+jitterPct))));
+  // Algunos ciclos incluyen una pausa natural adicional; nunca más de 8 días entre citas programadas.
+  const restRoll=seededNumber(`activity-rest-v3-${row.user_id}-${eventSeq}`,0,99);
+  if((rhythm==='pausado'&&restRoll<28)||(rhythm==='fin-de-semana'&&restRoll<18)) hours=Math.min(192,hours+seededNumber(`activity-rest-hours-${row.user_id}-${eventSeq}`,8,28));
+  return alignActivityCandidate(row,eventSeq,new Date(now.getTime()+hours*3600000));
+}
+function activityDeferralFor(row,recentRows=[],clock=madridClock(),force=false) {
+  if(force)return null;
+  const now=Date.now(),recent=(recentRows||[]).map(r=>({...r,_t:new Date(r.created_at||0).getTime()})).filter(r=>Number.isFinite(r._t));
+  const last=recent[0],hoursSince=last?Math.max(0,(now-last._t)/3600000):999;
+  const last24=recent.filter(r=>now-r._t<=24*3600000).length;
+  if(last24>=2)return {reason:'daily-cap',hours:seededNumber(`activity-defer-cap-${row.user_id}-${now.toString().slice(0,6)}`,10,22)};
+  if(hoursSince<7)return {reason:'min-gap',hours:seededNumber(`activity-defer-gap-${row.user_id}-${recent.length}`,8,16)};
+  const rhythm=activityRhythmFor(row),restChance=rhythm==='pausado'?30:rhythm==='fin-de-semana'&&!clock.weekend?26:12;
+  if(hoursSince<40&&seededNumber(`activity-defer-rest-${row.user_id}-${clock.weekday}-${new Date().toISOString().slice(0,10)}`,0,99)<restChance){
+    return {reason:'natural-rest',hours:seededNumber(`activity-defer-rest-hours-${row.user_id}-${clock.weekday}`,10,26)};
+  }
+  return null;
+}
 async function recordActivityLog(db,{userId,activityType,postId=null,storyId=null,mediaId=null,text='',metadata={}}={}) {
   const hash=text?crypto.createHash('sha256').update(normalizeActivityText(text)).digest('hex'):'';
   await db.query(`
@@ -325,20 +456,17 @@ async function rescheduleVirtualActivity(db,{limit=100}={}) {
      WHERE vp.status='active' AND vp.auto_post_enabled=TRUE AND u.account_status='active' AND COALESCE(u.social_hidden,FALSE)=FALSE
      ORDER BY vp.user_id LIMIT $1
   `,[safeLimit]);
-  let updated=0;
-  const now=new Date();
+  let updated=0;const now=new Date();
   for(const row of rows){
     const idx=Number(String(row.persona_key||'').replace(/\D/g,''))||Number(row.user_id);
-    // Distribuye los primeros eventos entre 1 y 72 horas para que no salgan todos juntos.
-    const initialHours=seededNumber(`activity-reschedule-${idx}-${now.toISOString().slice(0,10)}`,1,72);
-    let target=new Date(now.getTime()+initialHours*3600000);
-    let clock=madridClock(target);
-    if(clock.hour<8) target=new Date(target.getTime()+(8-clock.hour+seededNumber(`rs-a-${idx}`,0,2))*3600000);
-    else if(clock.hour>=23) target=new Date(target.getTime()+((24-clock.hour)+8+seededNumber(`rs-b-${idx}`,0,2))*3600000);
+    const postsPerWeek=Math.min(7,Math.max(1,Number(row.posts_per_week||3)));
+    const spreadMax=Math.min(168,Math.max(48,Math.round((168/postsPerWeek)*2.4)));
+    const initialHours=seededNumber(`activity-v3-reschedule-${idx}-${now.toISOString().slice(0,10)}`,2,spreadMax);
+    const target=alignActivityCandidate(row,seededNumber(`activity-v3-reschedule-seq-${idx}`,0,20),new Date(now.getTime()+initialHours*3600000));
     await db.query(`UPDATE virtual_profiles SET next_auto_post_at=$2,updated_at=NOW() WHERE user_id=$1`,[row.user_id,target]);
     updated+=1;
   }
-  return {profiles:updated};
+  return {profiles:updated,engine_version:'3.0'};
 }
 
 async function virtualActivityHistory(pool,{limit=24}={}) {
@@ -655,8 +783,17 @@ async function runVirtualActivity(client,{force=false,limit=36}={}) {
      LIMIT $2
   `,[Boolean(force),safeLimit]);
 
-  let posts=0,stories=0,textPosts=0,photoPosts=0,storyOnly=0,quietRescheduled=0;
-  const clockNow=madridClock(new Date());
+  const globalRecent=await client.query(`
+    SELECT hash FROM (
+      SELECT text_hash AS hash FROM virtual_activity_log WHERE created_at>=NOW()-INTERVAL '10 days' AND COALESCE(text_hash,'')<>''
+      UNION ALL
+      SELECT metadata->>'story_text_hash' AS hash FROM virtual_activity_log WHERE created_at>=NOW()-INTERVAL '10 days' AND COALESCE(metadata->>'story_text_hash','')<>''
+    ) h
+  `);
+  const globalHashes=new Set(globalRecent.rows.map(r=>String(r.hash||'')).filter(Boolean));
+  let posts=0,stories=0,textPosts=0,photoPosts=0,storyOnly=0,quietRescheduled=0,deferred=0,repeatCandidatesAvoided=0;
+  const themes={};const rhythms={};const dayparts={};const clockNow=madridClock(new Date());
+
   for(const row of due.rows){
     const idx=Number(String(row.persona_key||'').replace(/\D/g,'')) || ((Number(row.user_id)%100)+1);
     const interestList=String(row.interests||'').split(',').map(x=>x.trim()).filter(Boolean);
@@ -664,74 +801,122 @@ async function runVirtualActivity(client,{force=false,limit=36}={}) {
 
     const eventCount=await client.query(`SELECT COUNT(*)::int AS count FROM virtual_activity_log WHERE user_id=$1`,[row.user_id]);
     const eventSeq=Number(eventCount.rows[0]?.count||0);
+    const recentLog=await client.query(`
+      SELECT activity_type,metadata,created_at,text_hash FROM virtual_activity_log
+       WHERE user_id=$1 ORDER BY created_at DESC,id DESC LIMIT 16
+    `,[row.user_id]);
+    const recentRows=recentLog.rows||[],recentKinds=recentRows.map(r=>String(r.activity_type||''));
 
     // Actividad automática silenciosa de madrugada; una ejecución manual del admin sí puede forzarla.
     if(!force && (clockNow.hour<8 || clockNow.hour>=23)){
       const next=nextActivityDate({...row,posts_per_week:Math.max(Number(row.posts_per_week||3),5)},eventSeq,new Date());
       await client.query(`UPDATE virtual_profiles SET next_auto_post_at=$2,updated_at=NOW() WHERE user_id=$1`,[row.user_id,next]);
-      quietRescheduled+=1;
-      continue;
+      quietRescheduled+=1;continue;
     }
 
-    const recent=await client.query(`SELECT text FROM posts WHERE user_id=$1 AND source='virtual' ORDER BY created_at DESC,id DESC LIMIT 18`,[row.user_id]);
+    // Evita ráfagas aunque un deploy o una reprogramación deje varios perfiles vencidos a la vez.
+    const deferral=activityDeferralFor(row,recentRows,clockNow,Boolean(force));
+    if(deferral){
+      const next=alignActivityCandidate(row,eventSeq+1,new Date(Date.now()+Number(deferral.hours||12)*3600000));
+      await client.query(`UPDATE virtual_profiles SET next_auto_post_at=$2,updated_at=NOW() WHERE user_id=$1`,[row.user_id,next]);
+      await recordActivityLog(client,{userId:row.user_id,activityType:'deferred',text:'',metadata:{engine:'3.0',reason:deferral.reason,hours:Number(deferral.hours||0),forced:false}});
+      deferred+=1;continue;
+    }
+
+    const recent=await client.query(`SELECT text FROM posts WHERE user_id=$1 AND source='virtual' ORDER BY created_at DESC,id DESC LIMIT 24`,[row.user_id]);
     const recentTexts=recent.rows.map(r=>r.text).filter(Boolean);
-    const postText=pickFreshActivityText(p,{seq:eventSeq,clock:clockNow,tone:row.tone,recentTexts});
-    let kind=activityKindFor(row,eventSeq);
-    let postId=null,storyId=null,mediaId=null,selected=null,storyText='';
+    const rhythm=activityRhythmFor(row),theme=activityThemeFor(row,eventSeq,clockNow),daypart=activityDaypartFromClock(clockNow);
+    const picked=pickFreshActivityText(p,{seq:eventSeq,clock:clockNow,tone:row.tone,theme,recentTexts,globalHashes});
+    const postText=picked.text;repeatCandidatesAvoided+=Number(picked.avoided||0);
+    let kind=activityKindFor(row,eventSeq,{recentKinds,clock:clockNow});
+    let postId=null,storyId=null,mediaId=null,selected=null,storyText='',storyHash='';
 
     if(kind==='story-only'){
-      storyText=pickStoryText(p,{seq:eventSeq});
+      const storyPick=pickFreshStoryText(p,{seq:eventSeq,globalHashes});storyText=storyPick.text;storyHash=storyPick.hash||'';repeatCandidatesAvoided+=Number(storyPick.avoided||0);
       selected=await selectVirtualProfileMedia(client,{userId:row.user_id,text:storyText,usageType:'story'});
       if(selected){
         mediaId=Number(selected.media_id);
         const inserted=await client.query(`INSERT INTO stories(user_id,media_id,media_type,text,visibility,created_at,expires_at) VALUES($1,$2,'image',$3,'public',NOW(),NOW()+INTERVAL '24 hours') RETURNING id`,[row.user_id,mediaId,storyText]);
         storyId=Number(inserted.rows[0].id);
         await recordVirtualProfileMediaUsage(client,{poolId:selected.id,userId:row.user_id,storyId,usageType:'story'});
-        stories+=1;storyOnly+=1;
-      } else {
-        kind='post-text';
-      }
+        stories+=1;storyOnly+=1;if(storyPick.hash)globalHashes.add(storyPick.hash);
+      } else kind='post-text';
     }
 
     if(kind!=='story-only'){
       if(kind!=='post-text') selected=await selectVirtualProfileMedia(client,{userId:row.user_id,text:postText,usageType:'post'});
-      if(kind!=='post-text' && selected) mediaId=Number(selected.media_id);
-      else if(kind!=='post-text' && !selected) kind='post-text';
+      if(kind!=='post-text' && selected) mediaId=Number(selected.media_id); else if(kind!=='post-text' && !selected) kind='post-text';
 
       const insertedPost=await client.query(`INSERT INTO posts(user_id,text,media_id,media_type,source,external_url,visibility,created_at) VALUES($1,$2,$3,$4,'virtual','','public',NOW()) RETURNING id`,[row.user_id,postText,mediaId,mediaId?'image':'none']);
-      postId=Number(insertedPost.rows[0].id);
-      posts+=1;
-      if(mediaId){
-        photoPosts+=1;
-        await recordVirtualProfileMediaUsage(client,{poolId:selected.id,userId:row.user_id,postId,usageType:'post'});
-      } else textPosts+=1;
+      postId=Number(insertedPost.rows[0].id);posts+=1;if(picked.hash)globalHashes.add(picked.hash);
+      if(mediaId){photoPosts+=1;await recordVirtualProfileMediaUsage(client,{poolId:selected.id,userId:row.user_id,postId,usageType:'post'});} else textPosts+=1;
 
       if(kind==='post-photo-story' && mediaId){
-        storyText=pickStoryText(p,{seq:eventSeq});
+        const storyPick=pickFreshStoryText(p,{seq:eventSeq+1,globalHashes});storyText=storyPick.text;storyHash=storyPick.hash||'';repeatCandidatesAvoided+=Number(storyPick.avoided||0);
         const insertedStory=await client.query(`INSERT INTO stories(user_id,media_id,media_type,text,visibility,created_at,expires_at) VALUES($1,$2,'image',$3,'public',NOW(),NOW()+INTERVAL '24 hours') RETURNING id`,[row.user_id,mediaId,storyText]);
-        storyId=Number(insertedStory.rows[0].id);
-        await recordVirtualProfileMediaUsage(client,{poolId:selected.id,userId:row.user_id,storyId,usageType:'story'});
-        stories+=1;
+        storyId=Number(insertedStory.rows[0].id);await recordVirtualProfileMediaUsage(client,{poolId:selected.id,userId:row.user_id,storyId,usageType:'story'});stories+=1;if(storyPick.hash)globalHashes.add(storyPick.hash);
       }
     }
 
+    themes[theme]=(themes[theme]||0)+1;rhythms[rhythm]=(rhythms[rhythm]||0)+1;dayparts[daypart]=(dayparts[daypart]||0)+1;
     await recordActivityLog(client,{
       userId:row.user_id,activityType:kind,postId,storyId,mediaId,text:postId?postText:storyText,
-      metadata:{weekend:clockNow.weekend,hour:clockNow.hour,tone:toneKey(row.tone),forced:Boolean(force)}
+      metadata:{engine:'3.0',weekend:clockNow.weekend,hour:clockNow.hour,daypart,preferred_daypart:activityPreferredDaypart(row,eventSeq),tone:toneKey(row.tone),rhythm,theme,format:kind,forced:Boolean(force),repeat_candidates_avoided:Number(picked.avoided||0),story_text_hash:storyHash}
     });
 
     const next=nextActivityDate(row,eventSeq+1,new Date());
     await client.query(`UPDATE virtual_profiles SET last_auto_post_at=NOW(),next_auto_post_at=$2,updated_at=NOW() WHERE user_id=$1`,[row.user_id,next]);
     await client.query(`UPDATE users SET last_seen_at=NOW() WHERE id=$1`,[row.user_id]);
   }
-  return {
-    profiles_processed:due.rows.length,
-    posts,stories,
-    text_posts:textPosts,
-    photo_posts:photoPosts,
-    story_only:storyOnly,
-    quiet_rescheduled:quietRescheduled
-  };
+  return {engine_version:'3.0',profiles_processed:due.rows.length,posts,stories,text_posts:textPosts,photo_posts:photoPosts,story_only:storyOnly,quiet_rescheduled:quietRescheduled,deferred,repeat_candidates_avoided:repeatCandidatesAvoided,themes,rhythms,dayparts};
+}
+
+async function virtualActivityEngineReport(pool,{days=7,limit=24}={}) {
+  const safeDays=Math.max(1,Math.min(30,Number(days)||7)),safeLimit=Math.max(1,Math.min(100,Number(limit)||24));
+  const {rows:summaryRows}=await pool.query(`
+    WITH v3 AS (
+      SELECT * FROM virtual_activity_log
+       WHERE created_at>=NOW()-($1::int*INTERVAL '1 day') AND metadata->>'engine'='3.0'
+    ), text_hashes AS (
+      SELECT text_hash AS hash FROM v3 WHERE COALESCE(text_hash,'')<>''
+      UNION ALL
+      SELECT metadata->>'story_text_hash' AS hash FROM v3 WHERE COALESCE(metadata->>'story_text_hash','')<>''
+    ), hashes AS (
+      SELECT hash,COUNT(*)::int AS uses FROM text_hashes GROUP BY hash
+    )
+    SELECT COUNT(*) FILTER(WHERE activity_type<>'deferred')::int AS events,
+           COUNT(DISTINCT user_id) FILTER(WHERE activity_type<>'deferred')::int AS profiles,
+           COUNT(*) FILTER(WHERE activity_type='deferred')::int AS deferred,
+           COUNT(*) FILTER(WHERE activity_type='post-text')::int AS text_posts,
+           COUNT(*) FILTER(WHERE activity_type IN ('post-photo','post-photo-story'))::int AS photo_posts,
+           COUNT(*) FILTER(WHERE story_id IS NOT NULL)::int AS stories,
+           COALESCE((SELECT COUNT(*) FROM text_hashes),0)::int AS text_items,
+           COALESCE((SELECT COUNT(DISTINCT hash) FROM text_hashes),0)::int AS unique_texts,
+           COALESCE((SELECT COUNT(*) FROM hashes WHERE uses>1),0)::int AS repeat_groups,
+           COALESCE((SELECT SUM(uses-1) FROM hashes WHERE uses>1),0)::int AS repeated_events
+      FROM v3
+  `,[safeDays]);
+  const summary=summaryRows[0]||{};
+  const {rows:distribution}=await pool.query(`
+    SELECT COALESCE(NULLIF(metadata->>'rhythm',''),'sin-dato') AS rhythm,
+           COALESCE(NULLIF(metadata->>'theme',''),'sin-dato') AS theme,
+           COALESCE(NULLIF(metadata->>'daypart',''),'sin-dato') AS daypart,
+           COUNT(*)::int AS count
+      FROM virtual_activity_log
+     WHERE created_at>=NOW()-($1::int*INTERVAL '1 day') AND metadata->>'engine'='3.0' AND activity_type<>'deferred'
+     GROUP BY 1,2,3 ORDER BY count DESC
+  `,[safeDays]);
+  const reduceKey=key=>distribution.reduce((m,r)=>(m[r[key]]=(m[r[key]]||0)+Number(r.count||0),m),{});
+  const {rows:recent}=await pool.query(`
+    SELECT val.id,val.user_id,u.username,u.name,u.avatar,val.activity_type,val.post_id,val.story_id,val.media_id,val.metadata,val.created_at,
+           COALESCE(NULLIF(p.text,''),NULLIF(s.text,''),'') AS text
+      FROM virtual_activity_log val JOIN users u ON u.id=val.user_id
+      LEFT JOIN posts p ON p.id=val.post_id LEFT JOIN stories s ON s.id=val.story_id
+     WHERE val.metadata->>'engine'='3.0' ORDER BY val.id DESC LIMIT $1
+  `,[safeLimit]);
+  const {rows:autoRows}=await pool.query(`SELECT COUNT(*)::int AS total FROM virtual_profiles vp JOIN users u ON u.id=vp.user_id WHERE vp.status='active' AND vp.auto_post_enabled=TRUE AND u.account_status='active' AND COALESCE(u.social_hidden,FALSE)=FALSE`);
+  const activeAuto=Number(autoRows[0]?.total||0),textItems=Number(summary.text_items||0),repeated=Number(summary.repeated_events||0);
+  return {engine_version:'3.0',days:safeDays,generated_at:new Date().toISOString(),summary:{...summary,active_auto_profiles:activeAuto,originality_percent:textItems?Math.max(0,Math.round((1-(repeated/Math.max(1,textItems)))*100)):100},distribution:{rhythms:reduceKey('rhythm'),themes:reduceKey('theme'),dayparts:reduceKey('daypart')},recent};
 }
 
 async function virtualCommunityStatus(pool) {
@@ -749,7 +934,7 @@ async function virtualCommunityStatus(pool) {
       (SELECT COUNT(*)::int FROM virtual_profile_media vpm WHERE vpm.active=TRUE AND vpm.archived_at IS NULL) AS media_total,
       (SELECT COUNT(*)::int FROM virtual_profile_media_usage WHERE used_at>=CURRENT_DATE) AS media_uses_today,
       (SELECT COUNT(*)::int FROM virtual_message_alerts WHERE replied_at IS NULL) AS inbox_unread,
-      (SELECT COUNT(*)::int FROM virtual_activity_log WHERE created_at>=CURRENT_DATE) AS activity_events_today,
+      (SELECT COUNT(*)::int FROM virtual_activity_log WHERE created_at>=CURRENT_DATE AND activity_type<>'deferred') AS activity_events_today,
       (SELECT COUNT(*)::int FROM virtual_activity_log WHERE created_at>=CURRENT_DATE AND activity_type='post-text') AS text_posts_today,
       (SELECT COUNT(*)::int FROM virtual_activity_log WHERE created_at>=CURRENT_DATE AND activity_type IN ('post-photo','post-photo-story')) AS photo_posts_today,
       (SELECT COUNT(*)::int FROM virtual_activity_log WHERE created_at>=CURRENT_DATE AND (story_id IS NOT NULL)) AS stories_today,
@@ -802,4 +987,4 @@ async function virtualInbox(pool,{limit=30}={}) {
   return rows;
 }
 
-module.exports={VIRTUAL_PROFILE_COUNT,VIRTUAL_WOMEN,VIRTUAL_MEN,personas,createVirtualCommunity,runVirtualActivity,rescheduleVirtualActivity,virtualActivityHistory,runVirtualInteractions,rescheduleVirtualInteractions,virtualInteractionHistory,virtualCommunityStatus,listVirtualProfiles,virtualInbox};
+module.exports={VIRTUAL_PROFILE_COUNT,VIRTUAL_WOMEN,VIRTUAL_MEN,personas,createVirtualCommunity,runVirtualActivity,rescheduleVirtualActivity,virtualActivityHistory,virtualActivityEngineReport,runVirtualInteractions,rescheduleVirtualInteractions,virtualInteractionHistory,virtualCommunityStatus,listVirtualProfiles,virtualInbox};
