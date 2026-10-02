@@ -326,6 +326,10 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS email_social_notifications BOOLEAN NO
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_like_notifications BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_comment_notifications BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_connection_notifications BOOLEAN NOT NULL DEFAULT TRUE;
+-- V1.12.38: resúmenes inteligentes y recordatorios de reactivación.
+-- Los resúmenes sociales son transaccionales; los recordatorios para volver requieren opt-in explícito.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_smart_digest_notifications BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_recovery_notifications BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_preferred_language_check;
 ALTER TABLE users ADD CONSTRAINT users_preferred_language_check CHECK (preferred_language IN ('','es','en'));
 
@@ -334,6 +338,19 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS account_status VARCHAR(20) NOT NULL D
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_account_status_check;
 ALTER TABLE users ADD CONSTRAINT users_account_status_check CHECK (account_status IN ('active','suspended'));
 CREATE INDEX IF NOT EXISTS idx_users_social_visibility ON users(social_hidden,account_status,id);
+
+
+-- V1.12.38: registro de entregas inteligentes para deduplicar y limitar frecuencia.
+CREATE TABLE IF NOT EXISTS smart_email_log (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind VARCHAR(50) NOT NULL,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_smart_email_log_user_kind_sent
+  ON smart_email_log(user_id,kind,sent_at DESC);
+
 
 -- TRUE por defecto conserva la experiencia de los usuarios existentes.
 -- Los nuevos registros se crean explícitamente con FALSE desde el servidor.

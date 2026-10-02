@@ -1,4 +1,4 @@
-// Instant Admirers V1.12.37.2 · Español / English
+// Instant Admirers V1.12.38 · Español / English
 (() => {
   const STORAGE_KEY = 'iaLanguage';
   const SUPPORTED = new Set(['es','en']);
@@ -74,6 +74,17 @@
   });
   Object.assign(ES_EN,{
     'Imágenes':'Images','Biblioteca visual':'Visual library','Imágenes activas':'Active images','usos hoy':'uses today','Subir varias imágenes':'Upload multiple images','Seleccionar imágenes':'Select images','Nombre interno':'Internal name','Etiquetas: café, playa, cine…':'Tags: coffee, beach, cinema…','Texto alternativo':'Alt text','Guardar':'Save','Portada':'Cover','Destacar ★':'Feature ★','Quitar ★':'Remove ★','Archivar':'Archive','Restaurar':'Restore','Historial reciente':'Recent history','sin usar':'unused','Imagen actualizada':'Image updated','Avatar actualizado':'Avatar updated','Portada actualizada':'Cover updated','Imagen archivada':'Image archived','Imagen restaurada':'Image restored','Imagen eliminada de la biblioteca':'Image removed from library','Este perfil todavía no tiene imágenes en su biblioteca.':'This profile does not have images in its library yet.','Se guardarán en el pool del personaje. Puedes asignarlas como avatar o portada después.':'They will be saved in the character media pool. You can assign them as avatar or cover later.'
+  });
+  Object.assign(ES_EN,{
+    'Resúmenes inteligentes':'Smart summaries',
+    'Si llevas unas horas sin entrar y tienes varias novedades pendientes, agrupamos la actividad en un solo correo para evitar avisos repetidos.':'If you have been away for a few hours and have several pending updates, we group them into one email to avoid repeated alerts.',
+    'Recordatorios para volver':'Return reminders',
+    'Si pasan varios días sin entrar, podemos avisarte de nueva actividad en la comunidad. Está desactivado por defecto y solo se usa si lo activas.':'If you have been away for several days, we can let you know about new community activity. This is off by default and is only used if you enable it.',
+    'Menos ruido, más contexto':'Less noise, more context',
+    'No enviamos correos sociales mientras estás conectado o acabas de usar la app. Los Me gusta y seguimientos repetidos se pueden agrupar en el siguiente resumen.':'We do not send social emails while you are online or have just used the app. Repeated likes and follows can be grouped into the next summary.',
+    'Enviar prueba':'Send test',
+    'Enviando…':'Sending…',
+    'Correo inteligente de prueba enviado':'Smart test email sent'
   });
   Object.assign(ES_EN,{
     'Lo que está pasando alrededor de tu perfil':'What is happening around your profile',

@@ -72,6 +72,15 @@ app.use(express.static(publicDir, {
 const EMAIL_PROVIDER = 'resend';
 const emailConfigured = () => Boolean(process.env.RESEND_API_KEY && process.env.EMAIL_FROM);
 
+// V1.12.38 · Emails inteligentes / recuperación.
+const SMART_EMAIL_ACTIVE_GRACE_MINUTES = Math.max(5, Math.min(60, Number(process.env.SMART_EMAIL_ACTIVE_GRACE_MINUTES || 10)));
+const SMART_EMAIL_LOW_SIGNAL_COOLDOWN_MINUTES = Math.max(15, Math.min(240, Number(process.env.SMART_EMAIL_LOW_SIGNAL_COOLDOWN_MINUTES || 60)));
+const SMART_EMAIL_DIGEST_AFTER_HOURS = Math.max(2, Math.min(24, Number(process.env.SMART_EMAIL_DIGEST_AFTER_HOURS || 3)));
+const SMART_EMAIL_DIGEST_COOLDOWN_HOURS = Math.max(6, Math.min(48, Number(process.env.SMART_EMAIL_DIGEST_COOLDOWN_HOURS || 18)));
+const SMART_EMAIL_RECOVERY_AFTER_DAYS = Math.max(2, Math.min(30, Number(process.env.SMART_EMAIL_RECOVERY_AFTER_DAYS || 3)));
+const SMART_EMAIL_RECOVERY_COOLDOWN_DAYS = Math.max(3, Math.min(30, Number(process.env.SMART_EMAIL_RECOVERY_COOLDOWN_DAYS || 7)));
+let smartEmailCycleRunning = false;
+
 function emailError(message, code='EMAIL_SEND_FAILED', details=null) {
   const err = new Error(message);
   err.code = code;
@@ -218,17 +227,17 @@ function seoProfileServerHtml(profile, posts=[], counts={}) {
 <meta property="og:title" content="${seoEscapeHtml(title)}"><meta property="og:description" content="${seoEscapeHtml(description)}"><meta property="og:url" content="${seoEscapeHtml(canonical)}"><meta property="og:image" content="${seoEscapeHtml(shareImage)}">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${seoEscapeHtml(title)}"><meta name="twitter:description" content="${seoEscapeHtml(description)}"><meta name="twitter:image" content="${seoEscapeHtml(shareImage)}">
 <script type="application/ld+json">${seoProfileJsonLd(profile,counts)}</script>
-<script src="/theme.js?v=1.12.37.2"></script>
-<link rel="stylesheet" href="/styles.css?v=1.12.37.2">
+<script src="/theme.js?v=1.12.38"></script>
+<link rel="stylesheet" href="/styles.css?v=1.12.38">
 <style>.seo-profile-prerender{max-width:760px;margin:0 auto;padding:26px 16px 110px;color:#f7f7fb;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.seo-profile-brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:#fff;font-size:24px;font-weight:800;margin-bottom:18px}.seo-profile-brand img{width:38px;height:38px}.seo-profile-card{overflow:hidden;border:1px solid #2b2d3c;border-radius:22px;background:#141620}.seo-profile-cover{height:190px;background:#222532}.seo-profile-cover img{width:100%;height:100%;object-fit:cover}.seo-profile-body{padding:0 22px 22px}.seo-profile-avatar{width:104px;height:104px;border-radius:50%;margin-top:-54px;border:5px solid #141620;background:#242736;overflow:hidden;display:grid;place-items:center;font-size:28px;font-weight:800}.seo-profile-avatar img{width:100%;height:100%;object-fit:cover}.seo-profile-body h1{font-size:30px;margin:12px 0 2px}.seo-handle{color:#9da3b4}.seo-headline{font-weight:700;margin:15px 0 6px}.seo-bio{color:#d4d7e3;line-height:1.55;white-space:pre-wrap}.seo-virtual-notice{display:flex;gap:8px;align-items:flex-start;margin:14px 0;padding:12px 14px;border:1px solid #7147b8;border-radius:13px;background:rgba(124,60,255,.12);color:#e8dcff;line-height:1.45}.seo-virtual-notice b{white-space:nowrap;color:#ff74c7}.seo-cta{display:inline-flex;margin-top:16px;padding:12px 17px;border-radius:12px;text-decoration:none;color:#fff;font-weight:800;background:linear-gradient(135deg,#ff2aa1,#7c3cff)}.seo-profile-posts{margin-top:20px}.seo-profile-posts h2{font-size:21px}.seo-profile-post{border:1px solid #292c3b;background:#12141d;border-radius:16px;padding:16px;margin:12px 0}.seo-profile-post p{line-height:1.55;white-space:pre-wrap}.seo-media-lock{margin-top:12px;border:1px dashed #555a70;border-radius:12px;padding:18px;color:#c7cad7;text-align:center}.seo-empty{color:#aeb3c3}.seo-profile-prerender-noscript{display:block}</style>
-<link rel="stylesheet" href="/theme.css?v=1.12.37.2">
+<link rel="stylesheet" href="/theme.css?v=1.12.38">
 </head><body>
 <div id="app"><main class="seo-profile-prerender">
 <a class="seo-profile-brand" href="/"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a>
 <section class="seo-profile-card">${cover?`<div class="seo-profile-cover"><img src="${seoEscapeHtml(cover)}" alt="Cabecera de ${seoEscapeHtml(profile.name||profile.username)}"></div>`:'<div class="seo-profile-cover"></div>'}<div class="seo-profile-body"><div class="seo-profile-avatar">${avatar?`<img src="${seoEscapeHtml(avatar)}" alt="${seoEscapeHtml(profile.name||profile.username)}">`:`${seoEscapeHtml(String(profile.name||profile.username||'?').slice(0,1).toUpperCase())}`}</div><h1>${seoEscapeHtml(profile.name||profile.username)}</h1><div class="seo-handle">@${seoEscapeHtml(profile.username)}</div>${profile.is_virtual?'<div class="seo-virtual-notice"><b>✦ Perfil virtual</b><span>Personaje ficticio y anfitrión gestionado por Instant Admirers. No representa a una persona real.</span></div>':''}${profile.headline?`<div class="seo-headline">${seoEscapeHtml(seoPlainText(profile.headline,180))}</div>`:''}${profile.bio?`<p class="seo-bio">${seoEscapeHtml(seoPlainText(profile.bio,700))}</p>`:''}<a class="seo-cta" href="${seoEscapeHtml(registerUrl)}">Crear cuenta para ver todo el contenido</a></div></section>
 <section class="seo-profile-posts"><h2>Publicaciones públicas de ${seoEscapeHtml(profile.name||profile.username)}</h2>${postHtml}</section>
 </main></div><div id="modal-root"></div>
-<script src="/i18n.js?v=1.12.37.2"></script><script src="/socket.io/socket.io.js"></script><script src="/vendor/hls/hls.min.js?v=1.12.37.2"></script><script src="/app.js?v=1.12.37.2"></script>
+<script src="/i18n.js?v=1.12.38"></script><script src="/socket.io/socket.io.js"></script><script src="/vendor/hls/hls.min.js?v=1.12.38"></script><script src="/app.js?v=1.12.38"></script>
 </body></html>`;
 }
 function seoProfilesHubHtml(profiles=[]) {
@@ -239,7 +248,7 @@ function seoProfilesHubHtml(profiles=[]) {
     const desc=seoPlainText(p.headline || p.bio || `Perfil de @${p.username} en Instant Admirers.`,150);
     return `<a class="hub-card" href="/${encodeURIComponent(p.username)}">${avatar?`<img src="${seoEscapeHtml(avatar)}" alt="${seoEscapeHtml(p.name||p.username)}" loading="lazy">`:''}<span>@${seoEscapeHtml(p.username)}</span><b>${seoEscapeHtml(p.name||p.username)}</b>${p.is_virtual?'<em class="hub-virtual-badge">✦ Perfil virtual</em>':''}<p>${seoEscapeHtml(desc)}</p></a>`;
   }).join('');
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0b12"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1"><title>${title}</title><meta name="description" content="${description}"><link rel="canonical" href="${APP_URL}/perfiles/"><link rel="icon" href="/favicon.ico" sizes="any"><script src="/theme.js?v=1.12.37.2"></script><link rel="stylesheet" href="/seo.css?v=1.12.37.2"><link rel="stylesheet" href="/theme.css?v=1.12.37.2"><style>.hub-card img{width:58px;height:58px;object-fit:cover;border-radius:50%;margin-bottom:10px}.hub-virtual-badge{display:inline-flex;width:max-content;margin:7px 0 1px;padding:4px 8px;border-radius:999px;background:rgba(124,60,255,.12);border:1px solid rgba(124,60,255,.35);color:#9a5dff;font-size:12px;font-style:normal;font-weight:800}</style><script type="application/ld+json">${JSON.stringify({'@context':'https://schema.org','@type':'CollectionPage',name:title,description,url:`${APP_URL}/perfiles/`,isPartOf:{'@type':'WebSite',name:'Instant Admirers',url:`${APP_URL}/`}}).replace(/</g,'\\u003c')}</script></head><body><header class="site-header"><div class="nav-wrap"><a class="brand" href="/" aria-label="Instant Admirers"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a><nav aria-label="Navegación principal"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/perfiles/">Perfiles</a><a href="/?auth=login">Entrar</a><a class="nav-cta" href="/?auth=register&utm_source=seo&utm_medium=organic&utm_campaign=public-profiles">Crear cuenta</a></nav></div></header><main><section class="hero"><div class="hero-inner"><div class="breadcrumbs"><a href="/">Inicio</a><span>›</span><span>Perfiles</span></div><p class="eyebrow">Perfiles de Instant Admirers</p><h1>Tu próxima conexión puede estar aquí</h1><p class="hero-lead hub-intro">Descubre perfiles públicos y anfitriones virtuales identificados de Instant Admirers.</p></div></section><section class="hub-grid">${cards || '<div class="hub-card"><b>Muy pronto</b><p>Nuevos perfiles por descubrir.</p></div>'}</section></main><footer class="site-footer"><div class="footer-wrap"><div><b>Instant Admirers</b><p>Comunidad 18+ para conectar, compartir y descubrir perfiles e intereses.</p></div><div class="footer-links"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/privacy/">Privacidad</a><a href="/terms/">Términos</a></div></div></footer></body></html>`;
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#0b0b12"><meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1"><title>${title}</title><meta name="description" content="${description}"><link rel="canonical" href="${APP_URL}/perfiles/"><link rel="icon" href="/favicon.ico" sizes="any"><script src="/theme.js?v=1.12.38"></script><link rel="stylesheet" href="/seo.css?v=1.12.38"><link rel="stylesheet" href="/theme.css?v=1.12.38"><style>.hub-card img{width:58px;height:58px;object-fit:cover;border-radius:50%;margin-bottom:10px}.hub-virtual-badge{display:inline-flex;width:max-content;margin:7px 0 1px;padding:4px 8px;border-radius:999px;background:rgba(124,60,255,.12);border:1px solid rgba(124,60,255,.35);color:#9a5dff;font-size:12px;font-style:normal;font-weight:800}</style><script type="application/ld+json">${JSON.stringify({'@context':'https://schema.org','@type':'CollectionPage',name:title,description,url:`${APP_URL}/perfiles/`,isPartOf:{'@type':'WebSite',name:'Instant Admirers',url:`${APP_URL}/`}}).replace(/</g,'\\u003c')}</script></head><body><header class="site-header"><div class="nav-wrap"><a class="brand" href="/" aria-label="Instant Admirers"><img src="/assets/brand/instant-admirers-mark.svg" alt=""><span>Instant <b>Admirers</b></span></a><nav aria-label="Navegación principal"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/perfiles/">Perfiles</a><a href="/?auth=login">Entrar</a><a class="nav-cta" href="/?auth=register&utm_source=seo&utm_medium=organic&utm_campaign=public-profiles">Crear cuenta</a></nav></div></header><main><section class="hero"><div class="hero-inner"><div class="breadcrumbs"><a href="/">Inicio</a><span>›</span><span>Perfiles</span></div><p class="eyebrow">Perfiles de Instant Admirers</p><h1>Tu próxima conexión puede estar aquí</h1><p class="hero-lead hub-intro">Descubre perfiles públicos y anfitriones virtuales identificados de Instant Admirers.</p></div></section><section class="hub-grid">${cards || '<div class="hub-card"><b>Muy pronto</b><p>Nuevos perfiles por descubrir.</p></div>'}</section></main><footer class="site-footer"><div class="footer-wrap"><div><b>Instant Admirers</b><p>Comunidad 18+ para conectar, compartir y descubrir perfiles e intereses.</p></div><div class="footer-links"><a href="/ciudades/">Ciudades</a><a href="/guias/">Guías</a><a href="/privacy/">Privacidad</a><a href="/terms/">Términos</a></div></div></footer></body></html>`;
 }
 
 function tokenDigest(raw='') { return crypto.createHash('sha256').update(String(raw)).digest('hex'); }
@@ -531,7 +540,7 @@ async function sendSocialNotificationEmail({userId,actorId,type,postId=null,text
   if (!preferenceKey) return false;
   const {rows}=await pool.query(`
     SELECT recipient.id,recipient.email,recipient.username,recipient.name,recipient.preferred_language,recipient.email_verified_at,
-           recipient.is_virtual,recipient.email_social_notifications,recipient.email_like_notifications,
+           recipient.is_virtual,recipient.last_seen_at,recipient.email_social_notifications,recipient.email_like_notifications,
            recipient.email_comment_notifications,recipient.email_connection_notifications,
            actor.username AS actor_username,actor.name AS actor_name,actor.is_virtual AS actor_is_virtual
       FROM users recipient JOIN users actor ON actor.id=$2
@@ -541,6 +550,14 @@ async function sendSocialNotificationEmail({userId,actorId,type,postId=null,text
   `,[Number(userId),Number(actorId)]);
   const row=rows[0];
   if(!row || row.is_virtual || !row.email || !row.email_verified_at || row.email_social_notifications===false || row[preferenceKey]===false) return false;
+
+  // V1.12.38: si la persona está conectada o acaba de usar la app, el aviso in-app es suficiente.
+  if (smartEmailRecipientRecentlyActive(row)) return false;
+
+  // Me gusta y seguimientos pueden llegar en ráfagas. Enviamos el primero y dejamos el resto
+  // para el resumen inteligente en vez de llenar la bandeja de entrada.
+  const lowSignal=['like','follow','follow_accept','friend_accept'].includes(String(type||''));
+  if (lowSignal && await smartEmailSentRecently(Number(userId),'social-low-signal',SMART_EMAIL_LOW_SIGNAL_COOLDOWN_MINUTES)) return false;
 
   // Evita correos repetidos por dobles pulsaciones o varias acciones iguales seguidas.
   const dedupe=await pool.query(`
@@ -570,12 +587,17 @@ async function sendSocialNotificationEmail({userId,actorId,type,postId=null,text
   const virtualFooter=row.actor_is_virtual
     ? (english?'This interaction was made by a virtual profile clearly identified in the app.':'Esta interacción procede de un perfil virtual identificado como tal en la aplicación.')
     : (english?'You can change these email alerts in Account settings.':'Puedes cambiar estos avisos desde Ajustes de cuenta.');
-  return sendEmail({
+  const sent=await sendEmail({
     to:row.email,
     subject:`${copy.subject} · Instant Admirers`,
     text:`${plainMap[String(type)]||copy.subject}\n\n${activityUrl}`,
     html:emailShell({lang:english?'en':'es',title:copy.title,body:copy.body,buttonText:english?'View activity':'Ver actividad',buttonUrl:activityUrl,footer:virtualFooter})
   });
+  if(sent){
+    await logSmartEmailDelivery(Number(userId),`social:${String(type)}`,{actor_id:Number(actorId),post_id:postId?Number(postId):null});
+    if(lowSignal) await logSmartEmailDelivery(Number(userId),'social-low-signal',{type:String(type)});
+  }
+  return sent;
 }
 
 function queueSocialNotificationEmail(payload={}) {
@@ -584,6 +606,218 @@ function queueSocialNotificationEmail(payload={}) {
     void sendSocialNotificationEmail(payload).catch(err=>console.error('social email:',err.message));
   },250);
   timer.unref?.();
+}
+
+
+// V1.12.38 · Motor de emails inteligentes.
+function smartEmailRecipientRecentlyActive(user={}) {
+  const id=Number(user.id);
+  if(id && onlineUsers.has(String(id))) return true;
+  const last=user.last_seen_at ? new Date(user.last_seen_at).getTime() : 0;
+  return Boolean(last && Date.now()-last < SMART_EMAIL_ACTIVE_GRACE_MINUTES*60*1000);
+}
+
+async function smartEmailSentRecently(userId,kind,minutes) {
+  const {rows}=await pool.query(`
+    SELECT EXISTS(
+      SELECT 1 FROM smart_email_log
+       WHERE user_id=$1 AND kind=$2
+         AND sent_at>=NOW()-($3::int * INTERVAL '1 minute')
+    ) AS yes
+  `,[Number(userId),String(kind),Math.max(1,Math.floor(Number(minutes)||1))]);
+  return Boolean(rows[0]?.yes);
+}
+
+async function logSmartEmailDelivery(userId,kind,metadata={}) {
+  try{
+    await pool.query(`INSERT INTO smart_email_log(user_id,kind,metadata) VALUES($1,$2,$3::jsonb)`,[
+      Number(userId),String(kind).slice(0,50),JSON.stringify(metadata||{})
+    ]);
+  }catch(err){ console.error('smart email log:',err.message); }
+}
+
+async function smartDigestStats(userId) {
+  const {rows}=await pool.query(`
+    SELECT
+      COUNT(*) FILTER (WHERE n.type='like')::int AS likes,
+      COUNT(*) FILTER (WHERE n.type IN ('comment','mention','repost'))::int AS conversations,
+      COUNT(*) FILTER (WHERE n.type IN ('follow','follow_request','follow_accept','friend_request','friend_accept'))::int AS connections
+    FROM notifications n
+    WHERE n.user_id=$1 AND n.read_at IS NULL
+      AND n.created_at>=NOW()-INTERVAL '7 days'
+      AND (n.actor_id IS NULL OR NOT EXISTS(
+        SELECT 1 FROM blocks bl
+         WHERE (bl.blocker_id=$1 AND bl.blocked_id=n.actor_id) OR (bl.blocker_id=n.actor_id AND bl.blocked_id=$1)
+      ))
+  `,[Number(userId)]);
+  const {rows:messageRows}=await pool.query(`
+    SELECT COUNT(*)::int AS unread
+      FROM messages m
+      JOIN conversations cv ON cv.id=m.conversation_id
+      LEFT JOIN conversation_reads cr ON cr.conversation_id=cv.id AND cr.user_id=$1
+     WHERE (cv.user1_id=$1 OR cv.user2_id=$1)
+       AND m.sender_id<>$1
+       AND m.created_at>COALESCE(cr.last_read_at,'epoch'::timestamptz)
+       AND NOT EXISTS(
+         SELECT 1 FROM blocks bl
+          WHERE (bl.blocker_id=$1 AND bl.blocked_id=m.sender_id) OR (bl.blocker_id=m.sender_id AND bl.blocked_id=$1)
+       )
+  `,[Number(userId)]);
+  const {rows:actorRows}=await pool.query(`
+    SELECT a.name,a.username,a.is_virtual,MAX(n.created_at) AS latest
+      FROM notifications n
+      JOIN users a ON a.id=n.actor_id
+     WHERE n.user_id=$1 AND n.read_at IS NULL AND n.created_at>=NOW()-INTERVAL '7 days'
+       AND NOT EXISTS(
+         SELECT 1 FROM blocks bl
+          WHERE (bl.blocker_id=$1 AND bl.blocked_id=a.id) OR (bl.blocker_id=a.id AND bl.blocked_id=$1)
+       )
+     GROUP BY a.id,a.name,a.username,a.is_virtual
+     ORDER BY latest DESC
+     LIMIT 3
+  `,[Number(userId)]);
+  const base=rows[0]||{};
+  const stats={
+    likes:Number(base.likes||0),
+    conversations:Number(base.conversations||0),
+    connections:Number(base.connections||0),
+    messages:Number(messageRows[0]?.unread||0),
+    actors:actorRows.map(r=>({name:String(r.name||r.username||''),username:String(r.username||''),is_virtual:Boolean(r.is_virtual)}))
+  };
+  stats.total=stats.likes+stats.conversations+stats.connections+stats.messages;
+  return stats;
+}
+
+function smartDigestBody(stats={},english=false,preview=false) {
+  const rows=[];
+  const item=(emoji,count,es,en)=>{ if(Number(count)>0) rows.push(`<div style="padding:9px 0;border-bottom:1px solid #292d3a"><b style="color:#fff">${emoji} ${Number(count)} ${english?en:es}</b></div>`); };
+  item('❤',stats.likes,'Me gusta','likes');
+  item('💬',stats.conversations,'comentarios, menciones o publicaciones compartidas','comments, mentions or shares');
+  item('👤',stats.connections,'novedades de seguidores o amistades','follower or friendship updates');
+  item('✉',stats.messages,'mensajes sin leer','unread messages');
+  if(!rows.length && preview) rows.push(`<div style="padding:9px 0"><b style="color:#fff">✓ ${english?'Your smart summary is ready':'Tu resumen inteligente está preparado'}</b></div>`);
+  const actors=(stats.actors||[]).filter(a=>a.name).slice(0,3);
+  const actorText=actors.length
+    ? `<p style="margin-top:16px">${english?'Recent activity includes':'Entre la actividad reciente aparecen'}: ${actors.map(a=>`<b style="color:#fff">${seoEscapeHtml(a.name)}</b>${a.is_virtual?` <span style="color:#a98cff">(${english?'virtual profile':'perfil virtual'})</span>`:''}`).join(', ')}.</p>`
+    : '';
+  return `<p>${english?'Here is what happened while you were away. We group activity so your inbox stays useful.':'Esto es lo que ha pasado mientras no estabas. Agrupamos la actividad para que tu bandeja de entrada siga siendo útil.'}</p><div style="margin:16px 0">${rows.join('')}</div>${actorText}`;
+}
+
+async function sendSmartDigestEmailForUser(user,{preview=false}={}) {
+  if(!emailConfigured() || !user?.id || !user.email || !user.email_verified_at || user.is_virtual) return {sent:false,reason:'ineligible'};
+  if(!preview && smartEmailRecipientRecentlyActive(user)) return {sent:false,reason:'active'};
+  const stats=await smartDigestStats(Number(user.id));
+  // Un único mensaje privado sí merece un recordatorio; para el resto esperamos varias novedades.
+  if(!preview && stats.total<2 && stats.messages<1) return {sent:false,reason:'not_enough_activity',stats};
+  const english=String(user.preferred_language||'').toLowerCase()==='en';
+  const total=Math.max(0,Number(stats.total||0));
+  const activityUrl=`${APP_URL}/?view=notifications`;
+  const title=preview
+    ? (english?'Smart email test':'Prueba de email inteligente')
+    : (english?`${total} updates waiting for you`:`Tienes ${total} novedades`);
+  const subject=preview
+    ? (english?'Your smart emails are ready · Instant Admirers':'Tus emails inteligentes están listos · Instant Admirers')
+    : (english?`You have ${total} updates · Instant Admirers`:`Tienes ${total} novedades · Instant Admirers`);
+  const sent=await sendEmail({
+    to:user.email,
+    subject,
+    text:preview
+      ? (english?`Your smart email setup is working.\n\n${activityUrl}`:`Tu configuración de emails inteligentes funciona correctamente.\n\n${activityUrl}`)
+      : (english?`You have ${total} pending updates on Instant Admirers.\n\n${activityUrl}`:`Tienes ${total} novedades pendientes en Instant Admirers.\n\n${activityUrl}`),
+    html:emailShell({
+      lang:english?'en':'es',title,body:smartDigestBody(stats,english,preview),
+      buttonText:english?'View activity':'Ver actividad',buttonUrl:activityUrl,
+      footer:english?'Smart summaries are sent only after you have been away for a while. You can turn them off in Account settings.':'Los resúmenes inteligentes solo se envían cuando llevas un tiempo sin entrar. Puedes desactivarlos en Ajustes de cuenta.'
+    })
+  });
+  return {sent:Boolean(sent),stats};
+}
+
+async function discoverableActivityCount(user) {
+  const since=user.last_seen_at || user.created_at || new Date(Date.now()-30*86400000).toISOString();
+  const {rows}=await pool.query(`
+    SELECT COUNT(*)::int AS count
+      FROM users candidate
+     WHERE candidate.id<>$1 AND candidate.account_status='active'
+       AND COALESCE(candidate.social_hidden,FALSE)=FALSE
+       AND (candidate.created_at>$2::timestamptz OR candidate.last_seen_at>$2::timestamptz)
+       AND NOT EXISTS(
+         SELECT 1 FROM blocks bl
+          WHERE (bl.blocker_id=$1 AND bl.blocked_id=candidate.id) OR (bl.blocker_id=candidate.id AND bl.blocked_id=$1)
+       )
+  `,[Number(user.id),since]);
+  return Number(rows[0]?.count||0);
+}
+
+async function sendRecoveryEmailForUser(user) {
+  if(!emailConfigured() || !user?.id || !user.email || !user.email_verified_at || user.is_virtual || user.email_recovery_notifications!==true) return {sent:false,reason:'ineligible'};
+  if(smartEmailRecipientRecentlyActive(user)) return {sent:false,reason:'active'};
+  const count=await discoverableActivityCount(user);
+  if(count<1) return {sent:false,reason:'no_new_activity'};
+  const english=String(user.preferred_language||'').toLowerCase()==='en';
+  const discoverUrl=`${APP_URL}/?view=discover`;
+  const shown=Math.min(99,count);
+  const title=english?'See what is new on Instant Admirers':'Descubre qué hay de nuevo';
+  const body=english
+    ? `<p>There ${shown===1?'is':'are'} <b style="color:#fff">${shown}${count>99?'+':''}</b> ${shown===1?'profile':'profiles'} with new or recent activity since your last visit.</p><p>Open Discover when you feel like coming back.</p>`
+    : `<p>Hay <b style="color:#fff">${shown}${count>99?'+':''}</b> ${shown===1?'perfil con actividad nueva o reciente':'perfiles con actividad nueva o reciente'} desde tu última visita.</p><p>Cuando te apetezca volver, los encontrarás en Descubrir.</p>`;
+  const sent=await sendEmail({
+    to:user.email,
+    subject:english?'There is something new to discover · Instant Admirers':'Hay novedades por descubrir · Instant Admirers',
+    text:english?`There is new activity to discover on Instant Admirers.\n\n${discoverUrl}`:`Hay nueva actividad por descubrir en Instant Admirers.\n\n${discoverUrl}`,
+    html:emailShell({lang:english?'en':'es',title,body,buttonText:english?'Open Discover':'Abrir Descubrir',buttonUrl:discoverUrl,footer:english?'You enabled return reminders in Account settings. You can turn them off at any time.':'Has activado los recordatorios para volver en Ajustes de cuenta. Puedes desactivarlos cuando quieras.'})
+  });
+  return {sent:Boolean(sent),count};
+}
+
+async function runSmartEmailCycle({limit=40}={}) {
+  if(!emailConfigured() || smartEmailCycleRunning) return {ok:false,reason:smartEmailCycleRunning?'running':'email_not_configured'};
+  smartEmailCycleRunning=true;
+  let digests=0,recoveries=0,errors=0;
+  try{
+    const digestCandidates=await pool.query(`
+      SELECT id,email,username,name,preferred_language,email_verified_at,is_virtual,last_seen_at,created_at
+        FROM users
+       WHERE account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE AND COALESCE(is_virtual,FALSE)=FALSE
+         AND email IS NOT NULL AND email_verified_at IS NOT NULL
+         AND email_social_notifications IS TRUE AND email_smart_digest_notifications IS TRUE
+         AND COALESCE(last_seen_at,created_at)<=NOW()-($1::int * INTERVAL '1 hour')
+       ORDER BY COALESCE(last_seen_at,created_at) ASC
+       LIMIT $2
+    `,[Math.floor(SMART_EMAIL_DIGEST_AFTER_HOURS),Math.max(1,Math.min(100,Number(limit)||40))]);
+    for(const user of digestCandidates.rows){
+      try{
+        if(smartEmailRecipientRecentlyActive(user)) continue;
+        if(await smartEmailSentRecently(user.id,'digest',SMART_EMAIL_DIGEST_COOLDOWN_HOURS*60)) continue;
+        const result=await sendSmartDigestEmailForUser(user);
+        if(result.sent){
+          digests+=1;
+          await logSmartEmailDelivery(user.id,'digest',{total:result.stats?.total||0,likes:result.stats?.likes||0,conversations:result.stats?.conversations||0,connections:result.stats?.connections||0,messages:result.stats?.messages||0});
+        }
+      }catch(err){errors+=1;console.error('smart digest:',err.message);}
+    }
+
+    const recoveryCandidates=await pool.query(`
+      SELECT id,email,username,name,preferred_language,email_verified_at,is_virtual,last_seen_at,created_at,email_recovery_notifications
+        FROM users
+       WHERE account_status='active' AND COALESCE(social_hidden,FALSE)=FALSE AND COALESCE(is_virtual,FALSE)=FALSE
+         AND email IS NOT NULL AND email_verified_at IS NOT NULL
+         AND email_social_notifications IS TRUE AND email_recovery_notifications IS TRUE
+         AND COALESCE(last_seen_at,created_at)<=NOW()-($1::int * INTERVAL '1 day')
+       ORDER BY COALESCE(last_seen_at,created_at) ASC
+       LIMIT $2
+    `,[Math.floor(SMART_EMAIL_RECOVERY_AFTER_DAYS),Math.max(1,Math.min(50,Math.ceil((Number(limit)||40)/2)))]);
+    for(const user of recoveryCandidates.rows){
+      try{
+        if(smartEmailRecipientRecentlyActive(user)) continue;
+        if(await smartEmailSentRecently(user.id,'recovery',SMART_EMAIL_RECOVERY_COOLDOWN_DAYS*24*60)) continue;
+        if(await smartEmailSentRecently(user.id,'digest',24*60)) continue;
+        const result=await sendRecoveryEmailForUser(user);
+        if(result.sent){recoveries+=1;await logSmartEmailDelivery(user.id,'recovery',{discoverable:result.count||0});}
+      }catch(err){errors+=1;console.error('recovery email:',err.message);}
+    }
+    return {ok:true,digests,recoveries,errors};
+  }finally{smartEmailCycleRunning=false;}
 }
 
 function dispatchVirtualSocialNotification(payload={}) {
@@ -1572,7 +1806,7 @@ async function autoCompleteFriendGate(client, inviterId, gateUserId) {
 
 app.get('/api/health', asyncRoute(async (_req, res) => {
   await pool.query('SELECT 1');
-  res.json({ ok: true, version: '1.12.37.2', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default','growth-public-teaser-profile','growth-teaser-media-lock','growth-teaser-signup-attribution','public-teaser-desktop-layout-fix','feed-full-image-fit','full-image-viewer','protected-image-lightbox','friend-gate-chat-lock','conversation-reply-continuity','chat-video-processing-refresh','chat-scroll-containment','chat-bottom-autoscroll','mobile-chat-composer-layout','mobile-chat-composer-viewport-fix','mobile-chat-active-header-compaction','direct-public-profile','direct-profile-media-lock','direct-profile-referral-attribution','public-profile-preview-control','seo-public-profiles','dynamic-profile-meta','profilepage-structured-data','profile-sitemap','public-profiles-hub','seo-profile-privacy-noindex','seo-navigation-cache-safety','visitor-theme-switcher','light-theme','dark-theme','theme-preference-persistence','light-theme-contrast-fix','light-sent-message-contrast-fix','sent-message-delete','message-delete-realtime','virtual-community','virtual-host-profiles','virtual-daily-activity','virtual-admin-inbox','virtual-admin-reply','virtual-profile-media-pools','virtual-profile-disclosure','virtual-profile-seo','virtual-profile-sitemap','virtual-profile-public-hub','virtual-profile-seo-disclosure','virtual-profile-dynamic-meta','profile-seo-hydration-preservation','virtual-profile-image-library','virtual-profile-image-tags','virtual-profile-image-usage-history','virtual-profile-image-auto-selection','virtual-profile-image-admin','virtual-profile-image-batch-upload','virtual-profile-image-pilot','virtual-profile-base-packs','virtual-profile-pack-auto-sync','virtual-profile-pack-status','virtual-realistic-pack-importer','virtual-pack-zip-validation','virtual-pack-manifest-v1','virtual-pack-safe-replacement','virtual-pack-import-history','virtual-image-admin-preview-fix','virtual-profile-retire-fix','virtual-profile-cover-display-fix','virtual-profile-retire-transaction-fix','virtual-profile-cover-runtime-resolver','virtual-profile-cover-clean-avatar-fallback','virtual-profile-retire-failsafe','virtual-historical-post-media-relink','virtual-historical-story-media-relink','virtual-activity-2','virtual-activity-smart-schedule','virtual-activity-content-variety','virtual-activity-history','virtual-activity-weekend-mode','virtual-activity-text-photo-mix','virtual-interaction-2','virtual-interaction-smart-targeting','virtual-interaction-rate-limits','virtual-interaction-history','virtual-like-comment-follow','virtual-interaction-no-private-dm','virtual-interaction-ranking-safety','post-comment-previews','post-like-people','post-social-preview-batch','social-email-notifications','email-like-alerts','email-comment-alerts','email-connection-alerts','email-notification-preferences','virtual-interaction-email-alerts','activity-center-2','activity-grouped-likes','activity-unread-actions','activity-direct-targets','notification-comment-targets','virtual-notification-realtime','activity-person-like-grouping','activity-follower-grouping','activity-mobile-tools-scroll','activity-visual-polish','activity-count-labels','post-like-summary-spacing-fix'] });
+  res.json({ ok: true, version: '1.12.38', database: 'postgresql', mode: 'own-community', email: { configured: emailConfigured(), provider: EMAIL_PROVIDER, verification_required: REQUIRE_EMAIL_VERIFICATION }, media: mediaProviderSummary(), features: ['stories','reels','messages','friends','realtime','replies','private-sharing','mentions','hashtags','reposts','post-editing','advanced-profiles','for-you','people-suggestions','personalized-discovery','private-accounts','follow-requests','blocking','muting','reports','message-privacy','onboarding','account-settings','password-change','account-deletion','admin-moderation','report-review','ux-quality','connection-status','optimistic-actions','instant-admirers-brand','pwa-assets','seo-metadata','legal-pages','18-plus-registration','terms-acceptance','mobile-profile-ux','mobile-logout','composer-media-ux','compact-mobile-auth','visual-polish','unified-ui','profile-visual-refresh','email-verification','password-recovery','email-change','rate-limits','security-events','resend-email','whatsapp-invites','referrals','friend-access-gates','dual-invite-flows','direct-profile-invites','profile-access-locks','pretty-profile-urls','shareable-profile-links','compact-access-gate','mobile-auth-personality','mobile-auth-final-polish','direct-profile-auth-return','validated-profile-routes','profile-return-no-fallback','profile-image-live-preview','external-media-storage','cloudinary-media','legacy-media-migration','media-cleanup','large-video-uploads','upload-error-recovery','mobile-camera-capture','feed-pagination','profile-pagination','discover-pagination','reels-pagination','bookmarks-pagination','infinite-scroll','lazy-video-loading','viewport-video-pause','cloudinary-auto-image-optimization','performance-indexes','rightbar-cache','static-asset-cache','pwa-installable','service-worker','offline-launch','install-prompt','maskable-icons','standalone-app','controlled-launch','registration-modes','launch-dashboard','activation-checklist','operational-metrics','client-error-reporting','server-error-log','demo-lab','synthetic-test-data','demo-cleanup','launch-readiness','launch-phases','launch-cohort','launch-banner','launch-invite-link','launch-settings-type-fix','community-warm-start','newcomer-spotlight','founding-cohort','community-launch-dashboard','growth-engine','campaign-links','campaign-attribution','growth-funnel','viral-referral-tracking','enhanced-access-challenge','admin-user-management','admin-user-deletion','follow-lists','clickable-profile-stats','connections-hub','following-in-friends','profile-stat-links-fix','pwa-auto-refresh','advertising-management','image-ads','google-adsense-code','ad-scheduling','ad-profile-targeting','ad-impressions-clicks','ad-visible-copy','system-admin-account','social-admin-exclusion','bilingual-ui','spanish-english','browser-language-detection','saved-language-preference','bilingual-legal-pages','bilingual-ad-copy','protected-profile-content','gate-aware-discovery','signed-media-delivery','session-bound-media','protected-media-proxy','legacy-cloudinary-read-compatibility','viewer-watermarks','download-deterrence','enhanced-contextmenu-deterrence','resilient-media-streaming','media-upstream-error-isolation','profile-access-message','compact-direct-profile-auth','campaign-access-message','growth-source-attribution','growth-utm-tracking','growth-visit-details','growth-profile-preview','growth-auth-profile-preview','seo-40-landings','seo-city-pages','seo-guides','sitemap-index','seo-internal-linking','bunny-storage-images','bunny-stream-video','bunny-token-delivery','hls-playback','adaptive-video-startup-quality','network-aware-hls-startup','bunny-stream-status-polling','cloudinary-legacy-compatibility','cloudinary-upload-disabled-by-default','growth-public-teaser-profile','growth-teaser-media-lock','growth-teaser-signup-attribution','public-teaser-desktop-layout-fix','feed-full-image-fit','full-image-viewer','protected-image-lightbox','friend-gate-chat-lock','conversation-reply-continuity','chat-video-processing-refresh','chat-scroll-containment','chat-bottom-autoscroll','mobile-chat-composer-layout','mobile-chat-composer-viewport-fix','mobile-chat-active-header-compaction','direct-public-profile','direct-profile-media-lock','direct-profile-referral-attribution','public-profile-preview-control','seo-public-profiles','dynamic-profile-meta','profilepage-structured-data','profile-sitemap','public-profiles-hub','seo-profile-privacy-noindex','seo-navigation-cache-safety','visitor-theme-switcher','light-theme','dark-theme','theme-preference-persistence','light-theme-contrast-fix','light-sent-message-contrast-fix','sent-message-delete','message-delete-realtime','virtual-community','virtual-host-profiles','virtual-daily-activity','virtual-admin-inbox','virtual-admin-reply','virtual-profile-media-pools','virtual-profile-disclosure','virtual-profile-seo','virtual-profile-sitemap','virtual-profile-public-hub','virtual-profile-seo-disclosure','virtual-profile-dynamic-meta','profile-seo-hydration-preservation','virtual-profile-image-library','virtual-profile-image-tags','virtual-profile-image-usage-history','virtual-profile-image-auto-selection','virtual-profile-image-admin','virtual-profile-image-batch-upload','virtual-profile-image-pilot','virtual-profile-base-packs','virtual-profile-pack-auto-sync','virtual-profile-pack-status','virtual-realistic-pack-importer','virtual-pack-zip-validation','virtual-pack-manifest-v1','virtual-pack-safe-replacement','virtual-pack-import-history','virtual-image-admin-preview-fix','virtual-profile-retire-fix','virtual-profile-cover-display-fix','virtual-profile-retire-transaction-fix','virtual-profile-cover-runtime-resolver','virtual-profile-cover-clean-avatar-fallback','virtual-profile-retire-failsafe','virtual-historical-post-media-relink','virtual-historical-story-media-relink','virtual-activity-2','virtual-activity-smart-schedule','virtual-activity-content-variety','virtual-activity-history','virtual-activity-weekend-mode','virtual-activity-text-photo-mix','virtual-interaction-2','virtual-interaction-smart-targeting','virtual-interaction-rate-limits','virtual-interaction-history','virtual-like-comment-follow','virtual-interaction-no-private-dm','virtual-interaction-ranking-safety','post-comment-previews','post-like-people','post-social-preview-batch','social-email-notifications','email-like-alerts','email-comment-alerts','email-connection-alerts','email-notification-preferences','virtual-interaction-email-alerts','activity-center-2','activity-grouped-likes','activity-unread-actions','activity-direct-targets','notification-comment-targets','virtual-notification-realtime','activity-person-like-grouping','activity-follower-grouping','activity-mobile-tools-scroll','activity-visual-polish','activity-count-labels','post-like-summary-spacing-fix','smart-email-digests','smart-email-inactive-recovery','social-email-online-suppression','social-email-rate-guard','smart-email-test'] });
 }));
 
 app.get('/api/launch/status', asyncRoute(async (_req, res) => {
@@ -2653,7 +2887,7 @@ app.get('/api/posts/:id/likes', auth, asyncRoute(async (req,res) => {
   res.json(rows);
 }));
 
-// V1.12.37.2 · Destino individual para el Centro de actividad.
+// V1.12.38 · Destino individual para el Centro de actividad.
 app.get('/api/posts/:id', auth, asyncRoute(async (req,res)=>{
   const postId=Number(req.params.id);
   if(!Number.isSafeInteger(postId) || postId<=0) return res.status(404).json({error:'Publicación no disponible'});
@@ -3096,35 +3330,51 @@ app.post('/api/users/:id/follow', auth, socialAccountOnly, asyncRoute(async (req
 
 // --- V1.12.36: preferencias de avisos sociales por email -------------------
 app.get('/api/email-notifications', auth, asyncRoute(async (req,res)=>{
-  const {rows}=await pool.query(`SELECT email_social_notifications,email_like_notifications,email_comment_notifications,email_connection_notifications FROM users WHERE id=$1`,[req.user.id]);
+  const {rows}=await pool.query(`SELECT email_social_notifications,email_like_notifications,email_comment_notifications,email_connection_notifications,email_smart_digest_notifications,email_recovery_notifications FROM users WHERE id=$1`,[req.user.id]);
   if(!rows[0]) return res.status(404).json({error:'Usuario no encontrado'});
   res.json({
     enabled:rows[0].email_social_notifications!==false,
     likes:rows[0].email_like_notifications!==false,
     comments:rows[0].email_comment_notifications!==false,
     connections:rows[0].email_connection_notifications!==false,
+    digest:rows[0].email_smart_digest_notifications!==false,
+    recovery:rows[0].email_recovery_notifications===true,
     email_configured:emailConfigured()
   });
 }));
 
 app.patch('/api/email-notifications', auth, asyncRoute(async (req,res)=>{
   const value=(key)=>req.body?.[key]===undefined?null:Boolean(req.body[key]);
-  const enabled=value('enabled'),likes=value('likes'),comments=value('comments'),connections=value('connections');
+  const enabled=value('enabled'),likes=value('likes'),comments=value('comments'),connections=value('connections'),digest=value('digest'),recovery=value('recovery');
   const {rows}=await pool.query(`
     UPDATE users SET
       email_social_notifications=COALESCE($2,email_social_notifications),
       email_like_notifications=COALESCE($3,email_like_notifications),
       email_comment_notifications=COALESCE($4,email_comment_notifications),
-      email_connection_notifications=COALESCE($5,email_connection_notifications)
+      email_connection_notifications=COALESCE($5,email_connection_notifications),
+      email_smart_digest_notifications=COALESCE($6,email_smart_digest_notifications),
+      email_recovery_notifications=COALESCE($7,email_recovery_notifications)
     WHERE id=$1
-    RETURNING email_social_notifications,email_like_notifications,email_comment_notifications,email_connection_notifications
-  `,[req.user.id,enabled,likes,comments,connections]);
+    RETURNING email_social_notifications,email_like_notifications,email_comment_notifications,email_connection_notifications,email_smart_digest_notifications,email_recovery_notifications
+  `,[req.user.id,enabled,likes,comments,connections,digest,recovery]);
   res.json({
     enabled:rows[0].email_social_notifications!==false,
     likes:rows[0].email_like_notifications!==false,
     comments:rows[0].email_comment_notifications!==false,
-    connections:rows[0].email_connection_notifications!==false
+    connections:rows[0].email_connection_notifications!==false,
+    digest:rows[0].email_smart_digest_notifications!==false,
+    recovery:rows[0].email_recovery_notifications===true
   });
+}));
+
+app.post('/api/email-notifications/test-smart', auth, asyncRoute(async (req,res)=>{
+  if(!emailConfigured()) return res.status(503).json({error:'El envío de correo no está configurado'});
+  const {rows}=await pool.query(`SELECT id,email,username,name,preferred_language,email_verified_at,is_virtual,last_seen_at,created_at FROM users WHERE id=$1`,[req.user.id]);
+  const user=rows[0];
+  if(!user?.email_verified_at) return res.status(400).json({error:'Verifica tu email antes de enviar una prueba'});
+  const result=await sendSmartDigestEmailForUser(user,{preview:true});
+  if(!result.sent) return res.status(502).json({error:'No se pudo enviar el correo de prueba'});
+  res.json({ok:true});
 }));
 
 // --- V0.9: privacidad, solicitudes de seguimiento y control --------------
@@ -5204,8 +5454,9 @@ async function start() {
   await syncPilotVirtualImages(pool).catch(err => console.error('Virtual Profile Image System pilot:',err.message));
   await syncVirtualProfileBasePacks(pool,{includePilot:false}).catch(err => console.error('Virtual Profile Image Packs:',err.message));
   await pool.query(`DELETE FROM app_events WHERE created_at < NOW()-INTERVAL '90 days'`).catch(err => console.error('Limpieza app_events:',err.message));
+  await pool.query(`DELETE FROM smart_email_log WHERE sent_at < NOW()-INTERVAL '120 days'`).catch(err => console.error('Limpieza smart_email_log:',err.message));
   httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`Instant Admirers V1.12.37.2 en http://localhost:${PORT}`);
+    console.log(`Instant Admirers V1.12.38 en http://localhost:${PORT}`);
     void hardenLegacyCloudinaryMedia().catch(err => console.error('Protección multimedia heredada:', err.message));
     void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message));
     const bunnyStatusTimer=setInterval(() => void refreshBunnyStreamStatuses().catch(err => console.error('Estado Bunny Stream:',err.message)),30000);
@@ -5218,6 +5469,14 @@ async function start() {
     setTimeout(runVirtualTick,15000).unref?.();
     const virtualActivityTimer=setInterval(runVirtualTick,30*60*1000);
     virtualActivityTimer.unref?.();
+
+    // V1.12.38: resúmenes inteligentes y recuperación, en tandas pequeñas.
+    const runSmartEmailTick=()=>void runSmartEmailCycle({limit:40}).then(result=>{
+      if(result?.ok && (result.digests || result.recoveries)) console.log(`Emails inteligentes: ${result.digests} resumen(es), ${result.recoveries} recuperación(es)`);
+    }).catch(err=>console.error('Emails inteligentes:',err.message));
+    setTimeout(runSmartEmailTick,90*1000).unref?.();
+    const smartEmailTimer=setInterval(runSmartEmailTick,30*60*1000);
+    smartEmailTimer.unref?.();
   });
 }
 
