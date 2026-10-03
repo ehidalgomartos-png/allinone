@@ -49,7 +49,7 @@ services:
 
 databases:
   - name: omnisocial-db
-    plan: free
+    plan: starter
     region: frankfurt
     postgresMajorVersion: "18"
     databaseName: omnisocial
