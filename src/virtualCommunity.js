@@ -878,7 +878,11 @@ async function virtualActivityEngineReport(pool,{days=7,limit=24}={}) {
       SELECT * FROM virtual_activity_log
        WHERE created_at>=NOW()-($1::int*INTERVAL '1 day') AND metadata->>'engine'='3.0'
     ), text_hashes AS (
-      SELECT text_hash AS hash FROM v3 WHERE COALESCE(text_hash,'')<>''
+      -- V1.12.45.1: story-only guarda el mismo caption tanto en text_hash como en
+      -- metadata.story_text_hash. Contarlo por ambas vías generaba falsos duplicados.
+      SELECT text_hash AS hash FROM v3
+       WHERE COALESCE(text_hash,'')<>''
+         AND (activity_type<>'story-only' OR COALESCE(metadata->>'story_text_hash','')='')
       UNION ALL
       SELECT metadata->>'story_text_hash' AS hash FROM v3 WHERE COALESCE(metadata->>'story_text_hash','')<>''
     ), hashes AS (
